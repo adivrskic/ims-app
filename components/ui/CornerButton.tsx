@@ -71,7 +71,14 @@ export function CornerButton({
   const isDisabled = disabled || loading;
   return (
     <button
-      className={classNames({ variant, size, loading, fullWidth, disabled, className })}
+      className={classNames({
+        variant,
+        size,
+        loading,
+        fullWidth,
+        disabled,
+        className,
+      })}
       type={type}
       disabled={isDisabled}
       aria-label={ariaLabel}

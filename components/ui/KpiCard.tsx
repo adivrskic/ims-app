@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
-import { ArrowDown, ArrowUp, Minus } from "lucide-react";
+import Link from "next/link";
+import { ArrowDown, ArrowUp, ArrowUpRight, Minus } from "lucide-react";
 import { Sparkline } from "./Sparkline";
 
 interface Props {
@@ -12,6 +13,16 @@ interface Props {
     tone?: "good" | "bad" | "neutral";
   };
   spark?: number[];
+  /**
+   * P3: when set, the card becomes a Link that navigates to the URL on
+   * click. Used for drill-downs from Overview KPIs to filtered list views.
+   */
+  href?: string;
+  /**
+   * Optional accessible label for the drill-down link. Defaults to
+   * "View {label} details".
+   */
+  hrefLabel?: string;
   className?: string;
 }
 
@@ -21,6 +32,8 @@ export function KpiCard({
   unit,
   delta,
   spark,
+  href,
+  hrefLabel,
   className,
 }: Props) {
   const tone =
@@ -37,17 +50,25 @@ export function KpiCard({
       ? ArrowDown
       : Minus;
 
-  return (
-    <article
-      className={`hairline bg-[var(--surface)] p-16 flex flex-col gap-10 ${
-        className ?? ""
-      }`}
-    >
+  const interactive = href ? "row-interactive group cursor-pointer" : "";
+
+  const inner = (
+    <>
       <div className="flex items-start justify-between gap-12">
         <p className="label-text">{label}</p>
-        {spark && spark.length > 0 && (
-          <Sparkline values={spark} width={68} height={22} showDot={false} />
-        )}
+        <div className="flex items-center gap-6">
+          {spark && spark.length > 0 && (
+            <Sparkline values={spark} width={68} height={22} showDot={false} />
+          )}
+          {href && (
+            <ArrowUpRight
+              size={11}
+              strokeWidth={1.5}
+              className="text-text-dim group-hover:text-[var(--accent)] transition-colors shrink-0"
+              aria-hidden
+            />
+          )}
+        </div>
       </div>
       <div className="flex items-baseline gap-6">
         <span
@@ -70,6 +91,24 @@ export function KpiCard({
           <span>{delta.value}</span>
         </div>
       )}
-    </article>
+    </>
   );
+
+  const sharedClass = `hairline bg-[var(--surface)] p-16 flex flex-col gap-10 ${interactive} ${
+    className ?? ""
+  }`;
+
+  if (href) {
+    return (
+      <Link
+        href={href}
+        className={sharedClass}
+        aria-label={hrefLabel ?? `View ${label} details`}
+      >
+        {inner}
+      </Link>
+    );
+  }
+
+  return <article className={sharedClass}>{inner}</article>;
 }

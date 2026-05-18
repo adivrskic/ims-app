@@ -6,6 +6,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { CornerButton, CornerLink } from "@/components/ui/CornerButton";
 import { ChevronRight, Truck, Sparkles, Plus } from "lucide-react";
 import { draftReorderPO } from "./actions";
+import { getActiveScope, scopeDescription } from "@/lib/facilityScope";
 
 export const metadata = { title: "Purchase Orders" };
 
@@ -84,6 +85,7 @@ export default async function PurchaseOrdersPage({
   const { status: rawStatus, no_low_stock } = await searchParams;
   const activeFilter = FILTERS.find((f) => f.key === rawStatus) ?? FILTERS[0];
 
+  const scope = await getActiveScope();
   const supabase = await createClient();
 
   let query = supabase
@@ -93,6 +95,9 @@ export default async function PurchaseOrdersPage({
     )
     .order("created_at", { ascending: false });
 
+  if (scope.mode === "single") {
+    query = query.eq("warehouse_id", scope.id);
+  }
   if (activeFilter.statuses) {
     query = query.in("status", activeFilter.statuses);
   }
@@ -100,9 +105,13 @@ export default async function PurchaseOrdersPage({
   const { data } = await query;
   const pos = (data ?? []) as PoRow[];
 
-  const { data: allStatuses } = await supabase
-    .from("purchase_orders")
-    .select("status");
+  // Status counts for chip badges — also scoped so the totals match
+  // what the active filter actually shows.
+  let countsQuery = supabase.from("purchase_orders").select("status");
+  if (scope.mode === "single") {
+    countsQuery = countsQuery.eq("warehouse_id", scope.id);
+  }
+  const { data: allStatuses } = await countsQuery;
   const countMap = new Map<string, number>();
   let total = 0;
   for (const r of (allStatuses ?? []) as Array<{ status: PoStatus }>) {
@@ -115,7 +124,11 @@ export default async function PurchaseOrdersPage({
       <PageHeader
         eyebrow="Flow"
         title="Purchase orders"
-        description="Inbound from suppliers — drafts, in-transit, and received shipments."
+        description={scopeDescription(scope, {
+          all: "Inbound from suppliers — drafts, in-transit, and received shipments.",
+          single: (name) =>
+            `Inbound from suppliers arriving at ${name} — drafts, in-transit, and received.`,
+        })}
         meta={[
           { label: "Total", value: total },
           {
@@ -201,10 +214,12 @@ export default async function PurchaseOrdersPage({
         <EmptyState
           title={
             activeFilter.key === "all"
-              ? "No purchase orders yet"
-              : `No ${activeFilter.label.toLowerCase()} POs`
+              ? scope.mode === "single"
+                ? `No purchase orders at ${scope.name}`
+                : "No purchase orders yet"
+              : `No ${activeFilter.label.toLowerCase()} purchase orders`
           }
-          description="Drafts are created from the low-stock signal or imported from QuickBooks. Sent POs track receipts inline as shipments arrive."
+          description="Place a new PO or use 'Draft from low-stock' to auto-generate one from products at or below their reorder points."
           icon={<Truck size={20} strokeWidth={1.5} />}
         />
       ) : (
@@ -213,42 +228,12 @@ export default async function PurchaseOrdersPage({
             <table className="w-full" style={{ borderCollapse: "collapse" }}>
               <thead>
                 <tr className="hairline-b bg-[var(--surface-2)]">
-                  <th
-                    className="text-left px-16 py-10 label-text text-text-muted"
-                    scope="col"
-                  >
-                    PO
-                  </th>
-                  <th
-                    className="text-left px-16 py-10 label-text text-text-muted"
-                    scope="col"
-                  >
-                    Supplier
-                  </th>
-                  <th
-                    className="text-right px-16 py-10 label-text text-text-muted"
-                    scope="col"
-                  >
-                    SKUs
-                  </th>
-                  <th
-                    className="text-left px-16 py-10 label-text text-text-muted"
-                    scope="col"
-                  >
-                    Expected
-                  </th>
-                  <th
-                    className="text-left px-16 py-10 label-text text-text-muted"
-                    scope="col"
-                  >
-                    Status
-                  </th>
-                  <th
-                    className="text-left px-16 py-10 label-text text-text-muted"
-                    scope="col"
-                  >
-                    Created
-                  </th>
+                  <Th>PO</Th>
+                  <Th>Supplier</Th>
+                  <Th className="text-right">Items</Th>
+                  <Th>Expected</Th>
+                  <Th>Status</Th>
+                  <Th>Created</Th>
                   <th aria-hidden style={{ width: 28 }} />
                 </tr>
               </thead>
@@ -264,7 +249,7 @@ export default async function PurchaseOrdersPage({
                       key={po.id}
                       className="hairline-b row-interactive group"
                     >
-                      <td className="px-16 py-12">
+                      <Td>
                         <Link
                           href={`/purchase-orders/${po.id}`}
                           className="text-text group-hover:text-[var(--accent)] transition-colors"
@@ -276,45 +261,45 @@ export default async function PurchaseOrdersPage({
                         >
                           {po.po_number}
                         </Link>
-                      </td>
-                      <td className="px-16 py-12">
-                        <Link
-                          href={`/purchase-orders/${po.id}`}
+                      </Td>
+                      <Td>
+                        <span
                           className="text-text"
                           style={{ fontFamily: "var(--display)", fontSize: 13 }}
                         >
                           {po.supplier_name}
-                        </Link>
-                      </td>
-                      <td className="px-16 py-12 text-right">
-                        <span className="mono-body text-text tnum">
+                        </span>
+                      </Td>
+                      <Td className="text-right">
+                        <span
+                          className="tnum text-text-secondary"
+                          style={{ fontFamily: "var(--mono)", fontSize: 12 }}
+                        >
                           {itemCount}
                         </span>
-                      </td>
-                      <td className="px-16 py-12">
+                      </Td>
+                      <Td>
                         <span className="mono-sm text-text-secondary">
                           {expectedLabel(po.expected_date)}
                         </span>
-                      </td>
-                      <td className="px-16 py-12">
+                      </Td>
+                      <Td>
                         <Badge tone={cfg.tone} variant="filled">
                           {cfg.label}
                         </Badge>
-                      </td>
-                      <td className="px-16 py-12">
+                      </Td>
+                      <Td>
                         <span className="mono-sm text-text-dim">
                           {relTime(po.created_at)}
                         </span>
-                      </td>
-                      <td className="px-16 py-12">
-                        <Link
-                          href={`/purchase-orders/${po.id}`}
-                          className="block text-text-dim group-hover:text-[var(--accent)] transition-colors"
-                          aria-label={`Open PO ${po.po_number}`}
-                        >
-                          <ChevronRight size={12} strokeWidth={1.5} />
-                        </Link>
-                      </td>
+                      </Td>
+                      <Td>
+                        <ChevronRight
+                          size={12}
+                          strokeWidth={1.5}
+                          className="text-text-dim group-hover:text-text-muted transition-colors"
+                        />
+                      </Td>
                     </tr>
                   );
                 })}
@@ -324,5 +309,31 @@ export default async function PurchaseOrdersPage({
         </div>
       )}
     </div>
+  );
+}
+
+function Th({
+  children,
+  className = "",
+}: {
+  children?: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <th className={`label-text text-left px-14 py-12 font-normal ${className}`}>
+      {children}
+    </th>
+  );
+}
+
+function Td({
+  children,
+  className = "",
+}: {
+  children?: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <td className={`px-14 py-14 align-middle ${className}`}>{children}</td>
   );
 }

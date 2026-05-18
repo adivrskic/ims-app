@@ -1,0 +1,349 @@
+"use client";
+
+/**
+ * Underwater atmosphere — dark depth, surface halo, volumetric god rays.
+ *
+ * Color palette is calibrated to feel deep — bottom stop is ~RGB(1,4,11),
+ * almost black with a hint of blue. Halo and ray gradients are dimmed
+ * proportionally so light stops near-on against the dark base rather
+ * than reading as spotlights.
+ */
+export function UnderwaterAtmosphere() {
+  return (
+    <div
+      className="absolute inset-0 overflow-hidden pointer-events-none"
+      aria-hidden="true"
+    >
+      <svg
+        preserveAspectRatio="xMidYMid slice"
+        viewBox="0 0 1000 1400"
+        className="absolute inset-0 w-full h-full"
+      >
+        <defs>
+          {/* Depth — deepest near-black at the bottom, blue cast preserved */}
+          <linearGradient id="ua-depth" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#142d4d" />
+            <stop offset="35%" stopColor="#061124" />
+            <stop offset="70%" stopColor="#020711" />
+            <stop offset="100%" stopColor="#01040b" />
+          </linearGradient>
+
+          {/* Halo — dimmed to match darker base */}
+          <radialGradient id="ua-halo" cx="50%" cy="-10%" r="55%">
+            <stop offset="0%" stopColor="#7aa8cc" stopOpacity="0.38" />
+            <stop offset="30%" stopColor="#356c9c" stopOpacity="0.15" />
+            <stop offset="65%" stopColor="#1a3a5c" stopOpacity="0.04" />
+            <stop offset="100%" stopColor="#061124" stopOpacity="0" />
+          </radialGradient>
+
+          {/* Wide ambient — softer falloff, lower peak */}
+          <linearGradient id="ua-ray-wide" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#90b6d2" stopOpacity="0" />
+            <stop offset="10%" stopColor="#6e98ba" stopOpacity="0.2" />
+            <stop offset="32%" stopColor="#406d92" stopOpacity="0.09" />
+            <stop offset="70%" stopColor="#1a365a" stopOpacity="0.012" />
+            <stop offset="100%" stopColor="#061124" stopOpacity="0" />
+          </linearGradient>
+
+          {/* Narrow bright beam */}
+          <linearGradient id="ua-ray-beam" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#a8c4dc" stopOpacity="0" />
+            <stop offset="7%" stopColor="#92b6d2" stopOpacity="0.45" />
+            <stop offset="25%" stopColor="#5a86ac" stopOpacity="0.17" />
+            <stop offset="60%" stopColor="#2a4b70" stopOpacity="0.025" />
+            <stop offset="100%" stopColor="#061124" stopOpacity="0" />
+          </linearGradient>
+
+          <filter
+            id="ua-blur-sharp"
+            x="-15%"
+            y="-15%"
+            width="130%"
+            height="130%"
+          >
+            <feGaussianBlur stdDeviation="4" />
+          </filter>
+          <filter
+            id="ua-blur-soft"
+            x="-25%"
+            y="-25%"
+            width="150%"
+            height="150%"
+          >
+            <feGaussianBlur stdDeviation="10" />
+          </filter>
+          <filter
+            id="ua-blur-hazy"
+            x="-35%"
+            y="-35%"
+            width="170%"
+            height="170%"
+          >
+            <feGaussianBlur stdDeviation="22" />
+          </filter>
+          <filter
+            id="ua-blur-halo"
+            x="-30%"
+            y="-30%"
+            width="160%"
+            height="160%"
+          >
+            <feGaussianBlur stdDeviation="50" />
+          </filter>
+        </defs>
+
+        <rect width="1000" height="1400" fill="url(#ua-depth)" />
+        <rect
+          width="1000"
+          height="1400"
+          fill="url(#ua-halo)"
+          filter="url(#ua-blur-halo)"
+        />
+
+        <g style={{ mixBlendMode: "screen" }}>
+          {/* WIDE AMBIENT RAYS */}
+          <polygon
+            points="430,-160 220,1020 400,1020"
+            fill="url(#ua-ray-wide)"
+            opacity="0.65"
+            filter="url(#ua-blur-hazy)"
+          >
+            <animate
+              attributeName="opacity"
+              values="0.55;0.72;0.6;0.55"
+              keyTimes="0;0.35;0.7;1"
+              dur="11s"
+              begin="-3.2s"
+              repeatCount="indefinite"
+            />
+            <animateTransform
+              attributeName="transform"
+              type="translate"
+              values="0,0;-9,0;5,0;0,0"
+              keyTimes="0;0.4;0.7;1"
+              dur="14s"
+              begin="-1.7s"
+              repeatCount="indefinite"
+            />
+          </polygon>
+
+          <polygon
+            points="585,-180 620,1080 820,1080"
+            fill="url(#ua-ray-wide)"
+            opacity="0.6"
+            filter="url(#ua-blur-hazy)"
+          >
+            <animate
+              attributeName="opacity"
+              values="0.5;0.68;0.55;0.5"
+              keyTimes="0;0.4;0.7;1"
+              dur="13s"
+              begin="-5.8s"
+              repeatCount="indefinite"
+            />
+            <animateTransform
+              attributeName="transform"
+              type="translate"
+              values="0,0;7,0;-4,0;0,0"
+              keyTimes="0;0.35;0.7;1"
+              dur="17s"
+              begin="-4.1s"
+              repeatCount="indefinite"
+            />
+          </polygon>
+
+          <polygon
+            points="380,-80 50,940 230,940"
+            fill="url(#ua-ray-wide)"
+            opacity="0.35"
+            filter="url(#ua-blur-hazy)"
+          >
+            <animate
+              attributeName="opacity"
+              values="0.28;0.42;0.32;0.28"
+              keyTimes="0;0.4;0.7;1"
+              dur="9s"
+              begin="-2.4s"
+              repeatCount="indefinite"
+            />
+            <animateTransform
+              attributeName="transform"
+              type="translate"
+              values="0,0;-12,0;8,0;0,0"
+              keyTimes="0;0.4;0.7;1"
+              dur="16s"
+              begin="-6.5s"
+              repeatCount="indefinite"
+            />
+          </polygon>
+
+          <polygon
+            points="630,-100 790,980 960,980"
+            fill="url(#ua-ray-wide)"
+            opacity="0.32"
+            filter="url(#ua-blur-hazy)"
+          >
+            <animate
+              attributeName="opacity"
+              values="0.4;0.25;0.38;0.4"
+              keyTimes="0;0.35;0.7;1"
+              dur="10s"
+              begin="-7.3s"
+              repeatCount="indefinite"
+            />
+            <animateTransform
+              attributeName="transform"
+              type="translate"
+              values="0,0;11,0;-6,0;0,0"
+              keyTimes="0;0.4;0.7;1"
+              dur="19s"
+              begin="-3.8s"
+              repeatCount="indefinite"
+            />
+          </polygon>
+
+          {/* NARROW BRIGHT BEAMS */}
+          <polygon
+            points="495,-240 480,820 510,820"
+            fill="url(#ua-ray-beam)"
+            filter="url(#ua-blur-soft)"
+          >
+            <animate
+              attributeName="opacity"
+              values="0.85;1;0.92;0.85"
+              keyTimes="0;0.4;0.75;1"
+              dur="6s"
+              begin="-1.1s"
+              repeatCount="indefinite"
+            />
+            <animateTransform
+              attributeName="transform"
+              type="translate"
+              values="0,0;4,0;-3,0;0,0"
+              keyTimes="0;0.35;0.7;1"
+              dur="10s"
+              begin="-2.7s"
+              repeatCount="indefinite"
+            />
+          </polygon>
+
+          <polygon
+            points="445,-200 350,880 388,880"
+            fill="url(#ua-ray-beam)"
+            opacity="0.78"
+            filter="url(#ua-blur-soft)"
+          >
+            <animate
+              attributeName="opacity"
+              values="0.65;0.85;0.7;0.65"
+              keyTimes="0;0.35;0.7;1"
+              dur="8s"
+              begin="-4.6s"
+              repeatCount="indefinite"
+            />
+            <animateTransform
+              attributeName="transform"
+              type="translate"
+              values="0,0;-8,0;5,0;0,0"
+              keyTimes="0;0.4;0.7;1"
+              dur="11s"
+              begin="-1.9s"
+              repeatCount="indefinite"
+            />
+          </polygon>
+
+          <polygon
+            points="560,-180 615,740 650,740"
+            fill="url(#ua-ray-beam)"
+            opacity="0.72"
+            filter="url(#ua-blur-soft)"
+          >
+            <animate
+              attributeName="opacity"
+              values="0.82;0.6;0.78;0.82"
+              keyTimes="0;0.4;0.7;1"
+              dur="7s"
+              begin="-3.3s"
+              repeatCount="indefinite"
+            />
+            <animateTransform
+              attributeName="transform"
+              type="translate"
+              values="0,0;7,0;-4,0;0,0"
+              keyTimes="0;0.4;0.75;1"
+              dur="12s"
+              begin="-5.2s"
+              repeatCount="indefinite"
+            />
+          </polygon>
+
+          <polygon
+            points="475,-260 412,720 426,720"
+            fill="url(#ua-ray-beam)"
+            opacity="0.55"
+            filter="url(#ua-blur-sharp)"
+          >
+            <animate
+              attributeName="opacity"
+              values="0.45;0.65;0.5;0.45"
+              keyTimes="0;0.4;0.7;1"
+              dur="5s"
+              begin="-2.1s"
+              repeatCount="indefinite"
+            />
+            <animateTransform
+              attributeName="transform"
+              type="translate"
+              values="0,0;-5,0;3,0;0,0"
+              keyTimes="0;0.4;0.7;1"
+              dur="9s"
+              begin="-6.7s"
+              repeatCount="indefinite"
+            />
+          </polygon>
+
+          <polygon
+            points="525,-220 588,780 604,780"
+            fill="url(#ua-ray-beam)"
+            opacity="0.5"
+            filter="url(#ua-blur-sharp)"
+          >
+            <animate
+              attributeName="opacity"
+              values="0.6;0.42;0.55;0.6"
+              keyTimes="0;0.35;0.7;1"
+              dur="4.5s"
+              begin="-1.4s"
+              repeatCount="indefinite"
+            />
+            <animateTransform
+              attributeName="transform"
+              type="translate"
+              values="0,0;6,0;-4,0;0,0"
+              keyTimes="0;0.4;0.7;1"
+              dur="10s"
+              begin="-7.8s"
+              repeatCount="indefinite"
+            />
+          </polygon>
+
+          <polygon
+            points="408,-140 268,820 292,820"
+            fill="url(#ua-ray-beam)"
+            opacity="0.4"
+            filter="url(#ua-blur-soft)"
+          >
+            <animate
+              attributeName="opacity"
+              values="0.32;0.48;0.36;0.32"
+              keyTimes="0;0.4;0.7;1"
+              dur="9s"
+              begin="-5.6s"
+              repeatCount="indefinite"
+            />
+          </polygon>
+        </g>
+      </svg>
+    </div>
+  );
+}

@@ -1,5 +1,5 @@
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { one } from "@/lib/db";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { KpiCard } from "@/components/ui/KpiCard";
 import { SectionTitle } from "@/components/ui/SectionTitle";
@@ -18,6 +18,7 @@ import {
   Plug,
   Truck,
 } from "lucide-react";
+import { getActiveScope, scopeDescription } from "@/lib/facilityScope";
 
 export const metadata = { title: "Overview" };
 
@@ -59,12 +60,93 @@ function bucketByDay(scans: { scanned_at: string | null }[]): number[] {
 }
 
 export default async function OverviewPage() {
+  const scope = await getActiveScope();
   const supabase = await createClient();
 
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const fourteenDaysAgo = new Date(today);
   fourteenDaysAgo.setDate(today.getDate() - 14);
+
+  /*
+   * Pre-fetch valid section IDs for the active facility so low-stock
+   * calculations only count units physically located there. Same
+   * pattern as the inventory page — keeps the catalog visible but
+   * shows accurate on-hand at the active facility.
+   */
+  let validSectionIds: Set<string> | null = null;
+  if (scope.mode === "single") {
+    const { data: sec } = await supabase
+      .from("sections")
+      .select("id")
+      .eq("warehouse_id", scope.id);
+    validSectionIds = new Set((sec ?? []).map((s) => s.id));
+  }
+
+  /*
+   * What gets scoped vs. what stays workspace-wide:
+   *
+   * - products count:    NOT scoped — the catalog is org-level
+   * - sections count:    scoped     — sections belong to a facility
+   * - warehouses count:  NOT scoped — always show full count
+   * - locations stock:   scoped     — locations have warehouse_id directly
+   * - scan_history (×3): scoped     — scan_history has warehouse_id
+   * - low-stock products: catalog stays, but per-product on-hand is
+   *                       calculated only from active-facility sections
+   */
+  const productsQuery = supabase
+    .from("products")
+    .select("id", { count: "exact", head: true });
+
+  let sectionsQuery = supabase
+    .from("sections")
+    .select("id", { count: "exact", head: true });
+  if (scope.mode === "single") {
+    sectionsQuery = sectionsQuery.eq("warehouse_id", scope.id);
+  }
+
+  const warehousesQuery = supabase
+    .from("warehouses")
+    .select("id", { count: "exact", head: true });
+
+  let stockQuery = supabase.from("locations").select("quantity");
+  if (scope.mode === "single") {
+    stockQuery = stockQuery.eq("warehouse_id", scope.id);
+  }
+
+  let scansTodayQuery = supabase
+    .from("scan_history")
+    .select("id", { count: "exact", head: true })
+    .gte("scanned_at", today.toISOString());
+  if (scope.mode === "single") {
+    scansTodayQuery = scansTodayQuery.eq("warehouse_id", scope.id);
+  }
+
+  let scans14dQuery = supabase
+    .from("scan_history")
+    .select("scanned_at")
+    .gte("scanned_at", fourteenDaysAgo.toISOString());
+  if (scope.mode === "single") {
+    scans14dQuery = scans14dQuery.eq("warehouse_id", scope.id);
+  }
+
+  let recentScansQuery = supabase
+    .from("scan_history")
+    .select(
+      "id, action, scanned_at, quantity, product:products ( name, barcode )"
+    )
+    .order("scanned_at", { ascending: false })
+    .limit(10);
+  if (scope.mode === "single") {
+    recentScansQuery = recentScansQuery.eq("warehouse_id", scope.id);
+  }
+
+  const stockByProductQuery = supabase
+    .from("products")
+    .select(
+      "id, name, barcode, reorder_point, category:categories ( name ), locations:locations ( quantity, section_id )"
+    )
+    .gt("reorder_point", 0);
 
   const [
     { count: productCount },
@@ -76,34 +158,22 @@ export default async function OverviewPage() {
     { data: recentScans },
     { data: stockByProduct },
   ] = await Promise.all([
-    supabase.from("products").select("id", { count: "exact", head: true }),
-    supabase.from("sections").select("id", { count: "exact", head: true }),
-    supabase.from("warehouses").select("id", { count: "exact", head: true }),
-    supabase.from("locations").select("quantity"),
-    supabase
-      .from("scan_history")
-      .select("id", { count: "exact", head: true })
-      .gte("scanned_at", today.toISOString()),
-    supabase
-      .from("scan_history")
-      .select("scanned_at")
-      .gte("scanned_at", fourteenDaysAgo.toISOString()),
-    supabase
-      .from("scan_history")
-      .select(
-        "id, action, scanned_at, quantity, product:products ( name, barcode )"
-      )
-      .order("scanned_at", { ascending: false })
-      .limit(10),
-    supabase
-      .from("products")
-      .select(
-        "id, name, barcode, reorder_point, category:categories ( name ), locations:locations ( quantity )"
-      )
-      .gt("reorder_point", 0),
+    productsQuery,
+    sectionsQuery,
+    warehousesQuery,
+    stockQuery,
+    scansTodayQuery,
+    scans14dQuery,
+    recentScansQuery,
+    stockByProductQuery,
   ]);
 
-  // Compute low-stock list client-side (PostgREST can't aggregate easily here)
+  /*
+   * Low-stock: post-filter the embedded locations by the active
+   * facility's section IDs. Products with no locations at the facility
+   * collapse to total = 0, which triggers the reorder alert correctly
+   * — at the active facility, they ARE out of stock.
+   */
   const lowStock = (
     (stockByProduct ?? []) as Array<{
       id: string;
@@ -111,14 +181,19 @@ export default async function OverviewPage() {
       barcode: string;
       reorder_point: number;
       category: { name: string } | { name: string }[] | null;
-      locations: Array<{ quantity: number | null }> | null;
+      locations: Array<{
+        quantity: number | null;
+        section_id: string | null;
+      }> | null;
     }>
   )
     .map((p) => {
-      const total = (p.locations ?? []).reduce(
-        (sum, l) => sum + (l.quantity ?? 0),
-        0
-      );
+      const relevantLocs = validSectionIds
+        ? (p.locations ?? []).filter(
+            (l) => l.section_id && validSectionIds!.has(l.section_id)
+          )
+        : p.locations ?? [];
+      const total = relevantLocs.reduce((sum, l) => sum + (l.quantity ?? 0), 0);
       const cat = Array.isArray(p.category) ? p.category[0] : p.category;
       return {
         id: p.id,
@@ -147,9 +222,15 @@ export default async function OverviewPage() {
       <PageHeader
         eyebrow="Workspace"
         title="Overview"
-        description="Live operations across all facilities."
+        description={scopeDescription(scope, {
+          all: "Live operations across all facilities.",
+          single: (name) => `Live operations at ${name}.`,
+        })}
         meta={[
-          { label: "Facilities", value: warehouseCount ?? 0 },
+          {
+            label: scope.mode === "single" ? "Facility" : "Facilities",
+            value: scope.mode === "single" ? scope.name : warehouseCount ?? 0,
+          },
           { label: "Last sync", value: "Just now", status: "live" },
         ]}
       />
@@ -166,175 +247,148 @@ export default async function OverviewPage() {
             delta={{
               value: `${totalScans14.toLocaleString()} in 14d`,
               direction: (scansTodayCount ?? 0) > 0 ? "up" : "flat",
-              tone: (scansTodayCount ?? 0) > 0 ? "good" : "neutral",
+              tone: "accent",
             }}
           />
           <KpiCard
             label="Units on hand"
             value={totalStock.toLocaleString()}
-            spark={trend.map((v) => v * 1.2 + 30)}
-            delta={{ value: "Stable", direction: "flat", tone: "neutral" }}
+            spark={new Array(14).fill(totalStock)}
           />
           <KpiCard
-            label="SKUs tracked"
+            label="Products"
             value={(productCount ?? 0).toLocaleString()}
             spark={new Array(14).fill(productCount ?? 0)}
-            delta={{ value: "All active", direction: "flat", tone: "good" }}
           />
           <KpiCard
-            label="Sections"
+            label={scope.mode === "single" ? "Sections here" : "Sections"}
             value={(sectionCount ?? 0).toLocaleString()}
-            spark={trend.slice(-7)}
-            delta={{ value: "Operational", direction: "flat", tone: "good" }}
+            spark={new Array(14).fill(sectionCount ?? 0)}
           />
         </div>
       </section>
 
-      <section aria-labelledby="reorder">
-        <SectionTitle
-          eyebrow="Attention"
-          title="Reorder alerts"
-          action={
-            <CornerLink href="/inventory" variant="ghost" size="sm">
-              All inventory →
-            </CornerLink>
-          }
-        />
-        <ReorderAlerts products={lowStock} />
-      </section>
+      {lowStock.length > 0 && (
+        <section aria-labelledby="alerts">
+          <SectionTitle
+            numeral="02"
+            eyebrow="Reorder"
+            title={
+              scope.mode === "single"
+                ? `Below threshold at ${scope.name}`
+                : "Below threshold"
+            }
+            action={
+              <CornerLink href="/purchase-orders" variant="ghost" size="sm">
+                <Truck size={11} strokeWidth={1.5} />
+                Purchase orders
+              </CornerLink>
+            }
+          />
+          <ReorderAlerts products={lowStock} />{" "}
+        </section>
+      )}
 
-      <section aria-labelledby="activity">
-        <SectionTitle
-          eyebrow="Activity"
-          title="Recent scans"
-          action={
-            <CornerLink href="/analytics" variant="ghost" size="sm">
-              All activity →
-            </CornerLink>
-          }
-        />
-
-        {!recentScans || recentScans.length === 0 ? (
+      <section aria-labelledby="recent-scans">
+        <SectionTitle numeral="03" eyebrow="Activity" title="Recent scans" />
+        {(recentScans?.length ?? 0) === 0 ? (
           <EmptyState
-            title="No scan activity yet"
-            description="Once operators start scanning on the mobile app, every pick, putaway, and adjustment will show up here in real time."
+            title={
+              scope.mode === "single"
+                ? `No scans at ${scope.name} yet`
+                : "No scans yet"
+            }
+            description="Once your team starts scanning, recent activity will stream here in real time."
             icon={<Activity size={20} strokeWidth={1.5} />}
           />
         ) : (
           <ul className="hairline bg-[var(--surface)] divide-y divide-[var(--border-subtle)]">
-            {recentScans.map(
-              (scan: {
+            {(
+              (recentScans ?? []) as Array<{
                 id: string;
-                action: string;
+                action: ScanAction;
                 scanned_at: string | null;
                 quantity: number | null;
-                product: unknown;
-              }) => {
-                const action = scan.action as ScanAction;
-                const product = one(
-                  scan.product as
-                    | { name: string; barcode: string }
-                    | { name: string; barcode: string }[]
-                    | null
-                );
-                const time = scan.scanned_at
-                  ? new Date(scan.scanned_at).toLocaleTimeString(undefined, {
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    })
-                  : "—";
-                return (
-                  <li
-                    key={scan.id}
-                    className="px-16 py-10 flex items-center gap-12 row-interactive"
+                product:
+                  | { name: string; barcode: string }
+                  | { name: string; barcode: string }[]
+                  | null;
+              }>
+            ).map((s) => {
+              const product = Array.isArray(s.product)
+                ? s.product[0]
+                : s.product;
+              return (
+                <li key={s.id} className="px-20 py-12 flex items-center gap-14">
+                  <span
+                    className={`mono-sm tnum w-[48px] shrink-0 ${
+                      SCAN_TONE[s.action]
+                    }`}
+                    style={{ fontWeight: 500 }}
                   >
-                    <span className="mono-sm text-text-dim tnum w-[44px] shrink-0">
-                      {time}
-                    </span>
-                    <span
-                      className={`label-text w-[38px] shrink-0 ${SCAN_TONE[action]}`}
-                      style={{ fontWeight: 600 }}
-                    >
-                      {SCAN_LABEL[action]}
-                    </span>
-                    <div className="flex-1 min-w-0 flex items-center gap-12">
-                      <p
-                        className="text-text truncate"
-                        style={{
-                          fontFamily: "var(--display)",
-                          fontSize: 13,
-                          fontWeight: 500,
-                        }}
-                      >
-                        {product?.name ?? "Unknown product"}
-                      </p>
-                      <span className="mono-sm text-text-dim shrink-0 hidden md:inline">
-                        {product?.barcode ?? "—"}
-                      </span>
-                    </div>
-                    {scan.quantity != null && (
-                      <span className="mono-sm text-text-secondary tnum shrink-0">
-                        qty {scan.quantity}
-                      </span>
-                    )}
-                    <ArrowUpRight
-                      size={12}
-                      strokeWidth={1.5}
-                      className="text-text-dim shrink-0"
-                    />
-                  </li>
-                );
-              }
-            )}
+                    {SCAN_LABEL[s.action]}
+                  </span>
+                  <span
+                    className="flex-1 min-w-0 truncate text-text"
+                    style={{ fontFamily: "var(--display)", fontSize: 13 }}
+                  >
+                    {product?.name ?? "—"}
+                  </span>
+                  <span className="mono-sm text-text-muted tnum">
+                    {s.quantity ?? "—"}
+                  </span>
+                  <time
+                    className="mono-sm text-text-dim tnum"
+                    dateTime={s.scanned_at ?? undefined}
+                  >
+                    {s.scanned_at
+                      ? new Date(s.scanned_at).toLocaleTimeString(undefined, {
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })
+                      : "—"}
+                  </time>
+                </li>
+              );
+            })}
           </ul>
         )}
       </section>
 
-      <section aria-labelledby="surfaces">
-        <SectionTitle eyebrow="Surfaces" title="Quick jump" />
+      <section aria-labelledby="quick-jump">
+        <SectionTitle numeral="04" eyebrow="Navigate" title="Quick jump" />
         <GlowCardGrid
           cards={[
             {
               href: "/inventory",
               icon: <Boxes size={16} strokeWidth={1.5} />,
               label: "Inventory",
-              description: "Every SKU across every facility.",
-              meta: `${productCount ?? 0} SKUs`,
-            },
-            {
-              href: "/analytics",
-              icon: <BarChart3 size={16} strokeWidth={1.5} />,
-              label: "Analytics",
-              description: "Scan velocity, section utilization, action mix.",
-              meta: "Real-time",
-            },
-            {
-              href: "/settings",
-              icon: <MapPin size={16} strokeWidth={1.5} />,
-              label: "Facilities",
-              description: "Warehouses, sections, and team access.",
-              meta: "Configure",
+              description:
+                "Every SKU in the catalog with on-hand counts and locations.",
             },
             {
               href: "/orders",
               icon: <ClipboardList size={16} strokeWidth={1.5} />,
               label: "Orders",
-              description: "Installer jobs, customer pickups, transfers.",
-              meta: "Live",
+              description: "Pick lists, deliveries, and customer pickups.",
             },
             {
-              href: "/purchase-orders",
-              icon: <Truck size={16} strokeWidth={1.5} />,
-              label: "Purchase Orders",
-              description: "Draft, send, and receive supplier POs.",
-              meta: "Live",
+              href: "/analytics",
+              icon: <BarChart3 size={16} strokeWidth={1.5} />,
+              label: "Analytics",
+              description: "Velocity, distribution, and action mix.",
+            },
+            {
+              href: "/facilities",
+              icon: <MapPin size={16} strokeWidth={1.5} />,
+              label: "Facilities",
+              description: "Warehouses, sections, and team access.",
             },
             {
               href: "/integrations",
               icon: <Plug size={16} strokeWidth={1.5} />,
               label: "Integrations",
-              description: "Shopify, QuickBooks, FedEx, and others.",
-              meta: "Connect",
+              description: "Shopify, QuickBooks, ShipStation, and more.",
             },
           ]}
         />

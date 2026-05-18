@@ -1,0 +1,192 @@
+import { notFound } from "next/navigation";
+import Link from "next/link";
+import { ArrowLeft, Pencil } from "lucide-react";
+import { createClient } from "@/lib/supabase/server";
+import { CornerLink } from "@/components/ui/CornerButton";
+import { FacilityViewer } from "./FacilityViewer";
+import { ELEMENT_PRESETS } from "@/app/(app)/facilities/[id]/builder/elementPresets";
+import type { ElementKind } from "@/app/(app)/facilities/[id]/builder/types";
+
+const VALID_ELEMENT_KINDS: readonly ElementKind[] = [
+  "walkway",
+  "note",
+  "door",
+  "obstacle",
+  "staging",
+] as const;
+
+export default async function FacilityPage({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
+  const { id } = await params;
+  const supabase = await createClient();
+
+  const { data: warehouse } = await supabase
+    .from("warehouses")
+    .select(
+      "id, name, address, city, state, floor_canvas_width, floor_canvas_height, floor_unit"
+    )
+    .eq("id", id)
+    .maybeSingle();
+
+  if (!warehouse) notFound();
+
+  // Permission check for the edit affordance — purely cosmetic, server
+  // still enforces on save.
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  let canEdit = false;
+  if (user) {
+    const { data: m } = await supabase
+      .from("org_members")
+      .select("role")
+      .eq("user_id", user.id)
+      .limit(1)
+      .maybeSingle();
+    canEdit = !!m && ["owner", "admin"].includes(m.role);
+  }
+
+  // Layout + occupancy in parallel. The occupancy aggregate is cheap (one
+  // row per section in this warehouse) and lets the viewer tint sections
+  // by how full they are.
+  const [{ data: sections }, { data: elements }, { data: occupancy }] =
+    await Promise.all([
+      supabase
+        .from("sections")
+        .select(
+          "id, code, name, floor_x, floor_y, floor_width, floor_height, rotation, total_bays, total_levels, color, sort_order"
+        )
+        .eq("warehouse_id", id)
+        .order("sort_order"),
+      supabase
+        .from("layout_elements")
+        .select(
+          "id, kind, floor_x, floor_y, floor_width, floor_height, rotation, color, label, data, sort_order"
+        )
+        .eq("warehouse_id", id)
+        .order("sort_order"),
+      // Occupied slots per section: any active location with a product.
+      // We bucket by section, not by exact (bay, level), since a slot
+      // with multiple SKUs still counts as one occupied slot.
+      supabase
+        .from("locations")
+        .select("section_id, bay, level")
+        .eq("warehouse_id", id)
+        .eq("is_active", true)
+        .not("product_id", "is", null),
+    ]);
+
+  // Build a distinct-(bay,level) count per section_id.
+  const occMap = new Map<string, Set<string>>();
+  for (const row of occupancy ?? []) {
+    if (!row.section_id) continue;
+    const set = occMap.get(row.section_id) ?? new Set<string>();
+    set.add(`${row.bay}:${row.level}`);
+    occMap.set(row.section_id, set);
+  }
+
+  const sectionData = (sections ?? []).map((s) => ({
+    id: s.id,
+    code: s.code ?? "",
+    name: s.name ?? "",
+    floor_x: Number(s.floor_x),
+    floor_y: Number(s.floor_y),
+    floor_width: Number(s.floor_width),
+    floor_height: Number(s.floor_height),
+    rotation: Number(s.rotation),
+    total_bays: s.total_bays ?? 1,
+    total_levels: s.total_levels ?? 1,
+    color: s.color ?? "#D4A853",
+    sort_order: s.sort_order ?? 0,
+    occupied: occMap.get(s.id)?.size ?? 0,
+    capacity: (s.total_bays ?? 1) * (s.total_levels ?? 1),
+  }));
+
+  const elementData = (elements ?? [])
+    .filter((e): e is typeof e & { kind: ElementKind } =>
+      VALID_ELEMENT_KINDS.includes(e.kind as ElementKind)
+    )
+    .map((e) => ({
+      id: e.id,
+      kind: e.kind,
+      floor_x: Number(e.floor_x),
+      floor_y: Number(e.floor_y),
+      floor_width: Number(e.floor_width),
+      floor_height: Number(e.floor_height),
+      rotation: Number(e.rotation),
+      color: e.color ?? ELEMENT_PRESETS[e.kind].defaultColor,
+      label: e.label ?? "",
+    }));
+
+  const addrLine = [warehouse.address, warehouse.city, warehouse.state]
+    .filter(Boolean)
+    .join(", ");
+
+  return (
+    <>
+      {/* Breadcrumb chrome — back link, name, address, edit affordance */}
+      <header className="hairline-b pb-12 mb-12 flex items-center gap-14 shrink-0">
+        <Link
+          href="/facilities"
+          className="inline-flex items-center gap-6 text-text-muted hover:text-text transition-colors"
+        >
+          <ArrowLeft size={11} strokeWidth={1.5} />
+          <span className="label-text">All facilities</span>
+        </Link>
+
+        <span
+          className="h-14 w-px bg-[var(--border-subtle)] hidden sm:inline-block"
+          aria-hidden
+        />
+
+        <div className="flex items-baseline gap-10 min-w-0">
+          <h1
+            className="text-text truncate"
+            style={{
+              fontFamily: "var(--display)",
+              fontSize: 15,
+              fontWeight: 600,
+            }}
+          >
+            {warehouse.name}
+          </h1>
+          {addrLine && (
+            <span className="label-text text-text-dim truncate hidden md:inline">
+              {addrLine}
+            </span>
+          )}
+        </div>
+
+        <div className="ml-auto flex items-center gap-10">
+          <span className="label-text text-text-dim hidden lg:inline">
+            Click a section to drill in
+          </span>
+          {canEdit && (
+            <CornerLink
+              href={`/facilities/${warehouse.id}/builder`}
+              variant="ghost"
+              size="sm"
+            >
+              <Pencil size={11} strokeWidth={1.5} />
+              Edit layout
+            </CornerLink>
+          )}
+        </div>
+      </header>
+
+      <div className="flex-1 min-h-0">
+        <FacilityViewer
+          facilityId={warehouse.id}
+          canvasWidth={Number(warehouse.floor_canvas_width)}
+          canvasHeight={Number(warehouse.floor_canvas_height)}
+          floorUnit={warehouse.floor_unit}
+          sections={sectionData}
+          elements={elementData}
+        />
+      </div>
+    </>
+  );
+}

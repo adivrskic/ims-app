@@ -636,27 +636,26 @@ table,
   background: var(--surface-2);
 }
 
-/* ═══ FIELD SHELL — float-label input ═══ */
 .field-shell {
   position: relative;
-  display: block;
-  background: rgba(255, 255, 255, 0.025);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  display: flex;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
   transition: border-color var(--dur-quick) var(--ease-out),
     background-color var(--dur-quick) var(--ease-out),
     box-shadow var(--dur-quick) var(--ease-out);
 }
 .field-shell:hover {
-  border-color: rgba(255, 255, 255, 0.16);
+  border-color: var(--border-hover);
 }
 .field-shell:focus-within {
   border-color: var(--accent-soft);
-  background: rgba(255, 255, 255, 0.035);
+  background: var(--surface-3);
   box-shadow: 0 0 0 4px rgba(212, 168, 83, 0.08);
 }
 .field-shell[data-error="true"] {
   border-color: rgba(239, 68, 68, 0.55);
-  background: rgba(239, 68, 68, 0.025);
+  background: var(--danger-dim);
 }
 .field-shell[data-error="true"]:focus-within {
   box-shadow: 0 0 0 4px rgba(239, 68, 68, 0.1);
@@ -704,6 +703,34 @@ table,
   letter-spacing: 1.2px;
   text-transform: uppercase;
   color: var(--danger);
+}
+*/ .field-shell[data-with-icon] {
+  display: flex;
+  align-items: center;
+}
+.field-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding-left: 14px;
+  color: var(--text-dim);
+  flex-shrink: 0;
+  pointer-events: none;
+  transition: color var(--dur-quick) var(--ease-out);
+}
+.field-shell[data-with-icon]:focus-within .field-icon {
+  color: var(--accent);
+}
+.field-shell[data-with-icon] .field-input {
+  flex: 1;
+  min-width: 0;
+  padding-left: 10px;
+}
+.field-shell[data-with-icon] .field-label {
+  /* Push the floating label past the icon. 14px (icon left padding) +
+     ~13px (icon glyph) + 10px (gap to text) = 37px. Round to 38 for a
+     touch of breathing room. */
+  left: 38px;
 }
 
 /* ═══ STATUS DOTS ═══ */

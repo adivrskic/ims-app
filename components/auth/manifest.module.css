@@ -1,0 +1,92 @@
+/*
+ * Manifest auth styles.
+ *
+ * Used only by the auth pages. The forms there sit directly on the
+ * underwater backdrop (no card), so each row is just a typographic
+ * line item with a hairline separator below.
+ *
+ * Focus indicator: when an input in a row is focused, the row's
+ * "01 —" number turns accent gold and the field label brightens.
+ * No outline ring, no input underline — just the number changing
+ * color, which is enough.
+ */
+
+.row {
+  padding: 16px 0;
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.rowBorder {
+  border-bottom: 0.5px solid var(--border-subtle);
+}
+
+.rowFull {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.number {
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 1.5px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-dim);
+  transition: color 200ms;
+  padding-top: 2px;
+}
+
+.row:focus-within .number {
+  color: var(--accent);
+}
+
+.content {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.labelRow {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.label {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  transition: color 200ms;
+}
+
+.row:focus-within .label {
+  color: var(--text-secondary);
+}
+
+.field {
+  width: 100%;
+  background: transparent;
+  border: 0;
+  outline: none;
+  padding: 0;
+  font-size: 14px;
+  font-family: var(--mono);
+  color: var(--text);
+}
+
+.field::placeholder {
+  color: rgba(255, 255, 255, 0.22);
+}
+
+/*
+ * Only widen letter-spacing on password fields when there's a value
+ * (otherwise the placeholder text gets weird spacing).
+ */
+.field[type="password"]:not(:placeholder-shown) {
+  letter-spacing: 4px;
+}

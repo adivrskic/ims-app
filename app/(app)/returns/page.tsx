@@ -4,6 +4,7 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { Badge } from "@/components/ui/Badge";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { RotateCcw } from "lucide-react";
+import { getActiveScope, scopeDescription } from "@/lib/facilityScope";
 
 export const metadata = { title: "Returns" };
 
@@ -95,6 +96,7 @@ export default async function ReturnsPage({
   const { disposition: rawDisp } = await searchParams;
   const activeFilter = FILTERS.find((f) => f.key === rawDisp) ?? FILTERS[0];
 
+  const scope = await getActiveScope();
   const supabase = await createClient();
 
   let query = supabase
@@ -104,6 +106,9 @@ export default async function ReturnsPage({
     )
     .order("created_at", { ascending: false });
 
+  if (scope.mode === "single") {
+    query = query.eq("warehouse_id", scope.id);
+  }
   if (activeFilter.disposition) {
     query = query.eq("disposition", activeFilter.disposition);
   }
@@ -111,9 +116,13 @@ export default async function ReturnsPage({
   const { data } = await query;
   const rows = (data ?? []) as ReturnRow[];
 
-  const { data: allReturns } = await supabase
-    .from("returns")
-    .select("disposition, reviewed_at");
+  // Disposition counts — also scoped so the chip badges reflect what
+  // the user actually sees in the listing.
+  let countsQuery = supabase.from("returns").select("disposition, reviewed_at");
+  if (scope.mode === "single") {
+    countsQuery = countsQuery.eq("warehouse_id", scope.id);
+  }
+  const { data: allReturns } = await countsQuery;
   const countMap = new Map<Disposition, number>();
   let pendingReview = 0;
   let total = 0;
@@ -131,7 +140,11 @@ export default async function ReturnsPage({
       <PageHeader
         eyebrow="Flow"
         title="Returns"
-        description="Inbound items from cancelled orders, install over-pulls, and damaged shipments. Each return is dispositioned for restock, write-off, or supplier RMA."
+        description={scopeDescription(scope, {
+          all: "Inbound items from cancelled orders, install over-pulls, and damaged shipments. Each return is dispositioned for restock, write-off, or supplier RMA.",
+          single: (name) =>
+            `Returns received at ${name} — restock, write-off, or supplier RMA.`,
+        })}
         meta={[
           { label: "Total", value: total },
           {
@@ -189,7 +202,9 @@ export default async function ReturnsPage({
         <EmptyState
           title={
             activeFilter.key === "all"
-              ? "No returns yet"
+              ? scope.mode === "single"
+                ? `No returns at ${scope.name}`
+                : "No returns yet"
               : `No ${activeFilter.label.toLowerCase()} returns`
           }
           description="Returns are logged from the mobile app at the receiving dock. Each gets a disposition and routes automatically — restock items land back in their last-known section, damaged items are written off, and RMA items queue for supplier pickup."
@@ -219,9 +234,8 @@ export default async function ReturnsPage({
                   <div className="flex-1 min-w-0 flex flex-col gap-4">
                     <div className="flex items-center gap-10 flex-wrap">
                       {product ? (
-                        <Link
-                          href={`/inventory/${product.id}`}
-                          className="text-text hover:text-[var(--accent)] transition-colors truncate"
+                        <span
+                          className="text-text truncate"
                           style={{
                             fontFamily: "var(--display)",
                             fontSize: 14,
@@ -229,47 +243,39 @@ export default async function ReturnsPage({
                           }}
                         >
                           {product.name}
-                        </Link>
+                        </span>
                       ) : (
-                        <span className="text-text-muted">Unknown product</span>
+                        <span className="text-text-dim mono-sm">
+                          [unknown product]
+                        </span>
                       )}
                       <Badge tone={cfg.tone} variant="filled">
                         {cfg.label}
                       </Badge>
                       {!reviewed && (
-                        <Badge tone="warning" variant="outline">
+                        <Badge tone="warning" variant="ghost">
                           Pending review
                         </Badge>
                       )}
                     </div>
-                    {product && (
-                      <code
-                        className="mono-sm text-text-muted"
-                        style={{ fontSize: 11 }}
-                      >
-                        {product.barcode}
-                      </code>
-                    )}
+                    <div className="flex items-center gap-14 flex-wrap mono-sm text-text-muted">
+                      {product && <span>{product.barcode}</span>}
+                      <span className="text-text-dim">{cfg.description}</span>
+                      {receiver && (
+                        <span>
+                          received by{" "}
+                          {receiver.full_name || receiver.email.split("@")[0]}
+                        </span>
+                      )}
+                      <span className="text-text-dim">
+                        {relTime(r.created_at)}
+                      </span>
+                    </div>
                     {r.reason && (
-                      <p
-                        className="mono-sm text-text-secondary mt-4"
-                        style={{ lineHeight: 1.55 }}
-                      >
+                      <p className="mono-sm text-text-secondary mt-2">
                         {r.reason}
                       </p>
                     )}
-                  </div>
-                  <div className="hidden md:flex flex-col items-end gap-2 shrink-0">
-                    <span className="label-text text-text-muted">
-                      {receiver
-                        ? `Received by ${
-                            receiver.full_name || receiver.email?.split("@")[0]
-                          }`
-                        : "—"}
-                    </span>
-                    <span className="mono-sm text-text-dim">
-                      {relTime(r.created_at)}
-                    </span>
                   </div>
                 </div>
               </li>

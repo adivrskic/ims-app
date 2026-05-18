@@ -22,26 +22,58 @@
   gap: 8px;
 }
 
+/*
+ * PRIMARY — strong, solid, inverted-from-bg button.
+ *
+ * Previously used hardcoded --white / --black which DON'T flip when
+ * [data-theme="light"] is applied (those tokens are raw color literals,
+ * not theme roles). In light mode the button rendered as a pure-white
+ * square on cream — effectively invisible.
+ *
+ * Now uses role tokens: --text (foreground for the current theme) as the
+ * background, and --bg (the page background) as the text color. That gives
+ *   dark mode:  near-white bg + near-black text
+ *   light mode: warm-ink bg + cream text
+ * which is what users expect from a primary action.
+ *
+ * Hover still goes gold; on gold we want dark text in BOTH themes
+ * (because gold is a mid-tone), so the hover text color is the hardcoded
+ * black — intentional.
+ */
 .primary {
-  background: var(--white);
-  color: var(--black);
+  background: var(--text);
+  color: var(--bg);
   border: 1px solid transparent;
 }
 .primary:hover {
   background: var(--accent);
+  color: var(--black);
   border-color: var(--accent);
 }
 
+/*
+ * GHOST — transparent button with bordered outline.
+ *
+ * Same problem: `color: var(--white)` in light mode = invisible text on
+ * cream. Now uses --text (foreground for the current theme) for both
+ * idle and hover states. Border uses --border instead of --gray-4 so
+ * it's visible on cream too.
+ */
 .ghost {
   background: transparent;
-  color: var(--white);
-  border: 1px solid var(--gray-4);
+  color: var(--text);
+  border: 1px solid var(--border);
 }
 .ghost:hover {
   border-color: var(--accent);
-  color: var(--white);
+  color: var(--text);
 }
 
+/*
+ * ACCENT — gold button. Gold is a mid-tone that works against both
+ * themes' backgrounds, and dark text on gold is the right contrast
+ * choice in BOTH modes. The hardcoded --black here is intentional.
+ */
 .accent {
   background: var(--accent);
   color: var(--black);
@@ -52,6 +84,11 @@
   border-color: var(--accent-bright);
 }
 
+/*
+ * DANGER — transparent button with red border + red text. --danger
+ * is already a theme-aware role token (red in dark, deeper red in light),
+ * so this just works in both modes.
+ */
 .danger {
   background: transparent;
   color: var(--danger);
@@ -67,14 +104,18 @@
   pointer-events: none;
 }
 
-.full { width: 100%; }
+.full {
+  width: 100%;
+}
 
 .sm {
   font-size: 11px;
   padding: 9px 20px;
   letter-spacing: 0.4px;
 }
-.sm .label { gap: 6px; }
+.sm .label {
+  gap: 6px;
+}
 
 .spinner {
   display: inline-block;
@@ -88,5 +129,7 @@
   flex-shrink: 0;
 }
 @keyframes cb-spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }

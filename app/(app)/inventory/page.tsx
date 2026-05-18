@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/CornerButton";
 import { RegisterProductButton } from "./RegisterProductButton";
 import { Boxes, Download, Search } from "lucide-react";
+import { getActiveScope, scopeDescription } from "@/lib/facilityScope";
 
 export const metadata = { title: "Inventory" };
 
@@ -54,20 +55,41 @@ export default async function InventoryPage({
   const sort = parseSort(rawSort);
   const order = parseOrder(rawOrder);
 
+  const scope = await getActiveScope();
   const supabase = await createClient();
+
+  // Products are org-scoped, not facility-scoped — the catalog itself
+  // doesn't change when you flip facilities. What changes is the
+  // location data we surface per product.
+  //
+  // We pre-fetch valid section IDs for the active facility (if scoped)
+  // and then strip non-matching locations out of each product's
+  // `locations` array after the main fetch. Cheap because section
+  // counts are tiny (10s) and the embedded locations are already in
+  // memory.
+  let validSectionIds: Set<string> | null = null;
+  if (scope.mode === "single") {
+    const { data: sec } = await supabase
+      .from("sections")
+      .select("id")
+      .eq("warehouse_id", scope.id);
+    validSectionIds = new Set((sec ?? []).map((s) => s.id));
+  }
 
   const { data: categories } = await supabase
     .from("categories")
     .select("id, name, sort_order")
     .order("sort_order", { ascending: true });
 
+  // Note: locations now includes `section_id` in the select so we can
+  // post-filter without re-querying.
   let query = supabase
     .from("products")
     .select(
       `
       id, name, barcode, internal_sku, manufacturer, reorder_point, updated_at,
       category:categories ( id, name ),
-      locations:locations ( quantity, bay, level, section:sections ( code, name ) )
+      locations:locations ( quantity, bay, level, section_id, section:sections ( code, name ) )
     `
     )
     .order(SORT_COLUMNS[sort], {
@@ -84,8 +106,30 @@ export default async function InventoryPage({
   }
   if (category) query = query.eq("category_id", category);
 
-  const { data: products } = await query;
-  const totalCount = products?.length ?? 0;
+  const { data: rawProducts } = await query;
+
+  // Strip non-facility locations when scoped. Products stay in the
+  // list even if they have 0 locations at the active facility — the
+  // catalog should always reflect what's registered, just with the
+  // facility-specific quantity (which can be 0).
+  type ProductRow = {
+    id: string;
+    locations: Array<{
+      section_id: string | null;
+      [k: string]: unknown;
+    }> | null;
+    [k: string]: unknown;
+  };
+  const products = ((rawProducts as ProductRow[] | null) ?? []).map((p) => {
+    if (!validSectionIds) return p;
+    return {
+      ...p,
+      locations: (p.locations ?? []).filter(
+        (l) => l.section_id && validSectionIds!.has(l.section_id)
+      ),
+    };
+  });
+  const totalCount = products.length;
 
   // Base params for sort URLs + CSV export — preserves filters
   const baseParams: Record<string, string> = {};
@@ -95,6 +139,9 @@ export default async function InventoryPage({
   const exportQuery = new URLSearchParams(baseParams);
   exportQuery.set("sort", sort);
   exportQuery.set("order", order);
+  // The export route hits the same query — when we want the export to
+  // respect facility scope too, pass the scope id through here:
+  if (scope.mode === "single") exportQuery.set("facility", scope.id);
   const exportHref = `/api/inventory/export?${exportQuery.toString()}`;
 
   return (
@@ -102,92 +149,76 @@ export default async function InventoryPage({
       <PageHeader
         eyebrow="Workspace · Inventory"
         title="Inventory"
-        description="Every SKU across every facility, with its current location, on-hand count, and recent activity."
+        description={scopeDescription(scope, {
+          all: "Every SKU across every facility, with its current location, on-hand count, and recent activity.",
+          single: (name) =>
+            `Every SKU in the catalog, with on-hand counts at ${name}.`,
+        })}
+        meta={[
+          { label: "Showing", value: totalCount },
+          ...(scope.mode === "single"
+            ? [{ label: "Facility", value: scope.name }]
+            : []),
+        ]}
         actions={
-          <>
+          <div className="flex items-center gap-10">
             <ButtonLink href={exportHref} variant="ghost" size="sm">
-              <Download size={12} strokeWidth={1.5} /> Export CSV
+              <Download size={11} strokeWidth={1.5} />
+              Export CSV
             </ButtonLink>
             <RegisterProductButton categories={categories ?? []} />
-          </>
+          </div>
         }
-        meta={[
-          { label: "Showing", value: `${totalCount} of ${totalCount}` },
-          { label: "Updated", value: "Just now", status: "live" },
-        ]}
       />
 
+      {/* Search form. Preserves category/sort/order via hidden inputs. */}
       <form
-        method="get"
         action="/inventory"
-        className="flex flex-wrap items-center gap-12 hairline bg-[var(--surface)] p-12"
+        method="get"
+        className="flex items-center gap-10"
       >
-        <label className="field-shell flex items-center gap-8 px-12 py-8 flex-1 min-w-[260px] max-w-[480px]">
+        <div className="relative flex-1 max-w-[420px]">
           <Search
-            size={13}
+            size={12}
             strokeWidth={1.5}
-            className="text-text-dim shrink-0"
+            className="absolute left-12 top-1/2 -translate-y-1/2 text-text-dim pointer-events-none"
+            aria-hidden
           />
           <input
-            className="field-input !p-0 !text-[12px] flex-1"
             name="q"
             defaultValue={q ?? ""}
-            placeholder="Search by name, barcode, or SKU…"
-            aria-label="Search inventory"
+            placeholder="Search by name, SKU, or barcode"
+            className="field-shell w-full pl-32 pr-12 py-8 mono-sm"
           />
-        </label>
-
-        <div className="flex items-center gap-8 flex-wrap">
-          <span className="label-text text-text-muted">Category</span>
-          <select
-            name="category"
-            defaultValue={category ?? ""}
-            className="hairline-subtle mono-sm text-text px-12 py-8 bg-[var(--surface-2)] cursor-pointer hover:border-[var(--border-hover)] transition-colors"
-            aria-label="Filter by category"
-          >
-            <option value="">All</option>
-            {(categories ?? []).map((c: { id: string; name: string }) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </select>
         </div>
-
-        {/* preserve sort across filter changes */}
+        {category && <input type="hidden" name="category" value={category} />}
         <input type="hidden" name="sort" value={sort} />
         <input type="hidden" name="order" value={order} />
-
-        <div className="flex items-center gap-8 ml-auto">
-          {(q || category) && (
-            <ButtonLink href="/inventory" variant="ghost" size="sm">
-              Clear
-            </ButtonLink>
-          )}
-          <Button type="submit" variant="primary" size="sm">
-            Apply
-          </Button>
-        </div>
+        <Button type="submit" variant="ghost" size="sm">
+          Search
+        </Button>
       </form>
 
-      {!products || products.length === 0 ? (
+      {totalCount === 0 ? (
         <EmptyState
           title={
-            q || category ? "Nothing matches those filters" : "No products yet"
-          }
-          description={
             q || category
-              ? "Try a different search term or category."
-              : "Register your first product from the mobile app or via API to start tracking inventory."
+              ? "No products match those filters"
+              : scope.mode === "single"
+              ? `No products at ${scope.name} yet`
+              : "No products yet"
           }
-          icon={<Boxes size={24} strokeWidth={1.5} />}
+          description="Register your first product to start tracking inventory across the floor."
+          icon={<Boxes size={20} strokeWidth={1.5} />}
         />
       ) : (
         <InventoryTable
-          products={products}
+          products={products as never}
+          categories={categories ?? []}
+          activeCategory={category}
+          activeQuery={q}
           sort={sort}
           order={order}
-          baseParams={baseParams}
         />
       )}
     </div>

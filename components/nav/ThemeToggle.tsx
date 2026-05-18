@@ -30,13 +30,12 @@ export function ThemeToggle() {
   };
 
   // Until we know the current theme, render a placeholder of the same size
-  // so the topnav doesn't jump during hydration
+  // so the sidebar doesn't jump during hydration
   if (!theme) {
     return (
       <span
         aria-hidden
-        className="hairline-subtle p-6 inline-flex items-center justify-center"
-        style={{ width: 26, height: 26 }}
+        className="hairline-subtle inline-flex items-center justify-center shrink-0 h-28 w-28"
       />
     );
   }
@@ -47,7 +46,7 @@ export function ThemeToggle() {
     <button
       type="button"
       onClick={toggle}
-      className="hairline-subtle p-6 hover:border-[var(--border-hover)] text-text-secondary hover:text-text transition-colors"
+      className="hairline-subtle hover:border-[var(--border-hover)] text-text-secondary hover:text-text transition-colors flex items-center justify-center shrink-0 h-28 w-28"
       aria-label={`Switch to ${isLight ? "dark" : "light"} theme`}
       title={`Switch to ${isLight ? "dark" : "light"} theme`}
     >

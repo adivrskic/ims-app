@@ -9,17 +9,23 @@ export const metadata = { title: "New purchase order" };
 export default async function NewPoPage() {
   const supabase = await createClient();
 
-  const [{ data: products }, { data: warehouses }] = await Promise.all([
-    supabase
-      .from("products")
-      .select("id, name, barcode")
-      .order("name", { ascending: true }),
-    supabase
-      .from("warehouses")
-      .select("id, name")
-      .eq("is_active", true)
-      .order("created_at", { ascending: true }),
-  ]);
+  const [{ data: products }, { data: warehouses }, { data: suppliers }] =
+    await Promise.all([
+      supabase
+        .from("products")
+        .select("id, name, barcode")
+        .order("name", { ascending: true }),
+      supabase
+        .from("warehouses")
+        .select("id, name")
+        .eq("is_active", true)
+        .order("created_at", { ascending: true }),
+      supabase
+        .from("suppliers")
+        .select("id, name, contact_email, contact_phone, payment_terms")
+        .eq("is_active", true)
+        .order("name", { ascending: true }),
+    ]);
 
   return (
     <div className="flex flex-col gap-32">
@@ -39,7 +45,11 @@ export default async function NewPoPage() {
         />
       </div>
 
-      <CreatePoForm products={products ?? []} warehouses={warehouses ?? []} />
+      <CreatePoForm
+        products={products ?? []}
+        warehouses={warehouses ?? []}
+        suppliers={suppliers ?? []}
+      />
     </div>
   );
 }

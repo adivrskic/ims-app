@@ -12,11 +12,17 @@ interface Category {
   name: string;
 }
 
-interface Props {
-  categories: Category[];
+interface Supplier {
+  id: string;
+  name: string;
 }
 
-export function RegisterProductButton({ categories }: Props) {
+interface Props {
+  categories: Category[];
+  suppliers: Supplier[];
+}
+
+export function RegisterProductButton({ categories, suppliers }: Props) {
   const [open, setOpen] = useState(false);
   const [state, formAction, pending] = useActionState(createProduct, undefined);
   const formRef = useRef<HTMLFormElement>(null);
@@ -73,7 +79,7 @@ export function RegisterProductButton({ categories }: Props) {
           onClick={() => setOpen(false)}
         >
           <div
-            className="w-full max-w-[560px] hairline bg-[var(--surface)] flex flex-col"
+            className="w-full max-w-[640px] hairline bg-[var(--surface)] flex flex-col"
             onClick={(e) => e.stopPropagation()}
           >
             <header className="px-20 py-14 hairline-b flex items-center justify-between">
@@ -104,82 +110,158 @@ export function RegisterProductButton({ categories }: Props) {
             <form
               ref={formRef}
               action={formAction}
-              className="p-20 flex flex-col gap-14"
+              className="p-20 flex flex-col gap-18"
             >
               <p className="mono-sm text-text-muted">
                 Once registered, this SKU can be located in any bay via the
                 mobile app or API.
               </p>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
+              {/* ── Identity ─────────────────────────────────────────── */}
+              <fieldset className="flex flex-col gap-12">
+                <legend className="label-text text-text-muted mb-2">
+                  Identity
+                </legend>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
+                  <Input
+                    label="Barcode"
+                    name="barcode"
+                    type="text"
+                    required
+                    autoComplete="off"
+                  />
+                  <Input
+                    label="Internal SKU"
+                    name="internal_sku"
+                    type="text"
+                    autoComplete="off"
+                  />
+                </div>
                 <Input
-                  label="Barcode"
-                  name="barcode"
+                  label="Name"
+                  name="name"
                   type="text"
                   required
                   autoComplete="off"
                 />
-                <Input
-                  label="Internal SKU"
-                  name="internal_sku"
-                  type="text"
-                  autoComplete="off"
-                />
-              </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
+                  <label className="field-shell block" data-filled="true">
+                    <span className="field-label">Category</span>
+                    <select
+                      name="category_id"
+                      defaultValue=""
+                      className="field-input cursor-pointer"
+                      aria-label="Category"
+                    >
+                      <option value="">Uncategorized</option>
+                      {categories.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <Input
+                    label="Manufacturer"
+                    name="manufacturer"
+                    type="text"
+                    autoComplete="off"
+                  />
+                </div>
+              </fieldset>
 
-              <Input
-                label="Name"
-                name="name"
-                type="text"
-                required
-                autoComplete="off"
-              />
+              {/* ── Physical ─────────────────────────────────────────── */}
+              <fieldset className="flex flex-col gap-12">
+                <legend className="label-text text-text-muted mb-2">
+                  Physical
+                </legend>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
+                  <Input
+                    label="Dimensions"
+                    name="dimensions"
+                    type="text"
+                    autoComplete="off"
+                  />
+                  <Input
+                    label="Weight"
+                    name="weight"
+                    type="text"
+                    autoComplete="off"
+                  />
+                </div>
+              </fieldset>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
-                <label className="field-shell block" data-filled="true">
-                  <span className="field-label">Category</span>
-                  <select
-                    name="category_id"
-                    defaultValue=""
-                    className="field-input cursor-pointer"
-                    aria-label="Category"
-                  >
-                    <option value="">Uncategorized</option>
-                    {categories.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.name}
+              {/* ── Replenishment + cost (NEW, P1) ───────────────────── */}
+              <fieldset className="flex flex-col gap-12">
+                <legend className="label-text text-text-muted mb-2">
+                  Replenishment &amp; cost
+                </legend>
+                <p className="mono-sm text-text-dim -mt-4">
+                  Powers inventory valuation, smarter reorder math, and the
+                  draft-PO flow. All optional, but more here = better signal.
+                </p>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-12">
+                  <Input
+                    label="Unit cost ($)"
+                    name="unit_cost"
+                    type="text"
+                    inputMode="decimal"
+                    autoComplete="off"
+                    placeholder="0.00"
+                  />
+                  <Input
+                    label="Reorder point"
+                    name="reorder_point"
+                    type="number"
+                    min={0}
+                    defaultValue="0"
+                  />
+                  <Input
+                    label="Safety stock"
+                    name="safety_stock"
+                    type="number"
+                    min={0}
+                    defaultValue="0"
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
+                  <Input
+                    label="Lead time (days)"
+                    name="lead_time_days"
+                    type="number"
+                    min={0}
+                    placeholder="e.g. 14"
+                  />
+                  <label className="field-shell block" data-filled="true">
+                    <span className="field-label">Preferred supplier</span>
+                    <select
+                      name="preferred_supplier_id"
+                      defaultValue=""
+                      className="field-input cursor-pointer"
+                      aria-label="Preferred supplier"
+                    >
+                      <option value="">
+                        {suppliers.length === 0
+                          ? "No suppliers yet"
+                          : "— Select —"}
                       </option>
-                    ))}
-                  </select>
-                </label>
-                <Input
-                  label="Manufacturer"
-                  name="manufacturer"
-                  type="text"
-                  autoComplete="off"
-                />
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-12">
-                <Input
-                  label="Dimensions"
-                  name="dimensions"
-                  type="text"
-                  autoComplete="off"
-                />
-                <Input
-                  label="Weight"
-                  name="weight"
-                  type="text"
-                  autoComplete="off"
-                />
-                <Input
-                  label="Reorder point"
-                  name="reorder_point"
-                  type="number"
-                  defaultValue="0"
-                />
-              </div>
+                      {suppliers.map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {s.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+                {suppliers.length === 0 && (
+                  <p className="mono-sm text-text-dim">
+                    Add suppliers under Settings → Suppliers to enable this
+                    picker.
+                  </p>
+                )}
+              </fieldset>
 
               <label className="field-shell block">
                 <span className="field-label">Notes</span>

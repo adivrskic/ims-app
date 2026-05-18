@@ -1,121 +1,173 @@
 "use server";
 
-import { createClient } from "@/lib/supabase/server";
-import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
+import { createClient } from "@/lib/supabase/server";
+import { headers } from "next/headers";
 
-type ActionState = { error?: string; success?: string } | undefined;
-
-function siteUrl(): string {
-  return process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
+/**
+ * Common return shape for auth server actions used with useActionState.
+ * Either `error` or `success` is set; never both.
+ */
+export interface ActionState {
+  error?: string;
+  success?: string;
 }
 
+/**
+ * Canonical useActionState signature: (prevState, formData) => ActionState.
+ *
+ * Critical to match this exactly when used with React 19's useActionState
+ * — the wrapper-function pattern (taking only formData) drops the FormData
+ * over the wire and fails with "Cannot read properties of undefined".
+ */
 export async function signInWithPassword(
-  _prev: ActionState,
+  _prev: ActionState | undefined,
   formData: FormData
 ): Promise<ActionState> {
   const email = String(formData.get("email") ?? "").trim();
   const password = String(formData.get("password") ?? "");
   const next = String(formData.get("next") ?? "/") || "/";
 
-  if (!email || !password) {
-    return { error: "Email and password are required." };
-  }
+  if (!email) return { error: "Email is required" };
+  if (!password) return { error: "Password is required" };
 
   const supabase = await createClient();
   const { error } = await supabase.auth.signInWithPassword({ email, password });
+  if (error) return { error: error.message };
 
-  if (error) {
-    return { error: error.message };
-  }
-
-  revalidatePath("/", "layout");
+  // Successful sign-in — redirect to wherever the user was headed.
+  // redirect() throws a special exception that Next.js catches, so this
+  // doesn't return — the function exits here.
   redirect(next);
 }
 
 export async function signUpWithPassword(
-  _prev: ActionState,
+  _prev: ActionState | undefined,
   formData: FormData
 ): Promise<ActionState> {
   const email = String(formData.get("email") ?? "").trim();
   const password = String(formData.get("password") ?? "");
   const fullName = String(formData.get("full_name") ?? "").trim();
 
-  if (!email || !password) {
-    return { error: "Email and password are required." };
-  }
+  if (!email) return { error: "Email is required" };
+  if (!password) return { error: "Password is required" };
   if (password.length < 8) {
-    return { error: "Password must be at least 8 characters." };
+    return { error: "Password must be at least 8 characters" };
   }
 
   const supabase = await createClient();
-  const { error } = await supabase.auth.signUp({
+  const { data, error } = await supabase.auth.signUp({
     email,
     password,
     options: {
-      emailRedirectTo: `${siteUrl()}/auth/callback`,
       data: { full_name: fullName || null },
     },
   });
+  if (error) return { error: error.message };
 
+  // If email confirmation is required, the user can't sign in yet.
+  // Return a success message instructing them to check their inbox.
+  if (data.user && !data.session) {
+    return {
+      success: `Check ${email} — we sent a confirmation link to verify your account.`,
+    };
+  }
+
+  // If sessions are auto-created (email confirmation disabled in
+  // Supabase settings), the trigger / signup hook should have created
+  // a default org. Redirect to overview.
+  redirect("/");
+}
+
+export async function sendPasswordReset(
+  _prev: ActionState | undefined,
+  formData: FormData
+): Promise<ActionState> {
+  const email = String(formData.get("email") ?? "").trim();
+  if (!email) return { error: "Email is required" };
+
+  const supabase = await createClient();
+  const h = await headers();
+  const origin = h.get("origin") ?? "";
+
+  const { error } = await supabase.auth.resetPasswordForEmail(email, {
+    redirectTo: `${origin}/auth/callback?next=/settings/security`,
+  });
+
+  // For privacy, always return the same success message regardless of
+  // whether the email exists. Don't leak whether an account is registered.
   if (error) {
-    return { error: error.message };
+    // Log the real error for diagnostics; don't surface to user.
+    console.error("sendPasswordReset:", error);
   }
 
   return {
-    success:
-      "Check your inbox for a confirmation link. Once confirmed, you can sign in.",
+    success: `If ${email} is registered, we've sent a reset link.`,
   };
 }
 
 export async function sendMagicLink(
-  _prev: ActionState,
+  _prev: ActionState | undefined,
   formData: FormData
 ): Promise<ActionState> {
   const email = String(formData.get("email") ?? "").trim();
-  if (!email) return { error: "Email is required." };
+  const next = String(formData.get("next") ?? "/") || "/";
+  if (!email) return { error: "Email is required" };
 
   const supabase = await createClient();
+  const h = await headers();
+  const origin = h.get("origin") ?? "";
+
   const { error } = await supabase.auth.signInWithOtp({
     email,
-    options: { emailRedirectTo: `${siteUrl()}/auth/callback` },
-  });
-
-  if (error) return { error: error.message };
-  return { success: "We sent you a sign-in link. Check your email." };
-}
-
-export async function sendPasswordReset(
-  _prev: ActionState,
-  formData: FormData
-): Promise<ActionState> {
-  const email = String(formData.get("email") ?? "").trim();
-  if (!email) return { error: "Email is required." };
-
-  const supabase = await createClient();
-  const { error } = await supabase.auth.resetPasswordForEmail(email, {
-    redirectTo: `${siteUrl()}/auth/callback?type=recovery`,
-  });
-
-  if (error) return { error: error.message };
-  return { success: "If an account exists for that email, a reset link is on its way." };
-}
-
-export async function signInWithGoogle(): Promise<void> {
-  const supabase = await createClient();
-  const { data, error } = await supabase.auth.signInWithOAuth({
-    provider: "google",
     options: {
-      redirectTo: `${siteUrl()}/auth/callback`,
+      emailRedirectTo: `${origin}/auth/callback?next=${encodeURIComponent(
+        next
+      )}`,
     },
   });
 
   if (error) {
-    redirect(`/login?error=${encodeURIComponent(error.message)}`);
+    console.error("sendMagicLink:", error);
   }
-  if (data.url) redirect(data.url);
+
+  return {
+    success: `Check ${email} for your sign-in link.`,
+  };
 }
 
+/**
+ * OAuth sign-in via Google. Used as a plain form action (not via
+ * useActionState) since it redirects out to Google instead of returning
+ * state. Form signature: (formData: FormData) => Promise<void>.
+ */
+export async function signInWithGoogle(formData: FormData): Promise<void> {
+  const next = String(formData.get("next") ?? "/") || "/";
+  const supabase = await createClient();
+  const h = await headers();
+  const origin = h.get("origin") ?? "";
+
+  const { data, error } = await supabase.auth.signInWithOAuth({
+    provider: "google",
+    options: {
+      redirectTo: `${origin}/auth/callback?next=${encodeURIComponent(next)}`,
+    },
+  });
+
+  if (error) {
+    // OAuth init failed — bounce back to login with the error in URL
+    redirect(`/login?error=${encodeURIComponent(error.message)}`);
+  }
+  if (data.url) {
+    redirect(data.url);
+  }
+}
+
+/**
+ * Sign out — clears the Supabase session cookie + redirects to /login.
+ * Used as plain form action from the user menu.
+ */
 export async function signOut(): Promise<void> {
   const supabase = await createClient();
   await supabase.auth.signOut();

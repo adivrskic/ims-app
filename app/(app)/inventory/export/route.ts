@@ -1,34 +1,21 @@
-import { NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { type NextRequest } from "next/server";
 
-const SORT_COLUMNS: Record<string, string> = {
-  name: "name",
-  updated: "updated_at",
-  reorder: "reorder_point",
-  manufacturer: "manufacturer",
-};
+/*
+ * Inventory CSV export.
+ *
+ * Honors facility scope passed in via `?facility=<id>`. The inventory
+ * page sets this query param when scope is "single" so the downloaded
+ * CSV mirrors what the user sees on screen — on-hand counts narrowed
+ * to a single facility's locations.
+ *
+ * Without a `?facility=`, exports the workspace-wide view (every
+ * location across every facility).
+ */
 
-interface Location {
-  quantity: number | null;
-  section: { code: string | null } | { code: string | null }[] | null;
-}
-
-interface Product {
-  name: string;
-  barcode: string;
-  internal_sku: string | null;
-  manufacturer: string | null;
-  reorder_point: number | null;
-  updated_at: string | null;
-  category: { name: string } | { name: string }[] | null;
-  locations: Location[] | null;
-}
-
-function csvCell(v: string | number | null | undefined): string {
-  if (v === null || v === undefined) return "";
-  const s = String(v);
-  // RFC 4180: wrap in quotes if contains comma, quote, newline, or carriage return
-  if (/[",\n\r]/.test(s)) {
+function csvCell(v: unknown): string {
+  const s = v == null ? "" : String(v);
+  if (s.includes(",") || s.includes('"') || s.includes("\n")) {
     return `"${s.replace(/"/g, '""')}"`;
   }
   return s;
@@ -36,33 +23,46 @@ function csvCell(v: string | number | null | undefined): string {
 
 export async function GET(req: NextRequest) {
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) {
-    return new Response("Unauthorized", { status: 401 });
+  const url = new URL(req.url);
+  const q = url.searchParams.get("q");
+  const category = url.searchParams.get("category");
+  const sort = url.searchParams.get("sort") ?? "updated";
+  const order = url.searchParams.get("order") ?? "desc";
+  const facilityId = url.searchParams.get("facility");
+
+  /*
+   * If a facility scope is passed, resolve its section IDs once.
+   * Falls back to workspace-wide if `facility=all` or absent.
+   */
+  let validSectionIds: Set<string> | null = null;
+  if (facilityId && facilityId !== "all") {
+    const { data: sec } = await supabase
+      .from("sections")
+      .select("id")
+      .eq("warehouse_id", facilityId);
+    validSectionIds = new Set((sec ?? []).map((s) => s.id));
   }
 
-  const params = req.nextUrl.searchParams;
-  const q = params.get("q");
-  const category = params.get("category");
-  const rawSort = params.get("sort") ?? "updated";
-  const rawOrder = params.get("order") ?? "desc";
-
-  const sortCol = SORT_COLUMNS[rawSort] ?? "updated_at";
-  const ascending = rawOrder === "asc";
+  const SORT_COLUMNS: Record<string, string> = {
+    name: "name",
+    updated: "updated_at",
+    reorder: "reorder_point",
+    manufacturer: "manufacturer",
+  };
 
   let query = supabase
     .from("products")
     .select(
       `
-      name, barcode, internal_sku, manufacturer, reorder_point, updated_at,
-      category:categories ( name ),
-      locations:locations ( quantity, section:sections ( code ) )
+      id, name, barcode, internal_sku, manufacturer, reorder_point, updated_at,
+      category:categories ( id, name ),
+      locations:locations ( quantity, bay, level, section_id, section:sections ( code, name ) )
     `
     )
-    .order(sortCol, { ascending, nullsFirst: false })
-    .limit(5000);
+    .order(SORT_COLUMNS[sort] ?? "updated_at", {
+      ascending: order === "asc",
+      nullsFirst: false,
+    });
 
   if (q && q.trim().length > 0) {
     const term = `%${q.trim()}%`;
@@ -72,30 +72,56 @@ export async function GET(req: NextRequest) {
   }
   if (category) query = query.eq("category_id", category);
 
-  const { data: products, error } = await query;
-  if (error) {
-    return new Response(`Export failed: ${error.message}`, { status: 500 });
-  }
+  const { data: products } = await query;
 
-  const rows = (products ?? []) as Product[];
+  type ProductRow = {
+    id: string;
+    name: string;
+    barcode: string;
+    internal_sku: string | null;
+    manufacturer: string | null;
+    reorder_point: number | null;
+    updated_at: string | null;
+    category: { name: string } | { name: string }[] | null;
+    locations: Array<{
+      quantity: number | null;
+      bay: number | null;
+      level: number | null;
+      section_id: string | null;
+      section:
+        | { code: string | null; name: string | null }
+        | { code: string | null; name: string | null }[]
+        | null;
+    }> | null;
+  };
 
-  const header = [
-    "SKU",
-    "Name",
-    "Barcode",
-    "Category",
-    "Manufacturer",
-    "Reorder Point",
-    "On Hand",
-    "Primary Section",
-    "Last Updated",
-  ];
+  const lines: string[] = [];
+  lines.push(
+    [
+      "SKU",
+      "Name",
+      "Barcode",
+      "Category",
+      "Manufacturer",
+      "Reorder point",
+      "On hand",
+      "Section",
+      "Updated",
+    ].join(",")
+  );
 
-  const lines = [header.map(csvCell).join(",")];
-
-  for (const p of rows) {
+  for (const p of (products as ProductRow[] | null) ?? []) {
     const category = Array.isArray(p.category) ? p.category[0] : p.category;
-    const locs = p.locations ?? [];
+    const allLocs = p.locations ?? [];
+
+    // Apply scope filter — products stay (catalog view) but locations
+    // narrow to only the active facility's sections.
+    const locs = validSectionIds
+      ? allLocs.filter(
+          (l) => l.section_id && validSectionIds!.has(l.section_id)
+        )
+      : allLocs;
+
     const onHand = locs.reduce((sum, l) => sum + (l.quantity ?? 0), 0);
     const firstLoc = locs[0];
     const section = firstLoc
@@ -122,11 +148,29 @@ export async function GET(req: NextRequest) {
   const csv = lines.join("\r\n");
   const today = new Date().toISOString().slice(0, 10);
 
+  // Embed facility scope in the filename so a user with multiple
+  // exports on disk can tell them apart at a glance.
+  let suffix = "";
+  if (facilityId && facilityId !== "all") {
+    const { data: wh } = await supabase
+      .from("warehouses")
+      .select("name")
+      .eq("id", facilityId)
+      .maybeSingle();
+    if (wh?.name) {
+      const slug = wh.name
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/(^-|-$)/g, "");
+      suffix = `-${slug}`;
+    }
+  }
+
   return new Response(csv, {
     status: 200,
     headers: {
       "Content-Type": "text/csv; charset=utf-8",
-      "Content-Disposition": `attachment; filename="nimbus-inventory-${today}.csv"`,
+      "Content-Disposition": `attachment; filename="nimbus-inventory${suffix}-${today}.csv"`,
       "Cache-Control": "no-store",
     },
   });

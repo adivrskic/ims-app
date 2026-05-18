@@ -7,6 +7,7 @@ import {
   Activity,
   Boxes,
   BarChart3,
+  Layers,
   Settings,
   Users,
   KeyRound,
@@ -58,6 +59,14 @@ const ACTIONS: Action[] = [
     description: "Velocity, distribution, action mix",
     icon: BarChart3,
     href: "/analytics",
+  },
+  {
+    id: "cycle-counts",
+    group: "Navigate",
+    label: "Cycle counts",
+    description: "Verify on-hand vs system, surface variance",
+    icon: Layers,
+    href: "/cycle-counts",
   },
   {
     id: "orders",

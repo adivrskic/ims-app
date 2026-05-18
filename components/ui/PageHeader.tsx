@@ -1,4 +1,8 @@
+"use client";
+
+import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
+import styles from "./PageHeader.module.css";
 
 interface MetaItem {
   label: string;
@@ -12,8 +16,34 @@ interface Props {
   description?: string;
   actions?: ReactNode;
   meta?: MetaItem[];
+  /**
+   * Accepted for parity with existing callers that pass these (e.g. the
+   * analytics page passes `accent="analytics"`). They have no effect on the
+   * rendered output.
+   */
+  accent?: string;
+  numeral?: string;
 }
 
+/**
+ * Sticky page header that compacts once it pins to the viewport top.
+ *
+ * Detection: passive scroll listener + rAF throttle reads the header's
+ * getBoundingClientRect().top each frame. When the sticky element is in
+ * normal flow above the viewport top, sticky pins it and rect.top reads 0;
+ * when scrolled away from the top, rect.top > 0. Simple, robust, and
+ * doesn't depend on sentinel/IntersectionObserver behavior inside a sticky
+ * positioning context (which has timing quirks across browsers).
+ *
+ * Shrink behavior (stuck state):
+ *   - eyebrow + description collapse out (max-height + opacity)
+ *   - title shrinks 24 → 18 and truncates
+ *   - meta + actions STAY visible (per the design — these are useful at
+ *     any scroll depth)
+ *   - padding-top expands so the title has breathing room from the top edge
+ *   - bottom border darkens (--border-subtle → --border) for stronger
+ *     separation from the content that scrolls underneath
+ */
 export function PageHeader({
   eyebrow,
   title,
@@ -21,47 +51,67 @@ export function PageHeader({
   actions,
   meta,
 }: Props) {
+  const [stuck, setStuck] = useState(false);
+  const headerRef = useRef<HTMLElement>(null);
+
+  useEffect(() => {
+    const el = headerRef.current;
+    if (!el) return;
+
+    let raf = 0;
+    const check = () => {
+      raf = 0;
+      // rect.top is 0 (or negative due to subpixel rounding) when the
+      // sticky element has pinned to viewport top. Anything > 0 means we
+      // haven't scrolled past it yet.
+      const rect = el.getBoundingClientRect();
+      setStuck(rect.top <= 0);
+    };
+
+    const onScroll = () => {
+      // Coalesce scroll events to once per animation frame.
+      if (raf) return;
+      raf = requestAnimationFrame(check);
+    };
+
+    window.addEventListener("scroll", onScroll, { passive: true });
+    check(); // initial state
+
+    return () => {
+      window.removeEventListener("scroll", onScroll);
+      if (raf) cancelAnimationFrame(raf);
+    };
+  }, []);
+
   const hasRight = (meta && meta.length > 0) || actions;
+
   return (
-    <header className="flex flex-wrap items-end justify-between gap-x-24 gap-y-12 pb-16 hairline-b">
-      <div className="min-w-0 flex-1">
-        {eyebrow && <p className="label-text mb-6">{eyebrow}</p>}
-        <h1
-          className="text-text"
-          style={{
-            fontFamily: "var(--display)",
-            fontSize: 24,
-            fontWeight: 600,
-            letterSpacing: "-0.3px",
-            lineHeight: 1.15,
-          }}
-        >
-          {title}
-        </h1>
-        {description && (
-          <p className="mono-sm text-text-muted mt-6 max-w-[560px]">
-            {description}
-          </p>
+    <header ref={headerRef} className={styles.header} data-stuck={stuck}>
+      <div className={styles.row}>
+        <div className={styles.titleArea}>
+          {eyebrow && <p className={styles.eyebrow}>{eyebrow}</p>}
+          <h1 className={styles.title}>{title}</h1>
+          {description && <p className={styles.description}>{description}</p>}
+        </div>
+        {hasRight && (
+          <div className={styles.rightCluster}>
+            {meta && meta.length > 0 && (
+              <dl className={styles.meta}>
+                {meta.map((m, i) => (
+                  <div key={i} className={styles.metaItem}>
+                    {m.status && (
+                      <span className={`dot dot-${m.status}`} aria-hidden />
+                    )}
+                    <dt className={styles.metaLabel}>{m.label}</dt>
+                    <dd className={styles.metaValue}>{m.value}</dd>
+                  </div>
+                ))}
+              </dl>
+            )}
+            {actions && <div className={styles.actions}>{actions}</div>}
+          </div>
         )}
       </div>
-      {hasRight && (
-        <div className="flex items-center gap-x-20 gap-y-8 flex-wrap">
-          {meta && meta.length > 0 && (
-            <dl className="flex items-center gap-x-16 gap-y-4 flex-wrap">
-              {meta.map((m, i) => (
-                <div key={i} className="flex items-center gap-6">
-                  {m.status && (
-                    <span className={`dot dot-${m.status}`} aria-hidden />
-                  )}
-                  <dt className="label-text">{m.label}</dt>
-                  <dd className="mono-sm text-text tnum">{m.value}</dd>
-                </div>
-              ))}
-            </dl>
-          )}
-          {actions && <div className="flex items-center gap-8">{actions}</div>}
-        </div>
-      )}
     </header>
   );
 }

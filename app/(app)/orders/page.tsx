@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/Badge";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { CornerButton, CornerLink } from "@/components/ui/CornerButton";
 import { ChevronRight, ClipboardList, Plus } from "lucide-react";
+import { getActiveScope, scopeDescription } from "@/lib/facilityScope";
 
 export const metadata = { title: "Orders" };
 
@@ -115,6 +116,10 @@ export default async function OrdersPage({
   const { status: rawStatus } = await searchParams;
   const activeFilter = FILTERS.find((f) => f.key === rawStatus) ?? FILTERS[0];
 
+  // Resolve the active facility scope once. Used for both the listing
+  // query (.eq below) and the status-count query so the chip badges
+  // reflect what's actually visible.
+  const scope = await getActiveScope();
   const supabase = await createClient();
 
   let query = supabase
@@ -124,15 +129,23 @@ export default async function OrdersPage({
     )
     .order("created_at", { ascending: false });
 
+  if (scope.mode === "single") {
+    query = query.eq("warehouse_id", scope.id);
+  }
   if (activeFilter.statuses) {
     query = query.in("status", activeFilter.statuses);
   }
 
-  const { data, count } = await query;
+  const { data } = await query;
   const orders = (data ?? []) as OrderRow[];
 
-  // Counts per chip for the badges (one extra fetch for the totals)
-  const { data: statusCounts } = await supabase.from("orders").select("status");
+  // Status counts for the chip badges — also scoped, so the numbers
+  // match what the filter would actually show.
+  let countsQuery = supabase.from("orders").select("status");
+  if (scope.mode === "single") {
+    countsQuery = countsQuery.eq("warehouse_id", scope.id);
+  }
+  const { data: statusCounts } = await countsQuery;
   const countMap = new Map<string, number>();
   let total = 0;
   for (const r of (statusCounts ?? []) as Array<{ status: OrderStatus }>) {
@@ -145,7 +158,11 @@ export default async function OrdersPage({
       <PageHeader
         eyebrow="Flow"
         title="Orders"
-        description="Pick lists, deliveries, and customer pickups across all facilities."
+        description={scopeDescription(scope, {
+          all: "Pick lists, deliveries, and customer pickups across all facilities.",
+          single: (name) =>
+            `Pick lists, deliveries, and customer pickups at ${name}.`,
+        })}
         meta={[
           { label: "Total", value: total },
           {
@@ -213,7 +230,9 @@ export default async function OrdersPage({
         <EmptyState
           title={
             activeFilter.key === "all"
-              ? "No orders yet"
+              ? scope.mode === "single"
+                ? `No orders at ${scope.name}`
+                : "No orders yet"
               : `No ${activeFilter.label.toLowerCase()} orders`
           }
           description="Orders flow in from the mobile pick app, Shopify, and direct CSV imports. They'll appear here ranked by delivery date."
@@ -270,7 +289,10 @@ export default async function OrdersPage({
                         </Link>
                       </Td>
                       <Td className="text-right">
-                        <span className="mono-body text-text tnum">
+                        <span
+                          className="tnum text-text-secondary"
+                          style={{ fontFamily: "var(--mono)", fontSize: 12 }}
+                        >
                           {itemCount}
                         </span>
                       </Td>
@@ -290,13 +312,11 @@ export default async function OrdersPage({
                         </span>
                       </Td>
                       <Td>
-                        <Link
-                          href={`/orders/${o.id}`}
-                          className="block text-text-dim group-hover:text-[var(--accent)] transition-colors"
-                          aria-label={`Open order ${o.order_number ?? ""}`}
-                        >
-                          <ChevronRight size={12} strokeWidth={1.5} />
-                        </Link>
+                        <ChevronRight
+                          size={12}
+                          strokeWidth={1.5}
+                          className="text-text-dim group-hover:text-text-muted transition-colors"
+                        />
                       </Td>
                     </tr>
                   );
@@ -314,14 +334,11 @@ function Th({
   children,
   className = "",
 }: {
-  children: React.ReactNode;
+  children?: React.ReactNode;
   className?: string;
 }) {
   return (
-    <th
-      className={`text-left px-16 py-10 label-text text-text-muted ${className}`}
-      scope="col"
-    >
+    <th className={`label-text text-left px-14 py-12 font-normal ${className}`}>
       {children}
     </th>
   );
@@ -331,8 +348,10 @@ function Td({
   children,
   className = "",
 }: {
-  children: React.ReactNode;
+  children?: React.ReactNode;
   className?: string;
 }) {
-  return <td className={`px-16 py-12 ${className}`}>{children}</td>;
+  return (
+    <td className={`px-14 py-14 align-middle ${className}`}>{children}</td>
+  );
 }

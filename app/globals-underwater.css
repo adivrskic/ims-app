@@ -1,0 +1,85 @@
+/* ============================================================
+ * Dark theme — underwater palette
+ *
+ * Merge these into your existing globals.css. Replaces the current
+ * dark-mode token values; the light-mode override block
+ * ([data-theme="light"]) stays untouched.
+ *
+ * The body background is a muted version of the auth atmosphere —
+ * same color stops, no rays, no halo. Auth pages keep their full
+ * <UnderwaterAtmosphere> overlay on top, so they're unaffected;
+ * app pages get the ambient deep-water field underneath all surfaces.
+ * ============================================================ */
+
+:root {
+  /* Backgrounds — deepest blue at the floor, lighter toward the top
+     of any single surface. The 4 stops below match the
+     UnderwaterAtmosphere depth gradient exactly. */
+  --bg: #061124;
+
+  /* Surfaces — sit slightly lighter than the body bg so cards
+     and panels read as elevated. */
+  --surface: #0c1f3c;
+  --surface-2: #142a4d;
+
+  /* Borders — blue-tinted whites at low alpha. Replace the
+     neutral white/black borders to keep harmony with the bg. */
+  --border-subtle: rgba(140, 175, 220, 0.08);
+  --border-default: rgba(140, 175, 220, 0.16);
+  --border-hover: rgba(160, 195, 240, 0.32);
+
+  /* Text — slight cool tint, still high contrast on the dark bg */
+  --text: #e6ecf5;
+  --text-secondary: #a8b8cc;
+  --text-muted: #7388a8;
+  --text-dim: #4d6585;
+
+  /* Accent (gold) reads warm against the cool bg — keep as-is,
+     it'll pop more against the new palette. If you find it
+     clashing, the muted variant below is half a step cooler. */
+  --accent: #d4a949;
+  --accent-dim: rgba(212, 169, 73, 0.12);
+
+  /* Status colors — adjust dim variants for the new bg.
+     The base colors stay but the *-dim alphas read different
+     against #061124 than against a warmer dark. */
+  --success: #4ade80;
+  --success-dim: rgba(74, 222, 128, 0.12);
+
+  --warning: #f5b545;
+  --warning-dim: rgba(245, 181, 69, 0.14);
+
+  --danger: #ef4f5e;
+  --danger-dim: rgba(239, 79, 94, 0.13);
+
+  --info: #5ba6e6;
+  --info-dim: rgba(91, 166, 230, 0.13);
+}
+
+/* Body background — muted underwater gradient, no rays.
+   Fixed attachment so it doesn't scroll; min-height ensures
+   short pages still show the full depth. */
+body {
+  background:
+    /* Subtle radial highlight at top — suggests the light source
+       without committing to the full atmosphere */ radial-gradient(
+      ellipse 80% 60% at 50% -10%,
+      rgba(122, 168, 204, 0.06) 0%,
+      transparent 60%
+    ),
+    linear-gradient(180deg, #142d4d 0%, #061124 35%, #020711 70%, #01040b 100%);
+  background-attachment: fixed;
+  background-repeat: no-repeat;
+  min-height: 100vh;
+  color: var(--text);
+}
+
+/* If you have an existing dark body bg in globals.css that sets
+   a different color, this block overrides it. If the rule lives
+   in a more specific selector (e.g. `html.dark body`), copy the
+   `background:` value above into that rule instead.
+
+   Auth pages: the (auth) layout already renders
+   <UnderwaterAtmosphere /> as absolute-positioned overlay,
+   which paints over the body bg — they're visually unchanged
+   from the standalone atmosphere version. */

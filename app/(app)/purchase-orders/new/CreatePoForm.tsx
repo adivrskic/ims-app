@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState, useMemo, useState } from "react";
+import Link from "next/link";
 import { Plus, Trash2 } from "lucide-react";
 import { Input } from "@/components/ui/Input";
 import { CornerButton, CornerLink } from "@/components/ui/CornerButton";
@@ -17,9 +18,18 @@ interface Warehouse {
   name: string;
 }
 
+interface Supplier {
+  id: string;
+  name: string;
+  contact_email: string | null;
+  contact_phone: string | null;
+  payment_terms: string | null;
+}
+
 interface Props {
   products: Product[];
   warehouses: Warehouse[];
+  suppliers: Supplier[];
 }
 
 interface LineItem {
@@ -32,10 +42,11 @@ function newId(): string {
   return Math.random().toString(36).slice(2, 10);
 }
 
-export function CreatePoForm({ products, warehouses }: Props) {
+export function CreatePoForm({ products, warehouses, suppliers }: Props) {
   const [items, setItems] = useState<LineItem[]>([
     { uid: newId(), product_id: "", quantity: 1 },
   ]);
+  const [supplierId, setSupplierId] = useState<string>(suppliers[0]?.id ?? "");
   const [state, formAction, pending] = useActionState(
     createPurchaseOrder,
     undefined
@@ -74,42 +85,100 @@ export function CreatePoForm({ products, warehouses }: Props) {
     (i) => i.product_id && i.quantity > 0
   ).length;
 
+  const selectedSupplier = suppliers.find((s) => s.id === supplierId) ?? null;
+
+  // No suppliers exist yet — show a guided empty state instead of the form.
+  if (suppliers.length === 0) {
+    return (
+      <div className="hairline bg-[var(--surface)] p-32 flex flex-col items-center text-center gap-14">
+        <h2
+          className="text-text"
+          style={{
+            fontFamily: "var(--display)",
+            fontSize: 18,
+            fontWeight: 600,
+          }}
+        >
+          Add a supplier first
+        </h2>
+        <p className="mono-sm text-text-muted max-w-[440px]">
+          Purchase orders are placed against suppliers. Create your first
+          supplier under Settings → Suppliers, then come back here to draft a
+          PO.
+        </p>
+        <CornerLink href="/settings/suppliers" variant="primary" size="sm">
+          Go to Suppliers →
+        </CornerLink>
+      </div>
+    );
+  }
+
   return (
     <form action={formAction} className="flex flex-col gap-32">
       <input type="hidden" name="items" value={itemsJson} />
 
       {/* Supplier */}
       <section className="hairline bg-[var(--surface)] p-20 flex flex-col gap-14">
-        <header>
-          <h2
-            className="text-text"
-            style={{
-              fontFamily: "var(--display)",
-              fontSize: 15,
-              fontWeight: 600,
-            }}
+        <header className="flex items-start justify-between gap-12">
+          <div>
+            <h2
+              className="text-text"
+              style={{
+                fontFamily: "var(--display)",
+                fontSize: 15,
+                fontWeight: 600,
+              }}
+            >
+              Supplier
+            </h2>
+            <p className="mono-sm text-text-muted mt-4">
+              Pick from your supplier directory. Contact info auto-populates on
+              the printed PO.
+            </p>
+          </div>
+          <Link
+            href="/settings/suppliers"
+            className="mono-sm text-text-muted hover:text-[var(--accent)] transition-colors whitespace-nowrap"
           >
-            Supplier
-          </h2>
-          <p className="mono-sm text-text-muted mt-4">
-            Where this order is being placed. Contact details appear on the
-            printed PO.
-          </p>
+            Manage →
+          </Link>
         </header>
 
-        <Input
-          label="Supplier name"
-          name="supplier_name"
-          type="text"
-          required
-          placeholder="e.g. Mohawk Flooring Wholesale"
-        />
-        <Input
-          label="Contact (email · phone)"
-          name="supplier_contact"
-          type="text"
-          placeholder="orders@supplier.com · (555) 000-0000"
-        />
+        <label className="field-shell block" data-filled="true">
+          <span className="field-label">Supplier</span>
+          <select
+            name="supplier_id"
+            value={supplierId}
+            onChange={(e) => setSupplierId(e.target.value)}
+            required
+            className="field-input cursor-pointer"
+            aria-label="Supplier"
+          >
+            {suppliers.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.name}
+                {s.payment_terms ? ` · ${s.payment_terms}` : ""}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        {selectedSupplier && (
+          <div className="hairline-subtle bg-[var(--surface-2)] px-14 py-10 grid grid-cols-1 md:grid-cols-2 gap-8">
+            <div>
+              <p className="label-text text-text-muted">Email</p>
+              <p className="mono-sm text-text-secondary">
+                {selectedSupplier.contact_email ?? "—"}
+              </p>
+            </div>
+            <div>
+              <p className="label-text text-text-muted">Phone</p>
+              <p className="mono-sm text-text-secondary">
+                {selectedSupplier.contact_phone ?? "—"}
+              </p>
+            </div>
+          </div>
+        )}
       </section>
 
       {/* Destination + schedule */}
@@ -247,12 +316,12 @@ export function CreatePoForm({ products, warehouses }: Props) {
       {/* Notes */}
       <section className="hairline bg-[var(--surface)] p-20">
         <label className="field-shell block">
-          <span className="field-label">Internal notes</span>
+          <span className="field-label">Notes (optional)</span>
           <textarea
             name="notes"
             rows={3}
             className="field-input resize-none"
-            placeholder="Delivery instructions, terms, payment notes…"
+            placeholder="Delivery instructions, ship-to contact, payment terms overrides…"
           />
         </label>
       </section>
@@ -260,13 +329,13 @@ export function CreatePoForm({ products, warehouses }: Props) {
       {state?.error && (
         <p
           role="alert"
-          className="hairline-subtle border-[rgba(239,68,68,0.45)] bg-[var(--danger-dim)] px-12 py-10 mono-sm text-[var(--danger)]"
+          className="hairline-subtle border-[rgba(239,68,68,0.45)] bg-[var(--danger-dim)] px-16 py-12 mono-sm text-[var(--danger)]"
         >
           {state.error}
         </p>
       )}
 
-      <footer className="flex items-center justify-end gap-10">
+      <div className="flex items-center justify-end gap-10">
         <CornerLink href="/purchase-orders" variant="ghost" size="sm">
           Cancel
         </CornerLink>
@@ -275,11 +344,10 @@ export function CreatePoForm({ products, warehouses }: Props) {
           variant="primary"
           size="sm"
           loading={pending}
-          disabled={validLineCount === 0}
         >
-          Create PO →
+          Create draft PO →
         </CornerButton>
-      </footer>
+      </div>
     </form>
   );
 }
