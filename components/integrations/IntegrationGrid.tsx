@@ -154,7 +154,8 @@ export function IntegrationGrid({ providers, byProvider, columns = 3 }: Props) {
                   )
                 ) : provider.key === "slack" ||
                   provider.key === "webhooks" ||
-                  provider.key === "resend" ? (
+                  provider.key === "resend" ||
+                  provider.key === "shopify" ? (
                   <CornerLink
                     href={
                       provider.key === "webhooks"
