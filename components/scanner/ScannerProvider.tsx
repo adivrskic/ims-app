@@ -25,7 +25,7 @@ interface ScannerState {
 
 const ScannerContext = createContext<ScannerState | null>(null);
 
-const EVENT_NAME = "nimbus-scan";
+const EVENT_NAME = "Nautilus-scan";
 
 /**
  * Wraps the app with a single global barcode-scanner listener.
@@ -35,7 +35,7 @@ const EVENT_NAME = "nimbus-scan";
  * same keystroke burst — bad). Components that want to react to scans
  * call `useLastScan()` and watch for changes.
  *
- * Also emits a `window` CustomEvent named "nimbus-scan" with the
+ * Also emits a `window` CustomEvent named "Nautilus-scan" with the
  * barcode in `event.detail`, for code paths that can't easily subscribe
  * via React (e.g. server-action-driven forms or third-party scripts).
  */

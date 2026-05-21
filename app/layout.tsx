@@ -4,8 +4,8 @@ import "./globals-underwater.css";
 
 export const metadata: Metadata = {
   title: {
-    default: "Nimbus",
-    template: "%s · Nimbus",
+    default: "Nautilus",
+    template: "%s · Nautilus",
   },
   description: "Warehouse operations dashboard.",
 };
@@ -25,7 +25,7 @@ export const viewport: Viewport = {
 const themeInitScript = `
 (function() {
   try {
-    var stored = localStorage.getItem("nimbus_theme");
+    var stored = localStorage.getItem("Nautilus_theme");
     var theme = (stored === "light" || stored === "dark") ? stored : "dark";
     document.documentElement.setAttribute("data-theme", theme);
   } catch (e) {

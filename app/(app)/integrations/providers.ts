@@ -43,6 +43,15 @@ export const PROVIDERS: ProviderInfo[] = [
     initials: "Wo",
   },
   {
+    key: "webhooks",
+    name: "Webhooks",
+    category: "Automation",
+    description:
+      "Receive every Nautilus event over HTTP. Hook up Zapier, n8n, Make, or your own backend in minutes.",
+    brandColor: "#D4A853",
+    initials: "Wh",
+  },
+  {
     key: "quickbooks",
     name: "QuickBooks Online",
     category: "Accounting",
@@ -117,7 +126,7 @@ export const PROVIDERS: ProviderInfo[] = [
     name: "Zapier",
     category: "Automation",
     description:
-      "Trigger 6,000+ apps from any Nimbus event — scans, orders, low stock.",
+      "Trigger 6,000+ apps from any Nautilus event — scans, orders, low stock.",
     brandColor: "#FF4F00",
     initials: "Za",
   },

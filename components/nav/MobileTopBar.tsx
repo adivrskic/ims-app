@@ -30,11 +30,12 @@ export function MobileTopBar({ unreadCount }: Props) {
     <header
       className="md:hidden h-52 hairline-b bg-[var(--bg)]/85 sticky top-0 flex items-center px-16 gap-10"
       style={{ zIndex: 40, backdropFilter: "blur(8px)" }}
+      data-mobile-topbar
     >
       <Link
         href="/"
         className="flex items-center gap-8 text-text"
-        aria-label="Nimbus home"
+        aria-label="Nautilus home"
       >
         <Logo size={18} />
         <span
@@ -45,7 +46,7 @@ export function MobileTopBar({ unreadCount }: Props) {
             fontWeight: 500,
           }}
         >
-          NIMBUS
+          Nautilus
         </span>
       </Link>
 

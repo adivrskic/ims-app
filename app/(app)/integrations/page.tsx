@@ -2,7 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { SectionTitle } from "@/components/ui/SectionTitle";
 import { PROVIDERS, type ProviderInfo } from "./providers";
-import { IntegrationGrid } from "./IntegrationGrid";
+import { IntegrationGrid } from "@/components/integrations/IntegrationGrid";
 
 export const metadata = { title: "Integrations" };
 
@@ -18,13 +18,39 @@ interface IntegrationRow {
 
 export default async function IntegrationsPage() {
   const supabase = await createClient();
-  const { data } = await supabase
-    .from("integrations")
-    .select(
-      "id, provider, status, external_account_id, last_synced_at, last_error, connected_at"
-    );
-  const integrations = (data ?? []) as IntegrationRow[];
+
+  const [integrationsResult, webhookCountResult] = await Promise.all([
+    supabase
+      .from("integrations")
+      .select(
+        "id, provider, status, external_account_id, last_synced_at, last_error, connected_at"
+      ),
+    supabase
+      .from("webhook_endpoints")
+      .select("id", { count: "exact", head: true })
+      .eq("status", "active"),
+  ]);
+
+  const integrations =
+    (integrationsResult.data as IntegrationRow[] | null) ?? [];
   const byProvider = new Map(integrations.map((i) => [i.provider, i]));
+
+  // Synthesize a "webhooks" integration row from the endpoint count so
+  // the grid renders the card with a Connected badge when appropriate.
+  const webhookCount = webhookCountResult.count ?? 0;
+  if (webhookCount > 0) {
+    byProvider.set("webhooks", {
+      id: "webhooks-synthetic",
+      provider: "webhooks",
+      status: "connected",
+      external_account_id: `${webhookCount} active endpoint${
+        webhookCount === 1 ? "" : "s"
+      }`,
+      last_synced_at: null,
+      last_error: null,
+      connected_at: null,
+    });
+  }
 
   const connectedProviders = PROVIDERS.filter((p) => byProvider.has(p.key));
   const availableProviders = PROVIDERS.filter((p) => !byProvider.has(p.key));
@@ -49,7 +75,7 @@ export default async function IntegrationsPage() {
       <PageHeader
         eyebrow="Configure"
         title="Integrations"
-        description="Connect Nimbus to your storefront, accounting, shipping, and notification stack. Every connection is OAuth — credentials never touch our servers."
+        description="Connect Nautilus to your storefront, accounting, shipping, and notification stack. Every connection is OAuth — credentials never touch our servers."
         meta={[
           {
             label: "Connected",

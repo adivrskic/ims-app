@@ -9,6 +9,8 @@ import {
   recommendedOrderQuantity,
   reorderPoint as ropFormula,
 } from "@/lib/replenishment";
+import { narratePoDraft } from "@/lib/ai/narrate";
+import { PurchaseOrderDetailRealtime } from "@/components/realtime/PageRealtime";
 
 async function getOrgContext() {
   const supabase = await createClient();
@@ -28,14 +30,32 @@ async function getOrgContext() {
   return { supabase, user, orgId: membership.org_id as string };
 }
 
+/**
+ * Lookback window (days) used to compute per-product velocity from
+ * scan_history. 60 days balances "enough signal to smooth noise" against
+ * "recent enough to reflect current demand patterns."
+ */
 const VELOCITY_LOOKBACK_DAYS = 60;
 
 /**
  * Draft a reorder PO from products at or below their reorder point.
  *
- * Uses velocity-based ROP+EOQ math (P2) and groups by preferred supplier.
- * Unchanged in P4 — kept here so this file stays the single source of
- * truth for the purchase-orders module.
+ * P2: switches from the naive `max(rp*2 - on_hand, rp+safety)` heuristic to
+ * proper ROP+EOQ math. For each low-stock product we:
+ *
+ *   1. Pull the last 60 days of pick/adjust scans to compute daily velocity
+ *   2. Compute ROP    = velocity × lead_time + safety_stock
+ *   3. Compute EOQ    = √(2 × annualDemand × orderCost / holdingCost)
+ *   4. Recommend qty  = max(EOQ, gap-to-ROP-after-lead-time)
+ *
+ * Groups items by preferred supplier and creates one PO per supplier
+ * (same as P1). Snapshots unit_cost onto each line for cost-aware
+ * reporting downstream.
+ *
+ * AI: after grouping, calls narratePoDraft per supplier group to generate
+ * one short reasoning sentence per line, stored alongside the line item.
+ * Failure-tolerant — narration returning null just means lines persist
+ * with reasoning=null.
  */
 export async function draftReorderPO(): Promise<void> {
   const ctx = await getOrgContext();
@@ -71,8 +91,16 @@ export async function draftReorderPO(): Promise<void> {
     preferred_supplier_id: string | null;
     locations: Array<{ quantity: number | null }> | null;
     preferred_supplier:
-      | { id: string; name: string; default_lead_time_days: number | null }
-      | { id: string; name: string; default_lead_time_days: number | null }[]
+      | {
+          id: string;
+          name: string;
+          default_lead_time_days: number | null;
+        }
+      | {
+          id: string;
+          name: string;
+          default_lead_time_days: number | null;
+        }[]
       | null;
   };
 
@@ -93,7 +121,10 @@ export async function draftReorderPO(): Promise<void> {
     redirect("/purchase-orders?no_low_stock=1");
   }
 
-  // Velocity lookup
+  // ─── Velocity lookup ────────────────────────────────────────────────────
+  // One batched query for all low-stock products. We sum the `quantity` on
+  // pick + adjust scans over the last 60 days, then divide by 60 to get
+  // daily velocity.
   const lookbackStart = new Date();
   lookbackStart.setDate(lookbackStart.getDate() - VELOCITY_LOOKBACK_DAYS);
   lookbackStart.setHours(0, 0, 0, 0);
@@ -113,6 +144,9 @@ export async function draftReorderPO(): Promise<void> {
     action: string;
   }>) {
     if (!s.product_id) continue;
+    // `pick` reduces stock (positive demand). `adjust` may be either
+    // direction; we treat any magnitude as consumption signal since the
+    // mobile app stores positive numbers for losses.
     const q = Math.abs(s.quantity ?? 0);
     consumedByProduct.set(
       s.product_id,
@@ -120,7 +154,7 @@ export async function draftReorderPO(): Promise<void> {
     );
   }
 
-  // Group by supplier + compute recommendations
+  // ─── Group by supplier + compute recommendations ────────────────────────
   type RecommendedLine = {
     product_id: string;
     product_name: string;
@@ -129,6 +163,11 @@ export async function draftReorderPO(): Promise<void> {
     unit_cost: string | null;
     velocity: number;
     rop: number;
+    // Additional inputs captured so narratePoDraft has everything it needs
+    // without requiring a second product fetch.
+    on_hand: number;
+    lead_time_days: number;
+    reorder_point: number;
   };
   type Group = {
     supplierId: string | null;
@@ -143,8 +182,10 @@ export async function draftReorderPO(): Promise<void> {
       days: VELOCITY_LOOKBACK_DAYS,
     });
 
+    // Effective lead time: product override > supplier default > 7d fallback
     const leadTimeDays =
       item.lead_time_days ?? item.supplier?.default_lead_time_days ?? 7;
+
     const safetyStock = item.safety_stock ?? 0;
     const rop = ropFormula({ velocity, leadTimeDays, safetyStock });
 
@@ -173,6 +214,9 @@ export async function draftReorderPO(): Promise<void> {
       unit_cost: item.unit_cost,
       velocity,
       rop,
+      on_hand: item.total,
+      lead_time_days: leadTimeDays,
+      reorder_point: item.reorder_point,
     };
     if (existing) {
       existing.lines.push(line);
@@ -185,6 +229,7 @@ export async function draftReorderPO(): Promise<void> {
     }
   }
 
+  // ─── Persist ────────────────────────────────────────────────────────────
   const { data: lastPO } = await supabase
     .from("purchase_orders")
     .select("po_number")
@@ -199,6 +244,7 @@ export async function draftReorderPO(): Promise<void> {
   let lastCreatedId: string | null = null;
 
   for (const group of groups.values()) {
+    // Build a short transparency note so buyers can see the math
     const ropSummary = group.lines
       .slice(0, 3)
       .map(
@@ -232,13 +278,29 @@ export async function draftReorderPO(): Promise<void> {
     lastCreatedId = newPO.id;
     nextNum++;
 
-    const lineRows = group.lines.map((l) => ({
+    // AI narration: one short sentence per line explaining the qty.
+    // Returns null on failure (LLM down / rate limit) — we still ship the
+    // PO with empty reasoning rather than block on it.
+    const narrations = await narratePoDraft({
+      lines: group.lines.map((l) => ({
+        product_name: l.product_name,
+        barcode: l.barcode,
+        velocity: Number(l.velocity.toFixed(2)),
+        on_hand: l.on_hand,
+        reorder_point: l.reorder_point,
+        lead_time_days: l.lead_time_days,
+        recommended_qty: l.quantity_expected,
+      })),
+    });
+
+    const lineRows = group.lines.map((l, i) => ({
       po_id: newPO.id,
       product_id: l.product_id,
       product_name: l.product_name,
       barcode: l.barcode,
       quantity_expected: l.quantity_expected,
-      unit_cost: l.unit_cost,
+      unit_cost: l.unit_cost, // snapshotted for historical cost analysis
+      reasoning: narrations?.[i] || null,
     }));
 
     await supabase.from("po_line_items").insert(lineRows);
@@ -251,6 +313,12 @@ export async function draftReorderPO(): Promise<void> {
   redirect("/purchase-orders");
 }
 
+// ─── Lifecycle transitions ──────────────────────────────────────────────────
+
+/**
+ * Move PO from draft → sent. Stamps sent_at so we can compute supplier lead
+ * times. Idempotent — already-sent POs aren't re-stamped.
+ */
 export async function markPoSent(formData: FormData): Promise<void> {
   const ctx = await getOrgContext();
   if ("error" in ctx) return;
@@ -264,7 +332,7 @@ export async function markPoSent(formData: FormData): Promise<void> {
     })
     .eq("id", id)
     .eq("org_id", ctx.orgId)
-    .eq("status", "draft");
+    .eq("status", "draft"); // only stamp once
 
   revalidatePath(`/purchase-orders/${id}`);
   revalidatePath("/purchase-orders");
@@ -288,6 +356,12 @@ interface PoLineInput {
   quantity: number;
 }
 
+/**
+ * Create a PO from the manual form.
+ *
+ * P2: snapshots `products.unit_cost` onto each new line so historical cost
+ * analysis stays accurate if the product's current cost later changes.
+ */
 export async function createPurchaseOrder(
   _prev: unknown,
   formData: FormData
@@ -387,7 +461,7 @@ export async function createPurchaseOrder(
       product_name: p?.name ?? "Unknown product",
       barcode: p?.barcode ?? null,
       quantity_expected: i.quantity,
-      unit_cost: p?.unit_cost ?? null,
+      unit_cost: p?.unit_cost ?? null, // P2: snapshot current cost
     };
   });
 
@@ -404,16 +478,23 @@ export async function createPurchaseOrder(
   redirect(`/purchase-orders/${newPO.id}`);
 }
 
-// ─── Receiving (P4: now also captures lot number) ───────────────────────────
+// ─── Receiving ──────────────────────────────────────────────────────────────
 
 /**
  * Receive (or partially receive) a single PO line item.
  *
- * P4 additions:
- *   - Accepts optional `lot_number` from the form
- *   - If provided, upserts into `app.lots` (one row per product_id+lot_number)
- *     and sets `lot_id` + `lot_number` on the PO line. The supplier_id and
- *     received_at on the lots row are populated from the parent PO.
+ * P2 changes from "always set received = expected":
+ *   - Accepts `quantity_received` from the form (defaults to full receipt
+ *     if the field is omitted, to preserve the "Receive all" affordance)
+ *   - Accepts optional `landed_unit_cost` so the receiver can record the
+ *     actual all-in cost (freight + duties) at putaway time
+ *   - When the resulting parent PO transitions to fully_received, stamps
+ *     `received_at` on the parent so supplier scorecards can compute
+ *     actual lead time
+ *
+ * Validation: received_qty must be 0 < qty ≤ expected. We don't allow
+ * over-receipt here — that's an exception case better handled by a separate
+ * "report overage" flow.
  */
 export async function receiveLineItem(
   _prev: unknown,
@@ -426,16 +507,16 @@ export async function receiveLineItem(
   const poId = String(formData.get("po_id") ?? "");
   const qtyRaw = String(formData.get("quantity_received") ?? "").trim();
   const landedRaw = String(formData.get("landed_unit_cost") ?? "").trim();
-  const lotNumberRaw = String(formData.get("lot_number") ?? "").trim();
 
-  // Fetch the line + parent PO (need product_id + supplier_id for lot upsert)
   const { data: line } = await ctx.supabase
     .from("po_line_items")
-    .select("quantity_expected, quantity_received, product_id, po_id")
+    .select("quantity_expected, quantity_received")
     .eq("id", lineId)
     .maybeSingle();
   if (!line) return { error: "Line not found" };
 
+  // Default to full receipt when no quantity provided (preserves the
+  // existing "Receive all" affordance for backwards compatibility).
   const expected = line.quantity_expected;
   const alreadyReceived = line.quantity_received ?? 0;
   const remaining = expected - alreadyReceived;
@@ -466,63 +547,15 @@ export async function receiveLineItem(
     landedCost = n.toFixed(2);
   }
 
-  // ── P4: handle lot number ──────────────────────────────────────────────
-  let lotId: string | null = null;
-  let lotNumber: string | null = null;
-  if (lotNumberRaw && line.product_id) {
-    lotNumber = lotNumberRaw;
-    // Fetch the parent PO for supplier_id + sent_at
-    const { data: parentPo } = await ctx.supabase
-      .from("purchase_orders")
-      .select("supplier_id, sent_at, created_at")
-      .eq("id", poId)
-      .maybeSingle();
-
-    // Upsert the lot. If it already exists (same product_id + lot_number),
-    // we keep the existing record — the unique index handles dedup.
-    const { data: upsertedLot } = await ctx.supabase
-      .from("lots")
-      .upsert(
-        {
-          org_id: ctx.orgId,
-          product_id: line.product_id,
-          lot_number: lotNumber,
-          supplier_id: parentPo?.supplier_id ?? null,
-          received_at:
-            parentPo?.sent_at ??
-            parentPo?.created_at ??
-            new Date().toISOString(),
-          created_by: ctx.user.id,
-        },
-        { onConflict: "product_id,lot_number", ignoreDuplicates: false }
-      )
-      .select("id")
-      .maybeSingle();
-
-    lotId = upsertedLot?.id ?? null;
-
-    // Fallback: if upsert didn't return an id (e.g. RLS edge case), look it up
-    if (!lotId) {
-      const { data: existingLot } = await ctx.supabase
-        .from("lots")
-        .select("id")
-        .eq("product_id", line.product_id)
-        .eq("lot_number", lotNumber)
-        .eq("org_id", ctx.orgId)
-        .maybeSingle();
-      lotId = existingLot?.id ?? null;
-    }
-  }
-
   const newReceived = alreadyReceived + qty;
   const lineUpdate: Record<string, unknown> = {
     quantity_received: newReceived,
     received_at: new Date().toISOString(),
     received_by: ctx.user.id,
   };
-  if (landedCost !== null) lineUpdate.landed_unit_cost = landedCost;
-  if (lotNumber !== null) lineUpdate.lot_number = lotNumber;
-  if (lotId !== null) lineUpdate.lot_id = lotId;
+  if (landedCost !== null) {
+    lineUpdate.landed_unit_cost = landedCost;
+  }
 
   await ctx.supabase.from("po_line_items").update(lineUpdate).eq("id", lineId);
 
@@ -545,6 +578,8 @@ export async function receiveLineItem(
 
   const poUpdate: Record<string, unknown> = { status: newStatus };
   if (newStatus === "fully_received") {
+    // Stamp received_at only once — supplier scorecards depend on this
+    // being the first-completion timestamp.
     const { data: existingPo } = await ctx.supabase
       .from("purchase_orders")
       .select("received_at")
@@ -563,8 +598,5 @@ export async function receiveLineItem(
 
   revalidatePath(`/purchase-orders/${poId}`);
   revalidatePath("/purchase-orders");
-  if (line.product_id) {
-    revalidatePath(`/inventory/${line.product_id}`);
-  }
   return { success: "Receipt recorded" };
 }

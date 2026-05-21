@@ -14,7 +14,14 @@ import { NextResponse, type NextRequest } from "next/server";
  * response, or the session silently expires.
  */
 export async function updateSession(request: NextRequest) {
-  let response = NextResponse.next({ request });
+  // Forward the full URL to server components via a request header,
+  // so lib/kiosk.ts can read ?kiosk=1 from a layout.
+  const requestHeaders = new Headers(request.headers);
+  requestHeaders.set("x-url", request.url);
+
+  let response = NextResponse.next({
+    request: { headers: requestHeaders },
+  });
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -25,7 +32,13 @@ export async function updateSession(request: NextRequest) {
         getAll() {
           return request.cookies.getAll();
         },
-        setAll(cookiesToSet: { name: string; value: string; options?: import("@supabase/ssr").CookieOptions }[]) {
+        setAll(
+          cookiesToSet: {
+            name: string;
+            value: string;
+            options?: import("@supabase/ssr").CookieOptions;
+          }[]
+        ) {
           cookiesToSet.forEach(({ name, value }) =>
             request.cookies.set(name, value)
           );

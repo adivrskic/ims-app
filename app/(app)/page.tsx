@@ -7,6 +7,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { CornerLink } from "@/components/ui/CornerButton";
 import { GlowCardGrid } from "@/components/dashboard/GlowCardGrid";
 import { ReorderAlerts } from "@/components/dashboard/ReorderAlerts";
+import { OverviewRealtime } from "@/components/realtime/PageRealtime";
 import type { ScanAction } from "@/types/db";
 import {
   ArrowUpRight,
@@ -219,7 +220,11 @@ export default async function OverviewPage() {
 
   return (
     <div className="flex flex-col gap-32">
+      <OverviewRealtime
+        warehouseId={scope.mode === "single" ? scope.id : null}
+      />
       <PageHeader
+        live
         eyebrow="Workspace"
         title="Overview"
         description={scopeDescription(scope, {
@@ -233,6 +238,11 @@ export default async function OverviewPage() {
           },
           { label: "Last sync", value: "Just now", status: "live" },
         ]}
+        actions={
+          <CornerLink href="/?kiosk=1" variant="ghost" size="sm">
+            Kiosk view →
+          </CornerLink>
+        }
       />
 
       <section aria-labelledby="signals">

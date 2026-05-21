@@ -45,7 +45,10 @@ export function MainContent({ children }: { children: React.ReactNode }) {
         className="absolute inset-0 dot-grid opacity-40 pointer-events-none"
         aria-hidden
       />
-      <div className="relative max-w-[1480px] px-20 md:px-32 lg:px-40 py-24 md:py-40">
+      <div
+        data-app-main
+        className="relative max-w-[1480px] px-20 md:px-32 lg:px-40 py-24 md:py-40"
+      >
         {children}
       </div>
     </>

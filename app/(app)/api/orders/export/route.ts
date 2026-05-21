@@ -157,7 +157,7 @@ export async function GET(req: NextRequest) {
     status: 200,
     headers: {
       "Content-Type": "text/csv; charset=utf-8",
-      "Content-Disposition": `attachment; filename="nimbus-orders${suffix}-${today}.csv"`,
+      "Content-Disposition": `attachment; filename="Nautilus-orders${suffix}-${today}.csv"`,
       "Cache-Control": "no-store",
     },
   });

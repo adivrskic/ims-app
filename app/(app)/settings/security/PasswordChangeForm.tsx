@@ -2,9 +2,10 @@
 
 import { useState } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { Input } from "@/components/ui/Input";
 import { CornerButton } from "@/components/ui/CornerButton";
-import { Check, AlertTriangle } from "lucide-react";
+import { Input } from "@/components/ui/Input";
+import { Check, AlertTriangle, Eye, EyeOff } from "lucide-react";
+import { PasswordStrength } from "@/components/auth/PasswordStrength";
 
 export function PasswordChangeForm() {
   const supabase = createClient();
@@ -71,23 +72,29 @@ export function PasswordChangeForm() {
         </p>
       </header>
 
-      <Input
+      <PasswordFieldRow
         label="New password"
         name="new_password"
-        type="password"
         autoComplete="new-password"
         value={password}
-        onChange={(e) => setPassword(e.target.value)}
+        onChange={setPassword}
         required
       />
-      <Input
+
+      {password.length > 0 && <PasswordStrength password={password} />}
+
+      <PasswordFieldRow
         label="Confirm password"
         name="confirm_password"
-        type="password"
         autoComplete="new-password"
         value={confirm}
-        onChange={(e) => setConfirm(e.target.value)}
+        onChange={setConfirm}
         required
+        error={
+          confirm.length > 0 && password !== confirm
+            ? "Passwords don't match"
+            : undefined
+        }
       />
 
       {feedback?.kind === "error" && (
@@ -125,5 +132,69 @@ export function PasswordChangeForm() {
         </CornerButton>
       </div>
     </form>
+  );
+}
+
+/**
+ * Local wrapper around <Input> that adds a show/hide eye button positioned
+ * absolutely over the right side of the field. Avoids modifying the global
+ * Input component for a feature only the password forms need.
+ */
+function PasswordFieldRow({
+  label,
+  name,
+  autoComplete,
+  value,
+  onChange,
+  required,
+  error,
+}: {
+  label: string;
+  name: string;
+  autoComplete: string;
+  value: string;
+  onChange: (next: string) => void;
+  required?: boolean;
+  error?: string;
+}) {
+  const [visible, setVisible] = useState(false);
+  return (
+    <div className="relative">
+      <Input
+        label={label}
+        name={name}
+        type={visible ? "text" : "password"}
+        autoComplete={autoComplete}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        required={required}
+        error={error}
+      />
+      <button
+        type="button"
+        onClick={() => setVisible((v) => !v)}
+        className="absolute text-text-muted hover:text-text transition-colors"
+        style={{
+          right: 12,
+          top: 18,
+          width: 24,
+          height: 24,
+          background: "transparent",
+          border: 0,
+          cursor: "pointer",
+          display: "inline-flex",
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+        aria-label={visible ? "Hide password" : "Show password"}
+        aria-pressed={visible}
+      >
+        {visible ? (
+          <EyeOff size={13} strokeWidth={1.5} />
+        ) : (
+          <Eye size={13} strokeWidth={1.5} />
+        )}
+      </button>
+    </div>
   );
 }

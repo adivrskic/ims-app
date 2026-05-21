@@ -14,6 +14,7 @@ import {
   FileText,
 } from "lucide-react";
 import { advanceOrderStatus, cancelOrder } from "../actions";
+import { OrderDetailRealtime } from "@/components/realtime/PageRealtime";
 
 export const metadata = { title: "Order detail" };
 
@@ -147,6 +148,7 @@ export default async function OrderDetailPage({
 
   return (
     <div className="flex flex-col gap-32">
+      <OrderDetailRealtime orderId={id} />
       <div className="flex flex-col gap-12">
         <Link
           href="/orders"

@@ -9,9 +9,9 @@ export function one<T>(value: T | T[] | null | undefined): T | null {
   return Array.isArray(value) ? value[0] ?? null : value;
 }
 /**
- * Database types for the Nimbus `app` schema.
+ * Database types for the Nautilus `app` schema.
  *
- * Hand-written from the live schema inspected on the `nimbus-wms` Supabase
+ * Hand-written from the live schema inspected on the `Nautilus-wms` Supabase
  * project. Regenerate with:
  *
  *   supabase gen types typescript --project-id seypbrzjjiuibrwyxewj --schema app > types/supabase.ts

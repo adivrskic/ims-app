@@ -7,8 +7,11 @@ import { Badge } from "@/components/ui/Badge";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { SectionTitle } from "@/components/ui/SectionTitle";
 import { CornerLink } from "@/components/ui/CornerButton";
+import { ProductDetailRealtime } from "@/components/realtime/PageRealtime";
 import { formatCurrency } from "@/lib/dashboard";
 import type { ScanAction } from "@/types/db";
+import { PrintLabelButton } from "@/components/print/PrintLabelButton";
+import { productLabel } from "@/lib/print/zplTemplates";
 import {
   ArrowLeft,
   Activity,
@@ -61,7 +64,7 @@ export default async function ProductDetailPage({
       unit_cost, lead_time_days, safety_stock, preferred_supplier_id,
       category:categories ( id, name ),
       preferred_supplier:suppliers!products_preferred_supplier_id_fkey (
-        id, name, contact_email, contact_phone, default_lead_time_days
+        id, name, email, phone, default_lead_time_days
       ),
       locations:locations ( id, quantity, bay, level, placed_at,
         section:sections ( code, name ),
@@ -170,6 +173,7 @@ export default async function ProductDetailPage({
 
   return (
     <div className="flex flex-col gap-48">
+      <ProductDetailRealtime productId={product.id} />
       <Link
         href="/inventory"
         className="mono-sm text-text-muted hover:text-text inline-flex items-center gap-6 self-start"
@@ -182,6 +186,21 @@ export default async function ProductDetailPage({
         title={product.name}
         actions={
           <div className="flex items-center gap-10">
+            <PrintLabelButton
+              zpl={productLabel({
+                productName: product.name,
+                barcode: product.barcode,
+                sku: product.internal_sku,
+                category: product.category?.name ?? null,
+                location:
+                  product.locations && product.locations[0]
+                    ? `${product.locations[0].section?.code ?? "?"}-${
+                        product.locations[0].bay
+                      }-${product.locations[0].level}`
+                    : null,
+              })}
+              label="Print shelf label"
+            />
             <CornerLink
               href={`/cycle-counts?product=${product.id}`}
               variant="ghost"

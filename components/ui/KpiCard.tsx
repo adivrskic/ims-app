@@ -72,6 +72,7 @@ export function KpiCard({
       </div>
       <div className="flex items-baseline gap-6">
         <span
+          data-kpi-value
           className="text-text tnum truncate"
           style={{
             fontFamily: "var(--display)",

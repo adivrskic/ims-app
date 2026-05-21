@@ -2,13 +2,12 @@
  * Manifest auth styles.
  *
  * Used only by the auth pages. The forms there sit directly on the
- * underwater backdrop (no card), so each row is just a typographic
- * line item with a hairline separator below.
+ * underwater backdrop, with each row a typographic line item with a
+ * hairline separator below.
  *
  * Focus indicator: when an input in a row is focused, the row's
  * "01 —" number turns accent gold and the field label brightens.
- * No outline ring, no input underline — just the number changing
- * color, which is enough.
+ * The input itself also gets a gold border on focus.
  */
 
 .row {
@@ -34,7 +33,7 @@
   font-variant-numeric: tabular-nums;
   color: var(--text-dim);
   transition: color 200ms;
-  padding-top: 2px;
+  padding-top: 12px;
 }
 
 .row:focus-within .number {
@@ -44,7 +43,7 @@
 .content {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
   min-width: 0;
 }
 
@@ -68,24 +67,55 @@
   color: var(--text-secondary);
 }
 
+/*
+ * Field shell — translucent fill + hairline border so it reads as an
+ * input regardless of the water shade behind it. Both fill and border
+ * pull from theme-aware tokens defined in globals-underwater.css, so
+ * they flip automatically when the user toggles light/dark.
+ */
 .field {
   width: 100%;
-  background: transparent;
-  border: 0;
+  background: var(--field-bg);
+  border: 1px solid var(--field-border);
   outline: none;
-  padding: 0;
-  font-size: 14px;
+  padding: 11px 14px;
+  font-size: 13px;
   font-family: var(--mono);
   color: var(--text);
+  transition: background 200ms, border-color 200ms, box-shadow 200ms;
+  -webkit-appearance: none;
+  appearance: none;
+  border-radius: 0;
+}
+
+.field:hover {
+  background: var(--field-bg-hover);
+  border-color: var(--field-border-hover);
+}
+
+.field:focus {
+  background: var(--field-bg-focus);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent-dim);
 }
 
 .field::placeholder {
-  color: rgba(255, 255, 255, 0.22);
+  color: var(--field-placeholder);
+}
+
+/* Kill the yellow autofill flash; keep our themed background instead. */
+.field:-webkit-autofill,
+.field:-webkit-autofill:hover,
+.field:-webkit-autofill:focus {
+  -webkit-box-shadow: 0 0 0 1000px var(--field-bg-focus) inset;
+  -webkit-text-fill-color: var(--text);
+  caret-color: var(--text);
+  transition: background-color 9999s ease-out 0s;
 }
 
 /*
  * Only widen letter-spacing on password fields when there's a value
- * (otherwise the placeholder text gets weird spacing).
+ * (otherwise the placeholder dots get weird spacing).
  */
 .field[type="password"]:not(:placeholder-shown) {
   letter-spacing: 4px;

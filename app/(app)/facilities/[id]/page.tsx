@@ -6,7 +6,7 @@ import { CornerLink } from "@/components/ui/CornerButton";
 import { FacilityViewer } from "./FacilityViewer";
 import { ELEMENT_PRESETS } from "@/app/(app)/facilities/[id]/builder/elementPresets";
 import type { ElementKind } from "@/app/(app)/facilities/[id]/builder/types";
-
+import { BulkPrintBayLabels } from "@/components/print/BulkPrintBayLabels";
 const VALID_ELEMENT_KINDS: readonly ElementKind[] = [
   "walkway",
   "note",
@@ -161,9 +161,17 @@ export default async function FacilityPage({
         </div>
 
         <div className="ml-auto flex items-center gap-10">
-          <span className="label-text text-text-dim hidden lg:inline">
-            Click a section to drill in
-          </span>
+          <BulkPrintBayLabels
+            sections={sectionData.map((s) => ({
+              code: s.code,
+              name: s.name ?? null,
+              total_bays: s.total_bays ?? 0,
+              total_levels: s.total_levels ?? 0,
+            }))}
+            buttonLabel="Print all bay labels"
+            variant="ghost"
+            size="sm"
+          />
           {canEdit && (
             <CornerLink
               href={`/facilities/${warehouse.id}/builder`}

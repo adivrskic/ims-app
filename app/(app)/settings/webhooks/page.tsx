@@ -101,7 +101,7 @@ export default async function WebhooksPage() {
           <p className="mono-sm text-text-muted mb-14">
             Subscribe an endpoint to any combination of these events. Each
             delivery includes a signed JWT in the{" "}
-            <code className="text-text">X-Nimbus-Signature</code> header.
+            <code className="text-text">X-Nautilus-Signature</code> header.
           </p>
           <ul className="grid grid-cols-2 md:grid-cols-3 gap-x-16 gap-y-8">
             {AVAILABLE_EVENTS.map((evt) => (

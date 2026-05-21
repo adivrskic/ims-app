@@ -1,10 +1,12 @@
 "use client";
 
-import { useActionState } from "react";
 import Link from "next/link";
+import { useActionState, useState } from "react";
 import { ManifestHeader } from "@/components/auth/ManifestHeader";
 import { ManifestRow } from "@/components/auth/ManifestRow";
 import { ManifestInput } from "@/components/auth/ManifestInput";
+import { ManifestPasswordField } from "@/components/auth/ManifestPasswordField";
+import { PasswordStrength } from "@/components/auth/PasswordStrength";
 import { CornerButton } from "@/components/ui/CornerButton";
 import { signUpWithPassword } from "../actions";
 
@@ -13,6 +15,8 @@ export default function SignupPage() {
     signUpWithPassword,
     undefined
   );
+
+  const [password, setPassword] = useState("");
 
   return (
     <div className="flex flex-col">
@@ -29,7 +33,7 @@ export default function SignupPage() {
           color: "var(--text)",
         }}
       >
-        Request workspace <em className="accent-italic">access</em>.
+        Request <em className="accent-italic">access</em>.
       </h1>
 
       <form action={formAction} className="hairline-t">
@@ -61,15 +65,24 @@ export default function SignupPage() {
             </span>
           }
         >
-          <ManifestInput
-            type="password"
+          <ManifestPasswordField
             name="password"
             autoComplete="new-password"
             required
             minLength={8}
             placeholder="••••••••"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
           />
         </ManifestRow>
+
+        {/* Strength meter only renders once the user has started typing,
+            keeping the form quiet until it has something to say. */}
+        {password.length > 0 && (
+          <div className="py-14 hairline-b">
+            <PasswordStrength password={password} />
+          </div>
+        )}
 
         {state?.error && (
           <div className="py-12 hairline-b">

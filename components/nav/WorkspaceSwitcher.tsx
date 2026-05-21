@@ -41,7 +41,7 @@ export function WorkspaceSwitcher({ current, workspaces }: Props) {
 
       {open && (
         <div
-          className="absolute top-full left-0 mt-8 w-[260px] hairline bg-[var(--surface)] flex flex-col"
+          className="absolute top-full left-0 mt-8 w-[220px] hairline bg-[var(--surface)] flex flex-col"
           style={{ zIndex: 50 }}
         >
           <p className="px-14 py-8 hairline-b label-text text-text-muted">

@@ -49,8 +49,7 @@ export default function ForgotPage() {
             name="email"
             autoComplete="email"
             required
-            autoFocus
-            placeholder="ops@nimbus.io"
+            placeholder="ops@Nautilus.io"
           />
         </ManifestRow>
 

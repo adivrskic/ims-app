@@ -6,6 +6,8 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import type { ScanAction } from "@/types/db";
 import { BarChart3 } from "lucide-react";
 import { getActiveScope, scopeDescription } from "@/lib/facilityScope";
+import { Suspense } from "react";
+import { ForecastNarration } from "@/components/analytics/ForecastNarration";
 
 export const metadata = { title: "Analytics" };
 
@@ -196,6 +198,37 @@ export default async function AnalyticsPage() {
           { label: "Last sync", value: "Just now", status: "live" },
         ]}
       />
+
+      {!empty && (
+        <Suspense fallback={null}>
+          <ForecastNarration
+            scope={
+              scope.mode === "single" ? `facility:${scope.name}` : "workspace"
+            }
+            window={{
+              start: fourteenDaysAgo.toISOString().slice(0, 10),
+              end: today.toISOString().slice(0, 10),
+            }}
+            metrics={{
+              totalScans: totalScans ?? 0,
+              scansToday: scansToday ?? 0,
+              scansLast7: scansLast7 ?? 0,
+              totalStock,
+              lowStockCount: 0,
+              actionMix: actions.map(([action, count]) => ({
+                action: String(action),
+                count,
+                pct: Math.round((count / (totalScans ?? 1)) * 100),
+              })),
+              trend14d: trend,
+              topSections: sections.slice(0, 3).map((s) => ({
+                code: s.code,
+                pct: Math.round((s.quantity / Math.max(1, totalStock)) * 100),
+              })),
+            }}
+          />
+        </Suspense>
+      )}
 
       <section aria-labelledby="kpi-heading">
         <SectionTitle numeral="01" eyebrow="Signals" title="Headline" />

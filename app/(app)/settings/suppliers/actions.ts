@@ -1,7 +1,8 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
+import { revalidatePath, revalidateTag } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { tags } from "@/lib/cache-tags";
 
 async function getOrgContext() {
   const supabase = await createClient();
@@ -82,6 +83,7 @@ export async function createSupplier(
     return { error: error.message };
   }
 
+  revalidateTag(tags.suppliers(ctx.orgId));
   revalidatePath("/settings/suppliers");
   revalidatePath("/purchase-orders/new");
   revalidatePath("/inventory");
@@ -98,6 +100,7 @@ export async function archiveSupplier(formData: FormData): Promise<void> {
     .update({ is_active: false })
     .eq("id", id)
     .eq("org_id", ctx.orgId);
+  revalidateTag(tags.suppliers(ctx.orgId));
   revalidatePath("/settings/suppliers");
   revalidatePath("/purchase-orders/new");
 }
@@ -112,6 +115,7 @@ export async function restoreSupplier(formData: FormData): Promise<void> {
     .update({ is_active: true })
     .eq("id", id)
     .eq("org_id", ctx.orgId);
+  revalidateTag(tags.suppliers(ctx.orgId));
   revalidatePath("/settings/suppliers");
   revalidatePath("/purchase-orders/new");
 }

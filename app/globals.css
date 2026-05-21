@@ -590,18 +590,32 @@ table,
   pointer-events: none;
 }
 
-/* ═══ SURFACES ═══ */
-.hairline {
-  border: 1px solid var(--border);
-}
+/* ═══ HAIRLINES ═══
+   Unified to var(--border-subtle) so the whole UI shares one quiet line
+   weight. Box hairlines (full borders) get a hover state that brightens
+   to var(--border-hover); directional hairlines (used as dividers, not
+   interactive boundaries) stay static. */
+
+.hairline,
 .hairline-subtle {
   border: 1px solid var(--border-subtle);
+  transition: border-color var(--dur-quick, 150ms)
+    var(--ease-out, cubic-bezier(0.4, 0, 0.2, 1));
+}
+
+.hairline:hover,
+.hairline-subtle:hover {
+  border-color: var(--border-hover);
+}
+
+/* Directional hairlines = dividers. No hover state — they're not the
+      boundary of an interactive surface, they're separators between rows
+      or sections. */
+.hairline-b {
+  border-bottom: 1px solid var(--border-subtle);
 }
 .hairline-t {
   border-top: 1px solid var(--border-subtle);
-}
-.hairline-b {
-  border-bottom: 1px solid var(--border-subtle);
 }
 .hairline-r {
   border-right: 1px solid var(--border-subtle);
@@ -731,6 +745,79 @@ table,
      ~13px (icon glyph) + 10px (gap to text) = 37px. Round to 38 for a
      touch of breathing room. */
   left: 38px;
+}
+
+/* ═══ SKELETON / LOADING ═══ */
+:root {
+  --skeleton-from: rgba(255, 255, 255, 0.04);
+  --skeleton-to: rgba(255, 255, 255, 0.1);
+}
+
+[data-theme="light"] {
+  --skeleton-from: rgba(26, 22, 18, 0.05);
+  --skeleton-to: rgba(26, 22, 18, 0.12);
+}
+
+.skeleton {
+  display: block;
+  background: linear-gradient(
+    90deg,
+    var(--skeleton-from) 0%,
+    var(--skeleton-to) 50%,
+    var(--skeleton-from) 100%
+  );
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.5s var(--ease-in-out) infinite;
+}
+
+@keyframes skeleton-shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton {
+    animation: none;
+    background: var(--skeleton-from);
+  }
+}
+
+/* ═══ TEXT SELECTION ═══ */
+::selection {
+  background: var(--accent-dim);
+  color: var(--text);
+}
+
+/* ═══ LIGHT THEME — additional polish ═══ */
+
+/* Dot grid uses near-white dots which vanish on cream. Re-tint with
+   warm ink at low alpha so the texture still reads but matches the
+   surface tone. */
+[data-theme="light"] .dot-grid {
+  background-image: radial-gradient(
+    circle at 1px 1px,
+    rgba(26, 22, 18, 0.06) 1px,
+    transparent 0
+  );
+  opacity: 1;
+}
+
+/* dot-offline uses --gray-4 (#404040) — opaque dark splotch on cream.
+   Replace with a translucent ink so it harmonizes. */
+[data-theme="light"] .dot-offline {
+  background: rgba(26, 22, 18, 0.28);
+}
+
+/* Override the underwater body background (defined in globals-underwater.css)
+   when the user is in light mode. Replicates the simple cream bg the
+   light theme expects. */
+[data-theme="light"] body {
+  background: var(--bg);
+  background-attachment: initial;
 }
 
 /* ═══ STATUS DOTS ═══ */
@@ -872,4 +959,65 @@ table,
   .no-print {
     display: none !important;
   }
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+ * KIOSK MODE
+ *
+ * Activated by ?kiosk=1 on any page that mounts <KioskShell>.
+ * The shell sets data-kiosk="true" on <html>, which lets us:
+ *   - Hide app chrome (sidebar, mobile nav, header chrome bits)
+ *   - Inflate typography for wallboard viewing distance
+ *   - Remove ornamental layers (dot grid, grain) that distract on
+ *     a static display
+ * ═══════════════════════════════════════════════════════════════════ */
+
+html[data-kiosk="true"] {
+  font-size: 18px; /* default html is 16; bumps rem-based sizing 12.5% */
+}
+
+html[data-kiosk="true"] aside[aria-label="Primary navigation"],
+html[data-kiosk="true"] [data-mobile-topbar],
+html[data-kiosk="true"] [data-mobile-nav],
+html[data-kiosk="true"] [data-page-footer] {
+  display: none !important;
+}
+
+/* Drop the dot-grid backdrop + grain overlay so the wallboard is clean. */
+html[data-kiosk="true"] body::after,
+html[data-kiosk="true"] .dot-grid {
+  display: none !important;
+}
+
+/* Inflate body type +25% so a 10ft viewer can read scan summaries. */
+html[data-kiosk="true"] .mono-body,
+html[data-kiosk="true"] .body-text,
+html[data-kiosk="true"] .body-text--display {
+  font-size: calc(1em * 1.25);
+  line-height: 1.5;
+}
+
+html[data-kiosk="true"] .mono-sm,
+html[data-kiosk="true"] .label-text {
+  font-size: calc(1em * 1.15);
+}
+
+/* Inflate KPI numerals for distance reading. */
+html[data-kiosk="true"] .kpi-value,
+html[data-kiosk="true"] [data-kpi-value] {
+  font-size: clamp(40px, 6vw, 88px);
+  line-height: 1;
+}
+
+/* Give the page surface the entire viewport. */
+html[data-kiosk="true"] [data-app-main] {
+  padding: 24px 32px !important;
+  max-width: none !important;
+}
+
+/* Inflate the live-dot pulse so the "auto-refreshing" cue is visible
+   from across the room. */
+html[data-kiosk="true"] .dot-live {
+  width: 10px;
+  height: 10px;
 }

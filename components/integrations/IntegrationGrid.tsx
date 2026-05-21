@@ -2,7 +2,7 @@
 
 import { AlertTriangle, Check, Plug } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
-import { CornerButton } from "@/components/ui/CornerButton";
+import { CornerButton, CornerLink } from "@/components/ui/CornerButton";
 import { useGlowCards } from "@/lib/useGlowCards";
 import { ProviderLogo } from "@/components/integrations/ProviderLogo";
 import type { ProviderInfo } from "./providers";
@@ -128,18 +128,49 @@ export function IntegrationGrid({ providers, byProvider, columns = 3 }: Props) {
               <footer className="flex items-center justify-end mt-auto pt-4">
                 {connected ? (
                   hasError ? (
-                    <CornerButton variant="primary" size="sm" disabled>
+                    <CornerLink
+                      href={
+                        provider.key === "webhooks"
+                          ? "/integrations/webhooks"
+                          : `/integrations/${provider.key}`
+                      }
+                      variant="primary"
+                      size="sm"
+                    >
                       Reconnect
-                    </CornerButton>
+                    </CornerLink>
                   ) : (
-                    <CornerButton variant="ghost" size="sm" disabled>
+                    <CornerLink
+                      href={
+                        provider.key === "webhooks"
+                          ? "/integrations/webhooks"
+                          : `/integrations/${provider.key}`
+                      }
+                      variant="ghost"
+                      size="sm"
+                    >
                       Configure
-                    </CornerButton>
+                    </CornerLink>
                   )
+                ) : provider.key === "slack" ||
+                  provider.key === "webhooks" ||
+                  provider.key === "resend" ? (
+                  <CornerLink
+                    href={
+                      provider.key === "webhooks"
+                        ? "/integrations/webhooks"
+                        : `/integrations/${provider.key}`
+                    }
+                    variant="primary"
+                    size="sm"
+                  >
+                    <Plug size={11} strokeWidth={1.5} />
+                    Connect
+                  </CornerLink>
                 ) : (
                   <CornerButton variant="primary" size="sm" disabled>
                     <Plug size={11} strokeWidth={1.5} />
-                    Connect
+                    Coming soon
                   </CornerButton>
                 )}
               </footer>

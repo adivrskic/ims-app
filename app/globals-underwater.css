@@ -1,68 +1,101 @@
 /* ============================================================
- * Dark theme — underwater palette
+ * Underwater palette — deep blue in dark mode, shallow blue in light.
  *
- * Merge these into your existing globals.css. Replaces the current
- * dark-mode token values; the light-mode override block
- * ([data-theme="light"]) stays untouched.
- *
- * The body background is a muted version of the auth atmosphere —
- * same color stops, no rays, no halo. Auth pages keep their full
- * <UnderwaterAtmosphere> overlay on top, so they're unaffected;
- * app pages get the ambient deep-water field underneath all surfaces.
+ * All gradient stops, halo/ray colors, auth chrome colors, and the
+ * manifest field shell come from CSS variables defined here. The
+ * UnderwaterAtmosphere SVG reads them via stopColor: var(--ua-*).
+ * Toggle [data-theme="light"] on <html> and everything shifts to
+ * a sunlit shallow-water palette.
  * ============================================================ */
 
 :root {
-  /* Backgrounds — deepest blue at the floor, lighter toward the top
-     of any single surface. The 4 stops below match the
-     UnderwaterAtmosphere depth gradient exactly. */
+  /* Backgrounds — deepest blue at floor, lighter at top */
   --bg: #061124;
-
-  /* Surfaces — sit slightly lighter than the body bg so cards
-     and panels read as elevated. */
   --surface: #0c1f3c;
   --surface-2: #142a4d;
 
-  /* Borders — blue-tinted whites at low alpha. Replace the
-     neutral white/black borders to keep harmony with the bg. */
   --border-subtle: rgba(140, 175, 220, 0.08);
   --border-default: rgba(140, 175, 220, 0.16);
   --border-hover: rgba(160, 195, 240, 0.32);
 
-  /* Text — slight cool tint, still high contrast on the dark bg */
   --text: #e6ecf5;
   --text-secondary: #a8b8cc;
   --text-muted: #7388a8;
   --text-dim: #4d6585;
 
-  /* Accent (gold) reads warm against the cool bg — keep as-is,
-     it'll pop more against the new palette. If you find it
-     clashing, the muted variant below is half a step cooler. */
   --accent: #d4a949;
-  --accent-dim: rgba(212, 169, 73, 0.12);
+  --accent-dim: rgba(212, 169, 73, 0.18);
 
-  /* Status colors — adjust dim variants for the new bg.
-     The base colors stay but the *-dim alphas read different
-     against #061124 than against a warmer dark. */
   --success: #4ade80;
   --success-dim: rgba(74, 222, 128, 0.12);
-
   --warning: #f5b545;
   --warning-dim: rgba(245, 181, 69, 0.14);
-
   --danger: #ef4f5e;
   --danger-dim: rgba(239, 79, 94, 0.13);
-
   --info: #5ba6e6;
   --info-dim: rgba(91, 166, 230, 0.13);
+
+  /* Underwater atmosphere — gradient stops consumed by the SVG */
+  --ua-depth-1: #142d4d;
+  --ua-depth-2: #061124;
+  --ua-depth-3: #020711;
+  --ua-depth-4: #01040b;
+
+  --ua-halo-1: #7aa8cc;
+  --ua-halo-2: #356c9c;
+  --ua-halo-3: #1a3a5c;
+  --ua-halo-4: #061124;
+  --ua-halo-1-op: 0.38;
+  --ua-halo-2-op: 0.15;
+  --ua-halo-3-op: 0.04;
+
+  --ua-ray-wide-1: #90b6d2;
+  --ua-ray-wide-2: #6e98ba;
+  --ua-ray-wide-3: #406d92;
+  --ua-ray-wide-4: #1a365a;
+  --ua-ray-wide-5: #061124;
+
+  --ua-ray-beam-1: #a8c4dc;
+  --ua-ray-beam-2: #92b6d2;
+  --ua-ray-beam-3: #5a86ac;
+  --ua-ray-beam-4: #2a4b70;
+  --ua-ray-beam-5: #061124;
+
+  /* Body gradient stops (used by the body bg below) */
+  --body-stop-1: #142d4d;
+  --body-stop-2: #061124;
+  --body-stop-3: #020711;
+  --body-stop-4: #01040b;
+  --body-highlight: rgba(122, 168, 204, 0.06);
+
+  /* Auth chrome — text/border colors used by (auth)/layout.tsx */
+  --auth-text: rgba(255, 255, 255, 0.92);
+  --auth-text-secondary: rgba(255, 255, 255, 0.75);
+  --auth-text-muted: rgba(255, 255, 255, 0.55);
+  --auth-text-dim: rgba(255, 255, 255, 0.4);
+  --auth-border: rgba(255, 255, 255, 0.25);
+  --auth-border-subtle: rgba(255, 255, 255, 0.18);
+  --auth-border-hover: rgba(255, 255, 255, 0.32);
+
+  /* Field shell — manifest input background + border */
+  --field-bg: rgba(255, 255, 255, 0.05);
+  --field-bg-hover: rgba(255, 255, 255, 0.08);
+  --field-bg-focus: rgba(255, 255, 255, 0.1);
+  --field-border: rgba(255, 255, 255, 0.18);
+  --field-border-hover: rgba(255, 255, 255, 0.3);
+  --field-placeholder: rgba(255, 255, 255, 0.32);
 }
 
 /* Body background — muted underwater gradient, no rays.
    Fixed attachment so it doesn't scroll; min-height ensures
-   short pages still show the full depth. */
-body {
-  background:
-    /* Subtle radial highlight at top — suggests the light source
-       without committing to the full atmosphere */ radial-gradient(
+   short pages still show the full depth.
+
+   Gated to NOT apply when the user is in the cream light theme —
+   the cream override in globals.css overrides this regardless thanks
+   to selector specificity, but scoping here means light-mode users
+   never pay the cost of fetching/painting the gradient. */
+:root:not([data-theme="light"]) body {
+  background: radial-gradient(
       ellipse 80% 60% at 50% -10%,
       rgba(122, 168, 204, 0.06) 0%,
       transparent 60%
@@ -74,12 +107,62 @@ body {
   color: var(--text);
 }
 
-/* If you have an existing dark body bg in globals.css that sets
-   a different color, this block overrides it. If the rule lives
-   in a more specific selector (e.g. `html.dark body`), copy the
-   `background:` value above into that rule instead.
+/* ============================================================
+ * Light theme — shallow sunlit water.
+ *
+ * Auth pages get a pale-blue gradient instead of the deep dark
+ * blue. Body bg of app pages stays cream (driven by globals.css
+ * light theme); we override --body-stop-* with cream so the
+ * underwater body gradient doesn't bleed through there.
+ * ============================================================ */
+[data-theme="light"] {
+  /* Atmosphere — light tropical-water stack */
+  --ua-depth-1: #d8edf6;
+  --ua-depth-2: #a8d2e8;
+  --ua-depth-3: #76b2d4;
+  --ua-depth-4: #4e93bd;
 
-   Auth pages: the (auth) layout already renders
-   <UnderwaterAtmosphere /> as absolute-positioned overlay,
-   which paints over the body bg — they're visually unchanged
-   from the standalone atmosphere version. */
+  --ua-halo-1: #ffffff;
+  --ua-halo-2: #e0f0f7;
+  --ua-halo-3: #b6d8ea;
+  --ua-halo-4: #d8edf6;
+  --ua-halo-1-op: 0.55;
+  --ua-halo-2-op: 0.22;
+  --ua-halo-3-op: 0.06;
+
+  --ua-ray-wide-1: #ffffff;
+  --ua-ray-wide-2: #f0f8fc;
+  --ua-ray-wide-3: #cde4f0;
+  --ua-ray-wide-4: #a8d2e8;
+  --ua-ray-wide-5: #d8edf6;
+
+  --ua-ray-beam-1: #ffffff;
+  --ua-ray-beam-2: #ffffff;
+  --ua-ray-beam-3: #e6f2f8;
+  --ua-ray-beam-4: #bcdcec;
+  --ua-ray-beam-5: #d8edf6;
+
+  /* Body bg — keep app pages cream (globals.css owns --bg) */
+  --body-stop-1: var(--cream-bg);
+  --body-stop-2: var(--cream-bg);
+  --body-stop-3: var(--cream-bg);
+  --body-stop-4: var(--cream-bg);
+  --body-highlight: transparent;
+
+  /* Auth chrome — dark ink on the lighter water */
+  --auth-text: rgba(8, 35, 65, 0.95);
+  --auth-text-secondary: rgba(8, 35, 65, 0.75);
+  --auth-text-muted: rgba(8, 35, 65, 0.55);
+  --auth-text-dim: rgba(8, 35, 65, 0.38);
+  --auth-border: rgba(8, 35, 65, 0.28);
+  --auth-border-subtle: rgba(8, 35, 65, 0.16);
+  --auth-border-hover: rgba(8, 35, 65, 0.4);
+
+  /* Field shell — pale fill, ink-blue border for contrast on pale water */
+  --field-bg: rgba(255, 255, 255, 0.45);
+  --field-bg-hover: rgba(255, 255, 255, 0.6);
+  --field-bg-focus: rgba(255, 255, 255, 0.75);
+  --field-border: rgba(8, 35, 65, 0.2);
+  --field-border-hover: rgba(8, 35, 65, 0.35);
+  --field-placeholder: rgba(8, 35, 65, 0.38);
+}

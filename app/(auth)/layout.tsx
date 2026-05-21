@@ -5,25 +5,24 @@ import { UnderwaterAtmosphere } from "@/components/effects/UnderwaterAtmosphere"
 import type { CSSProperties } from "react";
 
 /*
- * The override now applies to the form section too — the manifest
- * direction has no card backdrop, so form text sits directly on the
- * underwater bg and needs to be light-colored regardless of the
- * user's theme preference.
+ * The override applies to header, form section, and footer — the
+ * manifest direction has no card backdrop, so form text sits directly
+ * on the underwater bg.
  *
- * --border-subtle is what powers the hairlines between manifest rows
- * (`hairline-b`, `hairline-t`, and the CSS module's `.rowBorder`).
- * The override lifts it from "barely visible" to "comfortably readable
- * against deep water" — still subtle, not heavy.
+ * Values come from --auth-* tokens defined in globals-underwater.css,
+ * which means the entire chrome palette flips when the user toggles
+ * light/dark (light → dark ink on lighter blue, dark → white ink on
+ * deep blue).
  */
 const chromeOverride: CSSProperties = {
   // @ts-expect-error - React.CSSProperties typing for CSS custom props
-  "--text": "rgba(255, 255, 255, 0.92)",
-  "--text-secondary": "rgba(255, 255, 255, 0.75)",
-  "--text-muted": "rgba(255, 255, 255, 0.55)",
-  "--text-dim": "rgba(255, 255, 255, 0.4)",
-  "--border": "rgba(255, 255, 255, 0.25)",
-  "--border-subtle": "rgba(255, 255, 255, 0.18)",
-  "--border-hover": "rgba(255, 255, 255, 0.32)",
+  "--text": "var(--auth-text)",
+  "--text-secondary": "var(--auth-text-secondary)",
+  "--text-muted": "var(--auth-text-muted)",
+  "--text-dim": "var(--auth-text-dim)",
+  "--border": "var(--auth-border)",
+  "--border-subtle": "var(--auth-border-subtle)",
+  "--border-hover": "var(--auth-border-hover)",
 };
 
 export default function AuthLayout({
@@ -53,11 +52,6 @@ export default function AuthLayout({
         <ThemeToggle />
       </header>
 
-      {/*
-        Section now uses the chrome override too. The form floats on the
-        underwater bg with no card backdrop — every input is transparent
-        on water, every label is white-on-water.
-      */}
       <section
         className="relative z-10 flex-1 flex items-center justify-center px-24 py-32"
         style={chromeOverride}

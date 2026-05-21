@@ -68,12 +68,13 @@ export function MobileNav() {
         style={{ zIndex: 100 }}
         aria-label="Primary navigation"
         aria-hidden={!open}
+        data-mobile-nav
       >
         <header className="h-56 hairline-b flex items-center justify-between px-16 shrink-0">
           <Link
             href="/"
             className="flex items-center gap-8 text-text"
-            aria-label="Nimbus home"
+            aria-label="Nautilus home"
             onClick={() => setOpen(false)}
           >
             <Logo size={18} />
@@ -85,7 +86,7 @@ export function MobileNav() {
                 fontWeight: 500,
               }}
             >
-              NIMBUS
+              Nautilus
             </span>
           </Link>
           <button
@@ -153,7 +154,7 @@ export function MobileNav() {
 
         <div className="hairline-t px-10 py-10 shrink-0">
           <Link
-            href="https://nimbuswms.com/help"
+            href="https://nautilusinventory.com/help"
             target="_blank"
             rel="noopener"
             onClick={() => setOpen(false)}

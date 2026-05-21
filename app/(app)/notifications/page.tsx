@@ -4,6 +4,7 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { CornerButton } from "@/components/ui/CornerButton";
 import { Bell, Check, ChevronLeft, ChevronRight } from "lucide-react";
+import { NotificationsRealtime } from "@/components/realtime/PageRealtime";
 import { markAllNotificationsRead } from "../actions";
 
 export const metadata = { title: "Notifications" };
@@ -102,6 +103,7 @@ export default async function NotificationsPage({
 
   return (
     <div className="flex flex-col gap-32">
+      <NotificationsRealtime userId={user.id} />
       <PageHeader
         eyebrow="Inbox"
         title="Notifications"

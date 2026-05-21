@@ -11,7 +11,7 @@ import { createClient } from "@/lib/supabase/server";
  * something in the sidebar's FacilitiesNavItem popover. Read everywhere
  * data is fetched.
  */
-export const CURRENT_FACILITY_COOKIE = "nimbus-current-facility";
+export const CURRENT_FACILITY_COOKIE = "Nautilus-current-facility";
 
 /**
  * Resolves the active facility for the current request.

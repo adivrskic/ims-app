@@ -13,7 +13,7 @@ export interface StaffUser {
  * Pages call this and redirect to "/" (or 404) when null.
  *
  * The staff flag (`profiles.is_staff`) is set manually for the first
- * Nimbus employee via SQL, then propagated through the admin dashboard's
+ * Nautilus employee via SQL, then propagated through the admin dashboard's
  * staff management UI (not built yet — just a checkbox on the staff
  * settings page when you add it).
  */

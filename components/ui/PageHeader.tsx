@@ -16,13 +16,11 @@ interface Props {
   description?: string;
   actions?: ReactNode;
   meta?: MetaItem[];
-  /**
-   * Accepted for parity with existing callers that pass these (e.g. the
-   * analytics page passes `accent="analytics"`). They have no effect on the
-   * rendered output.
-   */
   accent?: string;
   numeral?: string;
+  /** When true, renders a small pulsing accent dot next to the title
+   *  to signal that the page auto-refreshes via realtime. */
+  live?: boolean;
 }
 
 /**
@@ -50,6 +48,7 @@ export function PageHeader({
   description,
   actions,
   meta,
+  live = false,
 }: Props) {
   const [stuck, setStuck] = useState(false);
   const headerRef = useRef<HTMLElement>(null);
@@ -90,7 +89,17 @@ export function PageHeader({
       <div className={styles.row}>
         <div className={styles.titleArea}>
           {eyebrow && <p className={styles.eyebrow}>{eyebrow}</p>}
-          <h1 className={styles.title}>{title}</h1>
+          <h1 className={styles.title}>
+            {title}
+            {live && (
+              <span
+                className="dot dot-live ml-10 inline-block align-middle"
+                aria-label="Live — auto-refreshing"
+                title="Live — auto-refreshing"
+                style={{ marginLeft: 10 }}
+              />
+            )}
+          </h1>
           {description && <p className={styles.description}>{description}</p>}
         </div>
         {hasRight && (

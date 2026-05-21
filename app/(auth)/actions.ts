@@ -15,6 +15,58 @@ export interface ActionState {
 }
 
 /**
+ * Classify Supabase auth errors into friendlier copy. The default error
+ * messages from Supabase are technically accurate but unfriendly — and
+ * rate-limit responses look like ordinary auth failures unless you read
+ * the status code. This wraps both so the user sees something useful.
+ */
+function friendlyAuthError(err: { message?: string; status?: number }): string {
+  const msg = (err.message ?? "").toLowerCase();
+  const status = err.status ?? 0;
+
+  // Rate limits — Supabase uses 429, and the message usually contains
+  // "rate" or "too many" or "for security purposes".
+  if (
+    status === 429 ||
+    msg.includes("rate limit") ||
+    msg.includes("too many") ||
+    msg.includes("for security purposes")
+  ) {
+    return "Too many attempts. Wait a minute and try again.";
+  }
+
+  // Email/password mismatch — Supabase says "Invalid login credentials".
+  if (
+    msg.includes("invalid login credentials") ||
+    msg.includes("invalid credentials")
+  ) {
+    return "That email and passcode don't match our records.";
+  }
+
+  // Email confirmation pending.
+  if (msg.includes("email not confirmed")) {
+    return "Confirm your email first — check your inbox for the link we sent.";
+  }
+
+  // Account exists but signup was attempted again.
+  if (
+    msg.includes("user already registered") ||
+    msg.includes("already been registered")
+  ) {
+    return "That email is already registered. Try signing in instead.";
+  }
+
+  // Weak password rejected server-side (Supabase enforces its own minimum
+  // when password protection is enabled).
+  if (msg.includes("password should be") || msg.includes("weak password")) {
+    return "That passcode is too weak. Mix in a number, a symbol, or more length.";
+  }
+
+  // Fall back to the raw message — better than swallowing it.
+  return err.message ?? "Something went wrong. Try again.";
+}
+
+/**
  * Canonical useActionState signature: (prevState, formData) => ActionState.
  *
  * Critical to match this exactly when used with React 19's useActionState
@@ -75,9 +127,10 @@ export async function signUpWithPassword(
   }
 
   // If sessions are auto-created (email confirmation disabled in
-  // Supabase settings), the trigger / signup hook should have created
-  // a default org. Redirect to overview.
-  redirect("/");
+  // Supabase settings), they land on /onboarding so they can create
+  // their workspace + first facility. The (app)/layout guard would
+  // bounce them there anyway, but redirecting directly avoids a flash.
+  redirect("/onboarding");
 }
 
 export async function sendPasswordReset(

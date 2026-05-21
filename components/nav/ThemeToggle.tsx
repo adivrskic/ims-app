@@ -5,7 +5,7 @@ import { Sun, Moon } from "lucide-react";
 
 type Theme = "dark" | "light";
 
-const STORAGE_KEY = "nimbus_theme";
+const STORAGE_KEY = "Nautilus_theme";
 
 export function ThemeToggle() {
   const [theme, setTheme] = useState<Theme | null>(null);

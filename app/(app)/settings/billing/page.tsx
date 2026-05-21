@@ -135,7 +135,7 @@ export default async function BillingPage() {
                     fontWeight: 600,
                   }}
                 >
-                  Nimbus {tier.label}
+                  Nautilus {tier.label}
                 </h3>
                 <Badge
                   tone={isActive ? "success" : isTrialing ? "info" : "warning"}
@@ -277,7 +277,7 @@ export default async function BillingPage() {
                       day: "numeric",
                       year: "numeric",
                     })}{" "}
-                    · Nimbus {tier.label} ({sub.seats} seats)
+                    · Nautilus {tier.label} ({sub.seats} seats)
                   </p>
                 </div>
                 <span

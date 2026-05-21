@@ -6,6 +6,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { CornerButton, CornerLink } from "@/components/ui/CornerButton";
 import { ChevronRight, ClipboardList, Plus } from "lucide-react";
 import { getActiveScope, scopeDescription } from "@/lib/facilityScope";
+import { OrdersRealtime } from "@/components/realtime/PageRealtime";
 
 export const metadata = { title: "Orders" };
 
@@ -155,6 +156,7 @@ export default async function OrdersPage({
 
   return (
     <div className="flex flex-col gap-32">
+      <OrdersRealtime warehouseId={scope.mode === "single" ? scope.id : null} />
       <PageHeader
         eyebrow="Flow"
         title="Orders"

@@ -9,7 +9,7 @@ import {
 import { ParticleRingDebug } from "./ParticleRingDebug";
 
 // v3 — bumped to invalidate stale configs after defaults retuned
-const STORAGE_KEY = "nimbus_particle_ring_config_v3";
+const STORAGE_KEY = "Nautilus_particle_ring_config_v3";
 
 function loadConfig(): ParticleRingConfig {
   if (typeof window === "undefined") return DEFAULT_RING_CONFIG;

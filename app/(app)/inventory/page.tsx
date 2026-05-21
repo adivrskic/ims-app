@@ -13,6 +13,9 @@ import {
 import { RegisterProductButton } from "./RegisterProductButton";
 import { Boxes, Download, Search } from "lucide-react";
 import { getActiveScope, scopeDescription } from "@/lib/facilityScope";
+import { InventoryRealtime } from "@/components/realtime/PageRealtime";
+import { getCurrentOrgContext } from "@/lib/data/user";
+import { getCategories } from "@/lib/data/org";
 
 export const metadata = { title: "Inventory" };
 
@@ -76,10 +79,10 @@ export default async function InventoryPage({
     validSectionIds = new Set((sec ?? []).map((s) => s.id));
   }
 
-  const { data: categories } = await supabase
-    .from("categories")
-    .select("id, name, sort_order")
-    .order("sort_order", { ascending: true });
+  // Categories rarely change — pull from the cross-request cache instead
+  // of re-querying on every page render. Invalidated by category mutations.
+  const ctx = await getCurrentOrgContext();
+  const categories = ctx ? await getCategories(ctx.orgId) : [];
 
   // Note: locations now includes `section_id` in the select so we can
   // post-filter without re-querying.
@@ -146,6 +149,9 @@ export default async function InventoryPage({
 
   return (
     <div className="flex flex-col gap-40">
+      <InventoryRealtime
+        warehouseId={scope.mode === "single" ? scope.id : null}
+      />
       <PageHeader
         eyebrow="Workspace · Inventory"
         title="Inventory"

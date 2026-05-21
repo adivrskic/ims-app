@@ -6,6 +6,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { CornerButton, CornerLink } from "@/components/ui/CornerButton";
 import { ChevronRight, Truck, Sparkles, Plus } from "lucide-react";
 import { draftReorderPO } from "./actions";
+import { PurchaseOrdersRealtime } from "@/components/realtime/PageRealtime";
 import { getActiveScope, scopeDescription } from "@/lib/facilityScope";
 
 export const metadata = { title: "Purchase Orders" };
@@ -121,6 +122,9 @@ export default async function PurchaseOrdersPage({
 
   return (
     <div className="flex flex-col gap-32">
+      <PurchaseOrdersRealtime
+        warehouseId={scope.mode === "single" ? scope.id : null}
+      />
       <PageHeader
         eyebrow="Flow"
         title="Purchase orders"

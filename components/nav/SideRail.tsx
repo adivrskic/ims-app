@@ -24,9 +24,10 @@ import { ThemeToggle } from "./ThemeToggle";
 import { signOut } from "@/app/(auth)/actions";
 import { FacilitiesNavItem } from "./FacilitiesNavItem";
 import type { FacilityOption } from "@/lib/currentFacility";
+import { SidebarDeviceBar } from "./SidebarDeviceBar";
 
 /** Cookie key shared with the server-side layout. */
-const SIDEBAR_COOKIE = "nimbus-sidebar-collapsed";
+const SIDEBAR_COOKIE = "Nautilus-sidebar-collapsed";
 
 const EXPANDED_WIDTH = 240;
 const COLLAPSED_WIDTH = 56;
@@ -47,25 +48,12 @@ interface Props {
 /**
  * SideRail — the primary navigation chrome.
  *
- * Absorbs everything the old TopNav carried:
- *   Header  : Logo + brand
- *   Top     : Workspace switcher (expanded only — dropdown opens DOWN, has room)
- *   Middle  : Nav groups w/ most-specific-match active highlighting.
- *             The Facilities row renders as a FacilitiesNavItem (button +
- *             popover for quick switching); every other row is a normal
- *             NavItemLink.
- *   Bottom  : Search → palette · Notifications link · Theme · User menu
- *   Footer  : Collapse toggle (⌘B)
- *
- * Notifications is a Link rather than a dropdown here. The original
- * NotificationsDropdown is 340px wide and opens downward — neither plays
- * nicely with a 240px sidebar bottom. The Link uses the same unread badge;
- * the /notifications page carries the full UX. Mobile keeps the bell icon
- * in MobileTopBar so it's always accessible.
- *
- * User menu IS still a dropdown — preserved because sign-out access matters.
- * It's a sidebar-specific custom popover that opens UPWARD (anchored
- * bottom-full) so it never clips off the viewport.
+ * Footer order (top → bottom):
+ *   - Search → command palette
+ *   - Notifications link + theme toggle
+ *   - Devices: Scan tile + Print tile (50/50 when expanded, stacked when collapsed)
+ *   - User menu (upward-opening popover)
+ *   - Collapse toggle (⌘B)
  *
  * Collapse state persists via cookie so SSR can render the correct width
  * on first paint. ⌘B toggles. Mobile (< md): hidden — see MobileNav drawer
@@ -141,8 +129,8 @@ export function SideRail({
         <Link
           href="/"
           className="flex items-center gap-8 text-text"
-          aria-label="Nimbus home"
-          title={collapsed ? "Nimbus home" : undefined}
+          aria-label="Nautilus home"
+          title={collapsed ? "Nautilus home" : undefined}
         >
           <Logo size={18} />
           {!collapsed && (
@@ -154,7 +142,7 @@ export function SideRail({
                 fontWeight: 500,
               }}
             >
-              NIMBUS
+              Nautilus
             </span>
           )}
         </Link>
@@ -322,6 +310,18 @@ export function SideRail({
             )}
           </Link>
           <ThemeToggle />
+        </div>
+
+        {/* ── Devices section ─────────────────────────────────────────
+           Scan + Print as 50/50 tiles when expanded, stacked icons when
+           collapsed. Separated from the row above by a subtle divider
+           and a touch of vertical breathing room so it reads as its own
+           operational tools section. */}
+        <div
+          className={`hairline-t pt-8 mt-2 ${collapsed ? "" : ""}`}
+          aria-label="Devices"
+        >
+          <SidebarDeviceBar collapsed={collapsed} />
         </div>
 
         {/* User menu (custom, opens upward) */}

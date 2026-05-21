@@ -1,8 +1,8 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
+import { revalidatePath, revalidateTag } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-
+import { tags } from "@/lib/cache-tags";
 async function getOrgContext() {
   const supabase = await createClient();
   const {
@@ -59,6 +59,7 @@ export async function createWarehouse(
 
   if (error) return { error: error.message };
 
+  revalidateTag(tags.warehouses(ctx.orgId));
   revalidatePath("/settings/facilities");
   return { success: `${name} added` };
 }
@@ -73,6 +74,7 @@ export async function archiveWarehouse(formData: FormData): Promise<void> {
     .update({ is_active: false })
     .eq("id", id)
     .eq("org_id", ctx.orgId);
+  revalidateTag(tags.warehouses(ctx.orgId));
   revalidatePath("/settings/facilities");
 }
 
@@ -86,6 +88,7 @@ export async function restoreWarehouse(formData: FormData): Promise<void> {
     .update({ is_active: true })
     .eq("id", id)
     .eq("org_id", ctx.orgId);
+  revalidateTag(tags.warehouses(ctx.orgId));
   revalidatePath("/settings/facilities");
 }
 
@@ -148,7 +151,7 @@ export async function createSection(
     }
     return { error: error.message };
   }
-
+  revalidateTag(tags.warehouses(ctx.orgId));
   revalidatePath("/settings/facilities");
   return { success: `Section ${code} added` };
 }
@@ -169,5 +172,6 @@ export async function deleteSection(formData: FormData): Promise<void> {
     .delete()
     .eq("id", id)
     .eq("org_id", ctx.orgId);
+  revalidateTag(tags.warehouses(ctx.orgId));
   revalidatePath("/settings/facilities");
 }

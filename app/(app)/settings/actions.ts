@@ -3,6 +3,11 @@
 import { revalidatePath } from "next/cache";
 import { randomBytes, createHash } from "crypto";
 import { createClient } from "@/lib/supabase/server";
+import {
+  findResendIntegration,
+  sendInviteViaResend,
+} from "@/lib/integrations/resend";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 async function getOrgContext() {
   const supabase = await createClient();
@@ -70,8 +75,43 @@ export async function inviteMember(_prev: unknown, formData: FormData) {
     };
   }
 
+  // If Resend is connected, fire-and-forget the invite email. The invite
+  // row is already saved, so even if email delivery fails the link can
+  // still be shared manually.
+  const resendIntegration = await findResendIntegration(ctx.orgId);
+  let emailDelivered = false;
+  if (resendIntegration) {
+    const admin = createAdminClient();
+    const [{ data: orgRow }, { data: inviterProfile }] = await Promise.all([
+      admin.from("orgs").select("name").eq("id", ctx.orgId).maybeSingle(),
+      admin
+        .from("profiles")
+        .select("full_name, email")
+        .eq("id", ctx.user.id)
+        .maybeSingle(),
+    ]);
+    const result = await sendInviteViaResend(resendIntegration, {
+      inviterName:
+        inviterProfile?.full_name ?? inviterProfile?.email ?? "A teammate",
+      inviterEmail: inviterProfile?.email ?? ctx.user.email ?? "",
+      orgName: orgRow?.name ?? "the workspace",
+      role,
+      token,
+      recipientEmail: email,
+      expiresAt: new Date(expiresAt),
+    });
+    emailDelivered = result.ok;
+    if (!result.ok) {
+      console.error("[invite] Resend send failed:", result.error);
+    }
+  }
+
   revalidatePath("/settings/members");
-  return { success: `Invite sent to ${email}` };
+  return {
+    success: emailDelivered
+      ? `Invite emailed to ${email}`
+      : `Invite created for ${email} — share the link manually or connect Resend to auto-send`,
+  };
 }
 
 export async function revokeInvite(formData: FormData) {

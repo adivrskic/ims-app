@@ -53,8 +53,7 @@ function MagicLinkInner() {
             name="email"
             autoComplete="email"
             required
-            autoFocus
-            placeholder="ops@nimbus.io"
+            placeholder="ops@Nautilus.io"
           />
         </ManifestRow>
 

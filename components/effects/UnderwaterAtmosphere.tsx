@@ -1,12 +1,11 @@
 "use client";
 
 /**
- * Underwater atmosphere — dark depth, surface halo, volumetric god rays.
+ * Underwater atmosphere — depth gradient, surface halo, volumetric god rays.
  *
- * Color palette is calibrated to feel deep — bottom stop is ~RGB(1,4,11),
- * almost black with a hint of blue. Halo and ray gradients are dimmed
- * proportionally so light stops near-on against the dark base rather
- * than reading as spotlights.
+ * All gradient stops are CSS variables (declared in globals-underwater.css)
+ * so the palette flips between deep ocean (dark mode) and shallow sunlit
+ * water (light mode) via the [data-theme] attribute on <html>.
  */
 export function UnderwaterAtmosphere() {
   return (
@@ -20,38 +19,89 @@ export function UnderwaterAtmosphere() {
         className="absolute inset-0 w-full h-full"
       >
         <defs>
-          {/* Depth — deepest near-black at the bottom, blue cast preserved */}
+          {/* Depth — top-of-column lightest, bottom darkest */}
           <linearGradient id="ua-depth" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#142d4d" />
-            <stop offset="35%" stopColor="#061124" />
-            <stop offset="70%" stopColor="#020711" />
-            <stop offset="100%" stopColor="#01040b" />
+            <stop offset="0%" style={{ stopColor: "var(--ua-depth-1)" }} />
+            <stop offset="35%" style={{ stopColor: "var(--ua-depth-2)" }} />
+            <stop offset="70%" style={{ stopColor: "var(--ua-depth-3)" }} />
+            <stop offset="100%" style={{ stopColor: "var(--ua-depth-4)" }} />
           </linearGradient>
 
-          {/* Halo — dimmed to match darker base */}
+          {/* Halo — sun penetration at the surface */}
           <radialGradient id="ua-halo" cx="50%" cy="-10%" r="55%">
-            <stop offset="0%" stopColor="#7aa8cc" stopOpacity="0.38" />
-            <stop offset="30%" stopColor="#356c9c" stopOpacity="0.15" />
-            <stop offset="65%" stopColor="#1a3a5c" stopOpacity="0.04" />
-            <stop offset="100%" stopColor="#061124" stopOpacity="0" />
+            <stop
+              offset="0%"
+              style={{
+                stopColor: "var(--ua-halo-1)",
+                stopOpacity: "var(--ua-halo-1-op)",
+              }}
+            />
+            <stop
+              offset="30%"
+              style={{
+                stopColor: "var(--ua-halo-2)",
+                stopOpacity: "var(--ua-halo-2-op)",
+              }}
+            />
+            <stop
+              offset="65%"
+              style={{
+                stopColor: "var(--ua-halo-3)",
+                stopOpacity: "var(--ua-halo-3-op)",
+              }}
+            />
+            <stop
+              offset="100%"
+              style={{ stopColor: "var(--ua-halo-4)", stopOpacity: 0 }}
+            />
           </radialGradient>
 
-          {/* Wide ambient — softer falloff, lower peak */}
+          {/* Wide ambient ray */}
           <linearGradient id="ua-ray-wide" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#90b6d2" stopOpacity="0" />
-            <stop offset="10%" stopColor="#6e98ba" stopOpacity="0.2" />
-            <stop offset="32%" stopColor="#406d92" stopOpacity="0.09" />
-            <stop offset="70%" stopColor="#1a365a" stopOpacity="0.012" />
-            <stop offset="100%" stopColor="#061124" stopOpacity="0" />
+            <stop
+              offset="0%"
+              style={{ stopColor: "var(--ua-ray-wide-1)", stopOpacity: 0 }}
+            />
+            <stop
+              offset="10%"
+              style={{ stopColor: "var(--ua-ray-wide-2)", stopOpacity: 0.2 }}
+            />
+            <stop
+              offset="32%"
+              style={{ stopColor: "var(--ua-ray-wide-3)", stopOpacity: 0.09 }}
+            />
+            <stop
+              offset="70%"
+              style={{ stopColor: "var(--ua-ray-wide-4)", stopOpacity: 0.012 }}
+            />
+            <stop
+              offset="100%"
+              style={{ stopColor: "var(--ua-ray-wide-5)", stopOpacity: 0 }}
+            />
           </linearGradient>
 
           {/* Narrow bright beam */}
           <linearGradient id="ua-ray-beam" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#a8c4dc" stopOpacity="0" />
-            <stop offset="7%" stopColor="#92b6d2" stopOpacity="0.45" />
-            <stop offset="25%" stopColor="#5a86ac" stopOpacity="0.17" />
-            <stop offset="60%" stopColor="#2a4b70" stopOpacity="0.025" />
-            <stop offset="100%" stopColor="#061124" stopOpacity="0" />
+            <stop
+              offset="0%"
+              style={{ stopColor: "var(--ua-ray-beam-1)", stopOpacity: 0 }}
+            />
+            <stop
+              offset="7%"
+              style={{ stopColor: "var(--ua-ray-beam-2)", stopOpacity: 0.45 }}
+            />
+            <stop
+              offset="25%"
+              style={{ stopColor: "var(--ua-ray-beam-3)", stopOpacity: 0.17 }}
+            />
+            <stop
+              offset="60%"
+              style={{ stopColor: "var(--ua-ray-beam-4)", stopOpacity: 0.025 }}
+            />
+            <stop
+              offset="100%"
+              style={{ stopColor: "var(--ua-ray-beam-5)", stopOpacity: 0 }}
+            />
           </linearGradient>
 
           <filter
@@ -130,146 +180,12 @@ export function UnderwaterAtmosphere() {
           <polygon
             points="585,-180 620,1080 820,1080"
             fill="url(#ua-ray-wide)"
-            opacity="0.6"
+            opacity="0.55"
             filter="url(#ua-blur-hazy)"
           >
             <animate
               attributeName="opacity"
-              values="0.5;0.68;0.55;0.5"
-              keyTimes="0;0.4;0.7;1"
-              dur="13s"
-              begin="-5.8s"
-              repeatCount="indefinite"
-            />
-            <animateTransform
-              attributeName="transform"
-              type="translate"
-              values="0,0;7,0;-4,0;0,0"
-              keyTimes="0;0.35;0.7;1"
-              dur="17s"
-              begin="-4.1s"
-              repeatCount="indefinite"
-            />
-          </polygon>
-
-          <polygon
-            points="380,-80 50,940 230,940"
-            fill="url(#ua-ray-wide)"
-            opacity="0.35"
-            filter="url(#ua-blur-hazy)"
-          >
-            <animate
-              attributeName="opacity"
-              values="0.28;0.42;0.32;0.28"
-              keyTimes="0;0.4;0.7;1"
-              dur="9s"
-              begin="-2.4s"
-              repeatCount="indefinite"
-            />
-            <animateTransform
-              attributeName="transform"
-              type="translate"
-              values="0,0;-12,0;8,0;0,0"
-              keyTimes="0;0.4;0.7;1"
-              dur="16s"
-              begin="-6.5s"
-              repeatCount="indefinite"
-            />
-          </polygon>
-
-          <polygon
-            points="630,-100 790,980 960,980"
-            fill="url(#ua-ray-wide)"
-            opacity="0.32"
-            filter="url(#ua-blur-hazy)"
-          >
-            <animate
-              attributeName="opacity"
-              values="0.4;0.25;0.38;0.4"
-              keyTimes="0;0.35;0.7;1"
-              dur="10s"
-              begin="-7.3s"
-              repeatCount="indefinite"
-            />
-            <animateTransform
-              attributeName="transform"
-              type="translate"
-              values="0,0;11,0;-6,0;0,0"
-              keyTimes="0;0.4;0.7;1"
-              dur="19s"
-              begin="-3.8s"
-              repeatCount="indefinite"
-            />
-          </polygon>
-
-          {/* NARROW BRIGHT BEAMS */}
-          <polygon
-            points="495,-240 480,820 510,820"
-            fill="url(#ua-ray-beam)"
-            filter="url(#ua-blur-soft)"
-          >
-            <animate
-              attributeName="opacity"
-              values="0.85;1;0.92;0.85"
-              keyTimes="0;0.4;0.75;1"
-              dur="6s"
-              begin="-1.1s"
-              repeatCount="indefinite"
-            />
-            <animateTransform
-              attributeName="transform"
-              type="translate"
-              values="0,0;4,0;-3,0;0,0"
-              keyTimes="0;0.35;0.7;1"
-              dur="10s"
-              begin="-2.7s"
-              repeatCount="indefinite"
-            />
-          </polygon>
-
-          <polygon
-            points="445,-200 350,880 388,880"
-            fill="url(#ua-ray-beam)"
-            opacity="0.78"
-            filter="url(#ua-blur-soft)"
-          >
-            <animate
-              attributeName="opacity"
-              values="0.65;0.85;0.7;0.65"
-              keyTimes="0;0.35;0.7;1"
-              dur="8s"
-              begin="-4.6s"
-              repeatCount="indefinite"
-            />
-            <animateTransform
-              attributeName="transform"
-              type="translate"
-              values="0,0;-8,0;5,0;0,0"
-              keyTimes="0;0.4;0.7;1"
-              dur="11s"
-              begin="-1.9s"
-              repeatCount="indefinite"
-            />
-          </polygon>
-
-          <polygon
-            points="560,-180 615,740 650,740"
-            fill="url(#ua-ray-beam)"
-            opacity="0.72"
-            filter="url(#ua-blur-soft)"
-          >
-            <animate
-              attributeName="opacity"
-              values="0.82;0.6;0.78;0.82"
-              keyTimes="0;0.4;0.7;1"
-              dur="7s"
-              begin="-3.3s"
-              repeatCount="indefinite"
-            />
-            <animateTransform
-              attributeName="transform"
-              type="translate"
-              values="0,0;7,0;-4,0;0,0"
+              values="0.6;0.45;0.58;0.6"
               keyTimes="0;0.4;0.75;1"
               dur="12s"
               begin="-5.2s"

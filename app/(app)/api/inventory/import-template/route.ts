@@ -14,7 +14,7 @@ export async function GET() {
     headers: {
       "Content-Type": "text/csv; charset=utf-8",
       "Content-Disposition":
-        'attachment; filename="nimbus-products-template.csv"',
+        'attachment; filename="Nautilus-products-template.csv"',
       "Cache-Control": "no-store",
     },
   });

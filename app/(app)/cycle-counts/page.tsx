@@ -7,6 +7,7 @@ import { SectionTitle } from "@/components/ui/SectionTitle";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { NewCountForm } from "./NewCountForm";
 import { Layers, X, ChevronRight } from "lucide-react";
+import { CycleCountsRealtime } from "@/components/realtime/PageRealtime";
 
 export const metadata = { title: "Cycle counts" };
 
@@ -160,6 +161,7 @@ export default async function CycleCountsPage({
 
   return (
     <div className="flex flex-col gap-32">
+      <CycleCountsRealtime />
       <PageHeader
         eyebrow="Operate · Accuracy"
         title="Cycle counts"
