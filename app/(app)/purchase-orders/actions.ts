@@ -380,7 +380,7 @@ export async function createPurchaseOrder(
 
   const { data: supplier } = await ctx.supabase
     .from("suppliers")
-    .select("id, name, contact_email")
+    .select("id, name, email")
     .eq("id", supplierId)
     .eq("org_id", ctx.orgId)
     .maybeSingle();
@@ -441,7 +441,7 @@ export async function createPurchaseOrder(
       po_number: `PO-${nextNum}`,
       supplier_id: supplier.id,
       supplier_name: supplier.name,
-      supplier_contact: supplier.contact_email,
+      supplier_contact: supplier.email,
       status: "draft",
       expected_date: expectedDate || null,
       notes: notes || null,

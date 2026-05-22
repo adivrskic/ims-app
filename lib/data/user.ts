@@ -1,6 +1,8 @@
 import "server-only";
 import { cache } from "react";
+import { cookies } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
+import { CURRENT_WORKSPACE_COOKIE } from "@/lib/currentWorkspace";
 
 /**
  * Request-cached fetchers for user / profile / membership.
@@ -61,17 +63,53 @@ export const getMemberships = cache(async (): Promise<Membership[]> => {
 });
 
 /**
- * The canonical "current org context" used by actions and pages. Returns
- * the user's primary org (first one — TODO: respect current workspace
- * cookie when multi-org workspace switching is fully wired).
+ * Resolve the user's currently active membership, respecting the
+ * workspace cookie when present.
+ *
+ * - If the cookie names a workspace the user belongs to → that one.
+ * - Otherwise (no cookie, or stale cookie pointing to a left org) →
+ *   the first membership.
+ * - No memberships → null.
+ *
+ * This is the single source of truth for "which workspace is the user
+ * looking at right now." Every server-side data fetch goes through here
+ * via `getCurrentOrgContext`.
+ */
+export const getActiveMembership = cache(
+  async (): Promise<Membership | null> => {
+    const memberships = await getMemberships();
+    if (memberships.length === 0) return null;
+
+    const cookieStore = await cookies();
+    const cookieValue = cookieStore.get(CURRENT_WORKSPACE_COOKIE)?.value;
+
+    if (cookieValue) {
+      const match = memberships.find((m) => m.org_id === cookieValue);
+      if (match) return match;
+      // Stale cookie — silent fall-through to first membership. We
+      // can't mutate cookies from a cached read; the next successful
+      // switchWorkspace call will overwrite it.
+    }
+
+    return memberships[0];
+  }
+);
+
+/**
+ * The canonical "current org context" used by server actions and pages.
+ * Returns the user + the org they're currently looking at + their role.
+ *
+ * Now honors the workspace cookie (was previously hardcoded to
+ * memberships[0], a silent bug for multi-org users).
  */
 export const getCurrentOrgContext = cache(async () => {
-  const memberships = await getMemberships();
-  if (memberships.length === 0) return null;
-  const first = memberships[0];
+  const active = await getActiveMembership();
+  if (!active) return null;
+  const user = await getCurrentUser();
+  if (!user) return null;
   return {
-    user: (await getCurrentUser())!,
-    orgId: first.org_id,
-    role: first.role,
+    user,
+    orgId: active.org_id,
+    role: active.role,
   };
 });

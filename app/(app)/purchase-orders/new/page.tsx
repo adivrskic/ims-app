@@ -22,7 +22,7 @@ export default async function NewPoPage() {
         .order("created_at", { ascending: true }),
       supabase
         .from("suppliers")
-        .select("id, name, contact_email, contact_phone, payment_terms")
+        .select("id, name, email, phone, payment_terms")
         .eq("is_active", true)
         .order("name", { ascending: true }),
     ]);

@@ -7,7 +7,12 @@ import { CommandPalette } from "@/components/nav/CommandPalette";
 import { KeyboardShortcuts } from "@/components/nav/KeyboardShortcuts";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentFacility } from "@/lib/currentFacility";
-import { getCurrentUser, getProfile, getMemberships } from "@/lib/data/user";
+import {
+  getCurrentUser,
+  getProfile,
+  getMemberships,
+  getActiveMembership,
+} from "@/lib/data/user";
 import type { WorkspaceOption } from "@/components/nav/WorkspaceSwitcher";
 import type { NotificationItem } from "@/components/nav/NotificationsDropdown";
 import { ScannerProvider } from "@/components/scanner/ScannerProvider";
@@ -28,29 +33,36 @@ export default async function AppLayout({
   const cookieStore = await cookies();
   const initialCollapsed = cookieStore.get(SIDEBAR_COOKIE)?.value === "true";
 
-  // These three are now request-cached and free to other callers downstream.
+  // These are now request-cached and free to other callers downstream.
   // Run in parallel with the still-uncached fetches below.
   const supabase = await createClient();
-  const [profile, memberships, notifResult, unreadResult, facilityState] =
-    await Promise.all([
-      getProfile(),
-      getMemberships(),
-      supabase
-        .from("notifications")
-        .select("id, kind, title, body, link, read_at, created_at")
-        .eq("user_id", user.id)
-        .order("created_at", { ascending: false })
-        .limit(10),
-      supabase
-        .from("notifications")
-        .select("id", { count: "exact", head: true })
-        .eq("user_id", user.id)
-        .is("read_at", null),
-      getCurrentFacility(),
-    ]);
+  const [
+    profile,
+    memberships,
+    activeMembership,
+    notifResult,
+    unreadResult,
+    facilityState,
+  ] = await Promise.all([
+    getProfile(),
+    getMemberships(),
+    getActiveMembership(),
+    supabase
+      .from("notifications")
+      .select("id, kind, title, body, link, read_at, created_at")
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: false })
+      .limit(10),
+    supabase
+      .from("notifications")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", user.id)
+      .is("read_at", null),
+    getCurrentFacility(),
+  ]);
 
-  // Onboarding guard
-  if (!memberships || memberships.length === 0) {
+  // Onboarding guard — also covers the activeMembership null case.
+  if (!memberships || memberships.length === 0 || !activeMembership) {
     redirect("/onboarding");
   }
 
@@ -61,7 +73,14 @@ export default async function AppLayout({
     role: m.role,
   }));
 
-  const workspace = workspaces[0] ?? null;
+  // The active workspace comes from getActiveMembership (cookie-respecting),
+  // not the first item in the list — fixing the multi-org silent bug.
+  const workspace: WorkspaceOption = {
+    id: activeMembership.org?.id ?? activeMembership.org_id,
+    name: activeMembership.org?.name ?? "Unknown",
+    slug: activeMembership.org?.slug ?? "",
+    role: activeMembership.role,
+  };
 
   const userForNav = profile
     ? { email: profile.email, full_name: profile.full_name }

@@ -21,8 +21,8 @@ interface Warehouse {
 interface Supplier {
   id: string;
   name: string;
-  contact_email: string | null;
-  contact_phone: string | null;
+  email: string | null;
+  phone: string | null;
   payment_terms: string | null;
 }
 
@@ -106,8 +106,8 @@ export function CreatePoForm({ products, warehouses, suppliers }: Props) {
           supplier under Settings → Suppliers, then come back here to draft a
           PO.
         </p>
-        <CornerLink href="/settings/suppliers" variant="primary" size="sm">
-          Go to Suppliers →
+        <CornerLink href="/suppliers" variant="primary" size="sm">
+          Go to Suppliers
         </CornerLink>
       </div>
     );
@@ -137,10 +137,10 @@ export function CreatePoForm({ products, warehouses, suppliers }: Props) {
             </p>
           </div>
           <Link
-            href="/settings/suppliers"
+            href="/suppliers"
             className="mono-sm text-text-muted hover:text-[var(--accent)] transition-colors whitespace-nowrap"
           >
-            Manage →
+            Manage
           </Link>
         </header>
 
@@ -168,13 +168,13 @@ export function CreatePoForm({ products, warehouses, suppliers }: Props) {
             <div>
               <p className="label-text text-text-muted">Email</p>
               <p className="mono-sm text-text-secondary">
-                {selectedSupplier.contact_email ?? "—"}
+                {selectedSupplier.email ?? "—"}
               </p>
             </div>
             <div>
               <p className="label-text text-text-muted">Phone</p>
               <p className="mono-sm text-text-secondary">
-                {selectedSupplier.contact_phone ?? "—"}
+                {selectedSupplier.phone ?? "—"}
               </p>
             </div>
           </div>
