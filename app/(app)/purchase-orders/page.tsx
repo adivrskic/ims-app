@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { createClient } from "@/lib/supabase/server";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Badge } from "@/components/ui/Badge";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -8,6 +7,8 @@ import { ChevronRight, Truck, Sparkles, Plus } from "lucide-react";
 import { draftReorderPO } from "./actions";
 import { PurchaseOrdersRealtime } from "@/components/realtime/PageRealtime";
 import { getActiveScope, scopeDescription } from "@/lib/facilityScope";
+import { getCurrentOrgContext } from "@/lib/data/user";
+import { getPurchaseOrdersList } from "@/lib/data/purchaseOrders";
 
 export const metadata = { title: "Purchase Orders" };
 
@@ -86,39 +87,24 @@ export default async function PurchaseOrdersPage({
   const { status: rawStatus, no_low_stock } = await searchParams;
   const activeFilter = FILTERS.find((f) => f.key === rawStatus) ?? FILTERS[0];
 
+  // Resolve scope once, then read listing + chip counts from the
+  // cross-request cache (lib/data/purchaseOrders.ts). Keyed by org +
+  // facility + status filter and tagged tags.purchaseOrders(orgId), so
+  // navigations serve instantly and PO mutations / PurchaseOrdersRealtime
+  // invalidate exactly this data.
   const scope = await getActiveScope();
-  const supabase = await createClient();
+  const ctx = await getCurrentOrgContext();
+  const facilityId = scope.mode === "single" ? scope.id : null;
 
-  let query = supabase
-    .from("purchase_orders")
-    .select(
-      "id, po_number, supplier_name, status, expected_date, created_at, items:po_line_items ( count )"
-    )
-    .order("created_at", { ascending: false });
+  const data = ctx
+    ? await getPurchaseOrdersList(ctx.orgId, facilityId, activeFilter.statuses)
+    : null;
 
-  if (scope.mode === "single") {
-    query = query.eq("warehouse_id", scope.id);
-  }
-  if (activeFilter.statuses) {
-    query = query.in("status", activeFilter.statuses);
-  }
-
-  const { data } = await query;
-  const pos = (data ?? []) as PoRow[];
-
-  // Status counts for chip badges — also scoped so the totals match
-  // what the active filter actually shows.
-  let countsQuery = supabase.from("purchase_orders").select("status");
-  if (scope.mode === "single") {
-    countsQuery = countsQuery.eq("warehouse_id", scope.id);
-  }
-  const { data: allStatuses } = await countsQuery;
-  const countMap = new Map<string, number>();
-  let total = 0;
-  for (const r of (allStatuses ?? []) as Array<{ status: PoStatus }>) {
-    countMap.set(r.status, (countMap.get(r.status) ?? 0) + 1);
-    total++;
-  }
+  const pos = (data?.pos ?? []) as PoRow[];
+  const total = data?.total ?? 0;
+  // Rebuild the Map the chip rendering expects. The fetcher returns a plain
+  // object because unstable_cache serializes its result to JSON.
+  const countMap = new Map<string, number>(Object.entries(data?.counts ?? {}));
 
   return (
     <div className="flex flex-col gap-32">
@@ -337,7 +323,5 @@ function Td({
   children?: React.ReactNode;
   className?: string;
 }) {
-  return (
-    <td className={`px-14 py-14 align-middle ${className}`}>{children}</td>
-  );
+  return <td className={`px-14 py-12 ${className}`}>{children}</td>;
 }

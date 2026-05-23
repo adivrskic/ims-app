@@ -1,20 +1,28 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState, useTransition } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  useTransition,
+} from "react";
 import {
   ScanLine,
   Check,
   AlertCircle,
   MapPin,
-  Package,
   ClipboardCheck,
   ClipboardList,
   Truck,
 } from "lucide-react";
-import { useLastScan } from "@/components/scanner/ScannerProvider";
+import {
+  useLastScan,
+  useScannerEnabled,
+} from "@/components/scanner/ScannerProvider";
 import { lookupBarcode, type ScanLookupResult } from "./actions";
-import { CornerLink } from "@/components/ui/CornerButton";
+import { CornerButton, CornerLink } from "@/components/ui/CornerButton";
 import { EmptyState } from "@/components/ui/EmptyState";
 
 interface HistoryEntry {
@@ -26,35 +34,116 @@ const MAX_HISTORY = 25;
 
 export function ScanWorkspace() {
   const lastScan = useLastScan();
+  const [enabled, setEnabled] = useScannerEnabled();
   const [current, setCurrent] = useState<ScanLookupResult | null>(null);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [, startTransition] = useTransition();
   const [pending, setPending] = useState(false);
+  const [manual, setManual] = useState("");
 
-  // Every new scan event fires the lookup and updates state.
+  // Monotonic request id so a newer lookup (rapid scans or a manual submit
+  // landing mid-flight) always wins and stale responses are discarded.
+  const reqId = useRef(0);
+
+  const runLookup = useCallback(
+    (barcode: string, at: number) => {
+      const trimmed = barcode.trim();
+      if (!trimmed) return;
+      const myId = ++reqId.current;
+      setPending(true);
+      startTransition(() => {
+        lookupBarcode(trimmed).then((result) => {
+          if (myId !== reqId.current) return; // superseded by a newer lookup
+          setCurrent(result);
+          setPending(false);
+          setHistory((prev) =>
+            [{ result, at }, ...prev].slice(0, MAX_HISTORY)
+          );
+        });
+      });
+    },
+    [startTransition]
+  );
+
+  // Hardware scans flow through the global ScannerProvider → useLastScan.
   useEffect(() => {
     if (!lastScan) return;
-    let cancelled = false;
-    setPending(true);
-    startTransition(() => {
-      lookupBarcode(lastScan.barcode).then((result) => {
-        if (cancelled) return;
-        setCurrent(result);
-        setPending(false);
-        setHistory((prev) =>
-          [{ result, at: lastScan.at }, ...prev].slice(0, MAX_HISTORY)
-        );
-      });
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [lastScan]);
+    runLookup(lastScan.barcode, lastScan.at);
+  }, [lastScan, runLookup]);
+
+  // Manual entry: works without scanner hardware, as a test path, and even
+  // when global capture is paused. (The global useScanner only recognizes
+  // scanner-speed keystroke bursts and ignores human typing by design — so
+  // an explicit input is the only way to type a barcode by hand.)
+  const handleManualSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const trimmed = manual.trim();
+    if (!trimmed) return;
+    runLookup(trimmed, Date.now());
+    setManual("");
+  };
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-24">
       {/* Main scan surface */}
-      <section aria-labelledby="scan-surface">
+      <section aria-labelledby="scan-surface" className="flex flex-col gap-16">
+        {/* Paused-capture notice — the manual field below still works */}
+        {!enabled && (
+          <div className="hairline-subtle bg-[var(--surface-2)] px-14 py-10 flex items-center gap-12">
+            <AlertCircle
+              size={13}
+              strokeWidth={1.5}
+              className="text-text-muted shrink-0"
+              aria-hidden
+            />
+            <p className="mono-sm text-text-muted flex-1">
+              Hardware scan capture is paused. The field below still works.
+            </p>
+            <CornerButton
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => setEnabled(true)}
+            >
+              Resume
+            </CornerButton>
+          </div>
+        )}
+
+        {/* Manual barcode entry — always available */}
+        <form
+          onSubmit={handleManualSubmit}
+          className="flex items-center gap-8"
+          aria-label="Look up a barcode"
+        >
+          <div className="relative flex-1">
+            <ScanLine
+              size={12}
+              strokeWidth={1.5}
+              className="absolute left-12 top-1/2 -translate-y-1/2 text-text-dim pointer-events-none"
+              aria-hidden
+            />
+            <input
+              type="text"
+              inputMode="text"
+              autoComplete="off"
+              value={manual}
+              onChange={(e) => setManual(e.target.value)}
+              placeholder="Enter or scan a barcode…"
+              aria-label="Barcode"
+              className="field-shell w-full pl-32 pr-12 py-8 mono-sm"
+            />
+          </div>
+          <CornerButton
+            type="submit"
+            variant="primary"
+            size="sm"
+            disabled={!manual.trim() || pending}
+          >
+            Look up
+          </CornerButton>
+        </form>
+
         {current ? (
           <ResultPanel result={current} pending={pending} />
         ) : (
@@ -154,7 +243,7 @@ function ReadyPanel() {
         </p>
       </div>
       <p className="label-text text-text-dim" style={{ marginTop: 16 }}>
-        Or type a barcode anywhere to test
+        Or enter a barcode in the field above to look one up
       </p>
     </div>
   );
@@ -301,32 +390,16 @@ function ResultPanel({
 
       {/* Actions */}
       <footer className="flex flex-wrap items-center gap-8 hairline-t pt-16">
-        <CornerLink
-          href={`/inventory/${p.id}?action=locate`}
-          variant="primary"
-          size="sm"
-        >
+        <CornerLink href={`/inventory/${p.id}`} variant="primary" size="sm">
           <MapPin size={11} strokeWidth={1.5} />
           Locate
         </CornerLink>
-        <CornerLink
-          href={`/orders/new?prefill_product=${p.id}`}
-          variant="ghost"
-          size="sm"
-        >
+        <CornerLink href="/orders/new" variant="ghost" size="sm">
           <ClipboardList size={11} strokeWidth={1.5} />
           Pick
         </CornerLink>
         <CornerLink
-          href={`/inventory/${p.id}?action=move`}
-          variant="ghost"
-          size="sm"
-        >
-          <Package size={11} strokeWidth={1.5} />
-          Move
-        </CornerLink>
-        <CornerLink
-          href={`/cycle-counts?prefill_product=${p.id}`}
+          href={`/cycle-counts?product=${p.id}`}
           variant="ghost"
           size="sm"
         >

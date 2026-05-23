@@ -1,7 +1,8 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
+import { revalidatePath, revalidateTag } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { tags } from "@/lib/cache-tags";
 
 async function getOrgContext() {
   const supabase = await createClient();
@@ -43,6 +44,11 @@ async function getOrgContext() {
  * Important: we read the location's CURRENT qty (not whatever the user might
  * have eyeballed on a stale UI). This prevents two operators recording
  * counts on different baselines from cancelling each other out.
+ *
+ * Cache: this writes cycle_counts (→ cycleCounts tag) and, when there's a
+ * variance, locations + scan_history (→ inventory tag). Busting the inventory
+ * tag is what keeps the cached Inventory list correct after a count
+ * adjustment — this is part of sealing Inventory's write path.
  */
 export async function recordCycleCount(
   _prev: unknown,
@@ -116,8 +122,11 @@ export async function recordCycleCount(
 
     if (locUpdateErr) {
       // We've recorded the count but couldn't apply the adjustment.
-      // Leave status='recorded' so an admin can investigate.
+      // Leave status='recorded' so an admin can investigate. The count
+      // row exists, so bust the cycleCounts tag; the location did NOT
+      // change, so leave the inventory tag alone.
       revalidatePath("/cycle-counts");
+      revalidateTag(tags.cycleCounts(ctx.orgId));
       return {
         error: `Count recorded but adjustment failed: ${locUpdateErr.message}`,
         id: count.id,
@@ -147,6 +156,12 @@ export async function recordCycleCount(
 
   revalidatePath("/cycle-counts");
   revalidatePath(`/inventory/${productId}`);
+  // Always bust cycleCounts (a count row was created). Bust inventory only
+  // when a variance actually changed a location's on-hand quantity.
+  revalidateTag(tags.cycleCounts(ctx.orgId));
+  if (variance !== 0) {
+    revalidateTag(tags.inventory(ctx.orgId));
+  }
   return {
     success:
       variance === 0
@@ -173,4 +188,7 @@ export async function voidCycleCount(formData: FormData): Promise<void> {
     .eq("id", id)
     .eq("org_id", ctx.orgId);
   revalidatePath("/cycle-counts");
+  // Voiding changes accuracy stats but not any location's on-hand, so only
+  // the cycleCounts tag needs busting.
+  revalidateTag(tags.cycleCounts(ctx.orgId));
 }

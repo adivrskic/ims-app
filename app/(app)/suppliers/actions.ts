@@ -1,7 +1,8 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
+import { revalidatePath, revalidateTag } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { tags } from "@/lib/cache-tags";
 import type { PaymentTerms } from "../customers/types";
 import type { Supplier, SupplierInput } from "./types";
 
@@ -157,6 +158,7 @@ export async function createSupplier(
   if (error) return { error: error.message };
 
   revalidatePath("/suppliers");
+  revalidateTag(tags.suppliers(ctx.orgId));
   return { id: data.id };
 }
 
@@ -200,6 +202,7 @@ export async function updateSupplier(
 
   revalidatePath("/suppliers");
   revalidatePath(`/suppliers/${id}`);
+  revalidateTag(tags.suppliers(ctx.orgId));
   return {};
 }
 
@@ -222,6 +225,7 @@ export async function setSupplierActive(
 
   revalidatePath("/suppliers");
   revalidatePath(`/suppliers/${id}`);
+  revalidateTag(tags.suppliers(ctx.orgId));
   return {};
 }
 

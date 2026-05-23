@@ -7,6 +7,8 @@ import { CornerButton, CornerLink } from "@/components/ui/CornerButton";
 import { ChevronRight, ClipboardList, Plus } from "lucide-react";
 import { getActiveScope, scopeDescription } from "@/lib/facilityScope";
 import { OrdersRealtime } from "@/components/realtime/PageRealtime";
+import { getCurrentOrgContext } from "@/lib/data/user";
+import { getOrdersList } from "@/lib/data/orders";
 
 export const metadata = { title: "Orders" };
 
@@ -117,42 +119,19 @@ export default async function OrdersPage({
   const { status: rawStatus } = await searchParams;
   const activeFilter = FILTERS.find((f) => f.key === rawStatus) ?? FILTERS[0];
 
-  // Resolve the active facility scope once. Used for both the listing
-  // query (.eq below) and the status-count query so the chip badges
-  // reflect what's actually visible.
   const scope = await getActiveScope();
-  const supabase = await createClient();
+  const ctx = await getCurrentOrgContext();
+  const facilityId = scope.mode === "single" ? scope.id : null;
 
-  let query = supabase
-    .from("orders")
-    .select(
-      "id, order_number, order_type, status, customer_name, delivery_date, delivery_window, created_at, items:order_items ( count )"
-    )
-    .order("created_at", { ascending: false });
+  const data = ctx
+    ? await getOrdersList(ctx.orgId, facilityId, activeFilter.statuses)
+    : null;
 
-  if (scope.mode === "single") {
-    query = query.eq("warehouse_id", scope.id);
-  }
-  if (activeFilter.statuses) {
-    query = query.in("status", activeFilter.statuses);
-  }
-
-  const { data } = await query;
-  const orders = (data ?? []) as OrderRow[];
-
-  // Status counts for the chip badges — also scoped, so the numbers
-  // match what the filter would actually show.
-  let countsQuery = supabase.from("orders").select("status");
-  if (scope.mode === "single") {
-    countsQuery = countsQuery.eq("warehouse_id", scope.id);
-  }
-  const { data: statusCounts } = await countsQuery;
-  const countMap = new Map<string, number>();
-  let total = 0;
-  for (const r of (statusCounts ?? []) as Array<{ status: OrderStatus }>) {
-    countMap.set(r.status, (countMap.get(r.status) ?? 0) + 1);
-    total++;
-  }
+  const orders = (data?.orders ?? []) as OrderRow[];
+  const total = data?.total ?? 0;
+  // Rebuild the Map the chip rendering already expects. The fetcher returns
+  // a plain object because unstable_cache serializes its result to JSON.
+  const countMap = new Map<string, number>(Object.entries(data?.counts ?? {}));
 
   return (
     <div className="flex flex-col gap-32">

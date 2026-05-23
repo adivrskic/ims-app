@@ -1,12 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import Link from "next/link";
-import { ScanLine, Printer } from "lucide-react";
-import {
-  useLastScan,
-  useScannerEnabled,
-} from "@/components/scanner/ScannerProvider";
+import { Printer, ScanLine } from "lucide-react";
 import { usePrinter } from "@/components/print/PrinterProvider";
 
 interface Props {
@@ -17,20 +12,21 @@ interface Props {
 /**
  * Sidebar device bar — Scan + Print, side by side as bigger tiles.
  *
- * Expanded: 50/50 grid; each tile shows icon, label, status dot, and a
- * compact status word ("Ready", "Off", last-scan barcode, printer name, etc).
- *
- * Collapsed: two stacked icon-only buttons that keep the toggles within reach.
+ * Expanded: 50/50 grid; each tile shows icon + label (+ Print status).
+ * Collapsed: two stacked icon-only buttons.
  *
  * Click behavior:
- *   - Scan tile: toggle the global scanner on/off (matches the original
- *     ScanIndicator pattern). The /scan page still exists for full UX.
+ *   - Scan tile: navigates to /scan (the scan workstation).
  *   - Print tile: navigates to /settings/devices when paired; opens the
  *     USB picker when not yet paired.
+ *
+ * Note: the Scan tile no longer surfaces scanner "ready" status. A
+ * keyboard-wedge HID scanner is indistinguishable from a keyboard to the
+ * browser, so connection can't be detected — the tile is just a shortcut
+ * into the scan page. Global scan capture still runs via ScannerProvider;
+ * its on/off toggle lives on /scan and /settings/devices.
  */
 export function SidebarDeviceBar({ collapsed }: Props) {
-  const [scanEnabled, setScanEnabled] = useScannerEnabled();
-  const lastScan = useLastScan();
   const {
     supported: printSupported,
     device,
@@ -39,43 +35,21 @@ export function SidebarDeviceBar({ collapsed }: Props) {
     connect,
   } = usePrinter();
 
-  // Flash the scan tile briefly when a new scan lands.
-  const [scanFlash, setScanFlash] = useState(false);
-  useEffect(() => {
-    if (!lastScan) return;
-    setScanFlash(true);
-    const id = setTimeout(() => setScanFlash(false), 1400);
-    return () => clearTimeout(id);
-  }, [lastScan]);
-
   if (collapsed) {
     return (
       <div className="flex flex-col gap-6">
-        <button
-          type="button"
-          onClick={() => setScanEnabled(!scanEnabled)}
-          className={`hairline-subtle h-32 flex items-center justify-center w-full transition-colors ${
-            scanEnabled ? "hover:border-[var(--border-hover)]" : "opacity-55"
-          }`}
-          aria-label={
-            scanEnabled
-              ? "Scanner ready — click to pause"
-              : "Scanner paused — click to resume"
-          }
-          title={scanEnabled ? "Scanner ready" : "Scanner off"}
+        <Link
+          href="/scan"
+          className="hairline-subtle h-32 flex items-center justify-center w-full hover:border-[var(--border-hover)] transition-colors"
+          aria-label="Open scan workstation"
+          title="Scan"
         >
           <ScanLine
             size={12}
             strokeWidth={1.5}
-            className={
-              scanFlash
-                ? "text-[var(--accent)]"
-                : scanEnabled
-                ? "text-text-secondary"
-                : "text-text-dim"
-            }
+            className="text-text-secondary"
           />
-        </button>
+        </Link>
         {printSupported && device ? (
           <Link
             href="/settings/devices"
@@ -117,12 +91,7 @@ export function SidebarDeviceBar({ collapsed }: Props) {
 
   return (
     <div className="grid grid-cols-2 gap-6">
-      <ScanTile
-        enabled={scanEnabled}
-        flash={scanFlash}
-        lastBarcode={lastScan?.barcode ?? null}
-        onToggle={() => setScanEnabled(!scanEnabled)}
-      />
+      <ScanTile />
       <PrintTile
         supported={printSupported}
         connected={!!device}
@@ -136,61 +105,18 @@ export function SidebarDeviceBar({ collapsed }: Props) {
 
 // ─── Tile sub-components ───────────────────────────────────────────────
 
-interface ScanTileProps {
-  enabled: boolean;
-  flash: boolean;
-  lastBarcode: string | null;
-  onToggle: () => void;
-}
-
-function ScanTile({ enabled, flash, lastBarcode, onToggle }: ScanTileProps) {
-  const iconClass = flash
-    ? "text-[var(--accent)]"
-    : enabled
-    ? "text-text"
-    : "text-text-dim";
-  const dotClass = flash ? "dot-live" : enabled ? "dot-online" : "dot-offline";
-  const statusText =
-    flash && lastBarcode
-      ? truncate(lastBarcode, 10)
-      : enabled
-      ? "Ready"
-      : "Off";
-
+function ScanTile() {
   return (
-    <button
-      type="button"
-      onClick={onToggle}
-      className={`hairline-subtle flex flex-col items-center justify-center gap-6 px-6 py-12 transition-colors ${
-        enabled ? "hover:border-[var(--border-hover)]" : "opacity-65"
-      }`}
-      aria-label={
-        enabled
-          ? "Scanner ready — click to pause"
-          : "Scanner paused — click to resume"
-      }
+    <Link
+      href="/scan"
+      className="hairline-subtle flex flex-col items-center justify-center gap-6 px-6 py-12 hover:border-[var(--border-hover)] transition-colors"
+      aria-label="Open scan workstation"
     >
-      <ScanLine size={16} strokeWidth={1.5} className={iconClass} />
-      <span
-        className="label-text"
-        style={{ fontSize: 9, color: flash ? "var(--accent)" : undefined }}
-      >
-        {flash ? "SCANNED" : "SCAN"}
+      <ScanLine size={16} strokeWidth={1.5} className="text-text" />
+      <span className="label-text" style={{ fontSize: 9 }}>
+        SCAN
       </span>
-      <span className="flex items-center gap-4">
-        <span className={`dot ${dotClass}`} aria-hidden />
-        <span
-          className="text-text-dim truncate"
-          style={{
-            fontFamily: "var(--mono)",
-            fontSize: 9,
-            maxWidth: 80,
-          }}
-        >
-          {statusText}
-        </span>
-      </span>
-    </button>
+    </Link>
   );
 }
 
@@ -296,9 +222,4 @@ function PrintTile({
       </span>
     </Link>
   );
-}
-
-function truncate(s: string, max: number): string {
-  if (s.length <= max) return s;
-  return s.slice(0, max - 1) + "…";
 }

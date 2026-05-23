@@ -1,11 +1,15 @@
 import { Plus } from "lucide-react";
 import { CornerLink } from "@/components/ui/CornerButton";
-import { listCustomers } from "./actions";
 import { CustomerList } from "./CustomerList";
+import { getCurrentOrgContext } from "@/lib/data/user";
+import { getCustomersList } from "@/lib/data/customers";
 
 export default async function CustomersPage() {
-  const r = await listCustomers({ includeInactive: true });
-  const customers = r.customers ?? [];
+  // Customers come from the cross-request cache (lib/data/customers.ts),
+  // tagged tags.customers(orgId). The CustomerList component does the
+  // active/search filtering client-side.
+  const ctx = await getCurrentOrgContext();
+  const customers = ctx ? await getCustomersList(ctx.orgId) : [];
 
   return (
     <>
@@ -40,16 +44,7 @@ export default async function CustomersPage() {
         </CornerLink>
       </header>
 
-      {r.error ? (
-        <div
-          className="hairline bg-[var(--surface)] p-16 mono-sm"
-          style={{ color: "var(--danger)" }}
-        >
-          {r.error}
-        </div>
-      ) : (
-        <CustomerList customers={customers} />
-      )}
+      <CustomerList customers={customers} />
     </>
   );
 }

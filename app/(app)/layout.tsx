@@ -17,6 +17,8 @@ import type { WorkspaceOption } from "@/components/nav/WorkspaceSwitcher";
 import type { NotificationItem } from "@/components/nav/NotificationsDropdown";
 import { ScannerProvider } from "@/components/scanner/ScannerProvider";
 import { PrinterProvider } from "@/components/print/PrinterProvider";
+import { Suspense } from "react";
+import { KioskGate } from "@/components/kiosk/KioskGate";
 
 const SIDEBAR_COOKIE = "nimbus-sidebar-collapsed";
 
@@ -95,6 +97,9 @@ export default async function AppLayout({
       <PrinterProvider>
         <div className="md:flex md:min-h-screen">
           <CommandPalette />
+          <Suspense fallback={null}>
+            <KioskGate />
+          </Suspense>
           <KeyboardShortcuts />
           <MobileNav />
 

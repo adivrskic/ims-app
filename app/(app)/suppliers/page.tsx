@@ -1,30 +1,22 @@
-import { createClient } from "@/lib/supabase/server";
 import { Plus } from "lucide-react";
 import { CornerLink } from "@/components/ui/CornerButton";
-import { listSuppliers } from "./actions";
 import { SupplierList, type SupplierStatsMap } from "./SupplierList";
 import { computeSupplierStats, type ScorecardPo } from "@/lib/supplier-stats";
+import { getCurrentOrgContext } from "@/lib/data/user";
+import { getSuppliersPageData } from "@/lib/data/suppliers";
 
 export const metadata = { title: "Suppliers" };
 
 export default async function SuppliersPage() {
-  const supabase = await createClient();
+  // Suppliers + scorecard POs + product counts come from the cross-request
+  // cache (lib/data/suppliers.ts), tagged tags.suppliers / purchaseOrders /
+  // products. The grouping + scorecard math below is unchanged.
+  const ctx = await getCurrentOrgContext();
+  const data = ctx ? await getSuppliersPageData(ctx.orgId) : null;
 
-  // Pull suppliers via the typed action (real schema), and POs + product
-  // counts in parallel so we can hydrate per-row scorecard chips.
-  const [r, { data: pos }, { data: productCounts }] = await Promise.all([
-    listSuppliers({ includeInactive: true }),
-    supabase
-      .from("purchase_orders")
-      .select(
-        `id, supplier_id, status, expected_date, sent_at, received_at,
-         lines:po_line_items ( quantity_expected, quantity_received, unit_cost, landed_unit_cost )`
-      )
-      .not("supplier_id", "is", null),
-    supabase.from("products").select("preferred_supplier_id"),
-  ]);
-
-  const suppliers = r.suppliers ?? [];
+  const suppliers = data?.suppliers ?? [];
+  const pos = data?.pos ?? null;
+  const productCounts = data?.productCounts ?? null;
 
   // Group POs by supplier, compute per-supplier scorecard.
   type RawPo = {
@@ -121,16 +113,7 @@ export default async function SuppliersPage() {
         </CornerLink>
       </header>
 
-      {r.error ? (
-        <div
-          className="hairline bg-[var(--surface)] p-16 mono-sm"
-          style={{ color: "var(--danger)" }}
-        >
-          {r.error}
-        </div>
-      ) : (
-        <SupplierList suppliers={suppliers} stats={stats} />
-      )}
+      <SupplierList suppliers={suppliers} stats={stats} />
     </>
   );
 }

@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { createClient } from "@/lib/supabase/server";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { KpiCard } from "@/components/ui/KpiCard";
 import { Badge } from "@/components/ui/Badge";
@@ -8,6 +7,8 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { NewCountForm } from "./NewCountForm";
 import { Layers, X, ChevronRight } from "lucide-react";
 import { CycleCountsRealtime } from "@/components/realtime/PageRealtime";
+import { getCurrentOrgContext } from "@/lib/data/user";
+import { getCycleCountsPageData } from "@/lib/data/cycleCounts";
 
 export const metadata = { title: "Cycle counts" };
 
@@ -39,87 +40,24 @@ export default async function CycleCountsPage({
 }) {
   const { product: productParam, variance_only } = await searchParams;
   const varianceOnly = variance_only === "1";
-  const supabase = await createClient();
 
-  // Parallel fetch: products+locations for the form, history rows, summary
-  const [
-    { data: productsData },
-    { data: locationsData },
-    { data: counts },
-    { data: totalCountsRow, count: totalCounts },
-  ] = await Promise.all([
-    supabase
-      .from("products")
-      .select("id, name, barcode")
-      .order("name", { ascending: true }),
-    supabase
-      .from("locations")
-      .select(
-        `id, product_id, bay, level, quantity,
-         section:sections ( code ),
-         warehouse:warehouses ( name )`
-      )
-      .not("product_id", "is", null),
-    (() => {
-      let q = supabase
-        .from("cycle_counts")
-        .select(
-          `id, expected_qty, counted_qty, variance, status, counted_at, notes,
-           product:products ( id, name, barcode ),
-           location:locations (
-             bay, level,
-             section:sections ( code ),
-             warehouse:warehouses ( name )
-           ),
-           counter:profiles!cycle_counts_counted_by_fkey ( full_name, email )`
-        )
-        .order("counted_at", { ascending: false })
-        .limit(100);
-      if (productParam) q = q.eq("product_id", productParam);
-      if (varianceOnly) q = q.neq("variance", 0);
-      return q;
-    })(),
-    supabase.from("cycle_counts").select("id, variance", { count: "exact" }),
-  ]);
+  // All four queries + the location rollup + summary math live in the
+  // cross-request cache (lib/data/cycleCounts.ts), keyed by org + product +
+  // variance filter and tagged tags.cycleCounts / tags.inventory.
+  const ctx = await getCurrentOrgContext();
+  const data = ctx
+    ? await getCycleCountsPageData(ctx.orgId, {
+        productId: productParam ?? null,
+        varianceOnly,
+      })
+    : null;
 
-  const products = (productsData ?? []) as ProductOption[];
-
-  // Build location options with rolled-up display fields
-  const locations: LocationOption[] = (
-    (locationsData ?? []) as Array<{
-      id: string;
-      product_id: string | null;
-      bay: number | null;
-      level: number | null;
-      quantity: number | null;
-      section: { code: string | null } | { code: string | null }[] | null;
-      warehouse: { name: string } | { name: string }[] | null;
-    }>
-  )
-    .filter((l): l is typeof l & { product_id: string } => !!l.product_id)
-    .map((l) => {
-      const sec = Array.isArray(l.section) ? l.section[0] : l.section;
-      const wh = Array.isArray(l.warehouse) ? l.warehouse[0] : l.warehouse;
-      return {
-        id: l.id,
-        product_id: l.product_id,
-        bay: l.bay,
-        level: l.level,
-        quantity: l.quantity,
-        section_code: sec?.code?.trim() ?? null,
-        warehouse_name: wh?.name ?? null,
-      };
-    });
-
-  // Aggregate stats — across ALL counts in the org, not filter-affected
-  type SummaryRow = { id: string; variance: number };
-  const allCounts = (totalCountsRow ?? []) as SummaryRow[];
-  const totalAdjustments = allCounts.filter((c) => c.variance !== 0).length;
-  const accuracyPct =
-    (totalCounts ?? 0) > 0
-      ? Math.round((1 - totalAdjustments / (totalCounts ?? 1)) * 100)
-      : null;
-  const netUnits = allCounts.reduce((s, c) => s + c.variance, 0);
+  const products = (data?.products ?? []) as ProductOption[];
+  const locations = (data?.locations ?? []) as LocationOption[];
+  const totalCounts = data?.totalCounts ?? 0;
+  const totalAdjustments = data?.totalAdjustments ?? 0;
+  const accuracyPct = data?.accuracyPct ?? null;
+  const netUnits = data?.netUnits ?? 0;
 
   // Filtered-result list rendering
   type Row = {
@@ -153,7 +91,7 @@ export default async function CycleCountsPage({
       | { full_name: string | null; email: string | null }[]
       | null;
   };
-  const rows = (counts ?? []) as Row[];
+  const rows = (data?.rows ?? []) as Row[];
 
   const focusedProduct = productParam
     ? products.find((p) => p.id === productParam) ?? null

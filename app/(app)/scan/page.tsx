@@ -9,9 +9,8 @@ export default async function ScanPage() {
       <PageHeader
         eyebrow="Operate"
         title="Scan & locate"
-        description="Scan a barcode anywhere on this page. We'll look it up against the catalog and offer next-action paths — locate, pick, move, count, or adjust."
+        description="Scan a barcode — or type one into the field — to look it up against the catalog and jump to the next step: locate, pick, count, or reorder."
         meta={[
-          { label: "Scanner", value: "Ready", status: "live" as const },
           { label: "Source", value: "USB / Bluetooth · HID keyboard" },
         ]}
       />

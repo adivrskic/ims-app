@@ -1,7 +1,8 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
+import { revalidatePath, revalidateTag } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { tags } from "@/lib/cache-tags";
 
 async function getOrgContext() {
   const supabase = await createClient();
@@ -197,6 +198,7 @@ export async function placeLocation(args: PlaceArgs): Promise<{
     revalidatePath(
       `/facilities/${args.warehouseId}/sections/${args.sectionId}`
     );
+    revalidateTag(tags.inventory(ctx.orgId));
     return { location: rowFromQuery(data) };
   }
 
@@ -227,6 +229,7 @@ export async function placeLocation(args: PlaceArgs): Promise<{
 
   revalidatePath(`/facilities/${args.warehouseId}`);
   revalidatePath(`/facilities/${args.warehouseId}/sections/${args.sectionId}`);
+  revalidateTag(tags.inventory(ctx.orgId));
   return { location: rowFromQuery(data) };
 }
 
@@ -270,6 +273,7 @@ export async function updateLocationQuantity({
 
   revalidatePath(`/facilities/${warehouseId}`);
   revalidatePath(`/facilities/${warehouseId}/sections/${sectionId}`);
+  revalidateTag(tags.inventory(ctx.orgId));
   return { location: rowFromQuery(data) };
 }
 
@@ -314,6 +318,7 @@ export async function removeLocation({
 
   revalidatePath(`/facilities/${warehouseId}`);
   revalidatePath(`/facilities/${warehouseId}/sections/${sectionId}`);
+  revalidateTag(tags.inventory(ctx.orgId));
   return {};
 }
 
@@ -428,6 +433,7 @@ export async function relocateLocation({
 
     revalidatePath(`/facilities/${warehouseId}`);
     revalidatePath(`/facilities/${warehouseId}/sections/${sectionId}`);
+    revalidateTag(tags.inventory(ctx.orgId));
     return { source: null, mergedInto: rowFromQuery(target) };
   }
 
@@ -452,5 +458,6 @@ export async function relocateLocation({
 
   revalidatePath(`/facilities/${warehouseId}`);
   revalidatePath(`/facilities/${warehouseId}/sections/${sectionId}`);
+  revalidateTag(tags.inventory(ctx.orgId));
   return { source: rowFromQuery(moved) };
 }

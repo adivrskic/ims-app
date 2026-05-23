@@ -1,6 +1,6 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
+import { revalidatePath, revalidateTag } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import {
@@ -11,6 +11,7 @@ import {
 } from "@/lib/replenishment";
 import { narratePoDraft } from "@/lib/ai/narrate";
 import { PurchaseOrderDetailRealtime } from "@/components/realtime/PageRealtime";
+import { tags } from "@/lib/cache-tags";
 
 async function getOrgContext() {
   const supabase = await createClient();
@@ -307,6 +308,7 @@ export async function draftReorderPO(): Promise<void> {
   }
 
   revalidatePath("/purchase-orders");
+  revalidateTag(tags.purchaseOrders(orgId));
   if (groups.size === 1 && lastCreatedId) {
     redirect(`/purchase-orders/${lastCreatedId}`);
   }
@@ -336,6 +338,7 @@ export async function markPoSent(formData: FormData): Promise<void> {
 
   revalidatePath(`/purchase-orders/${id}`);
   revalidatePath("/purchase-orders");
+  revalidateTag(tags.purchaseOrders(ctx.orgId));
 }
 
 export async function markPoCancelled(formData: FormData): Promise<void> {
@@ -349,6 +352,7 @@ export async function markPoCancelled(formData: FormData): Promise<void> {
     .eq("org_id", ctx.orgId);
   revalidatePath(`/purchase-orders/${id}`);
   revalidatePath("/purchase-orders");
+  revalidateTag(tags.purchaseOrders(ctx.orgId));
 }
 
 interface PoLineInput {
@@ -475,6 +479,7 @@ export async function createPurchaseOrder(
   }
 
   revalidatePath("/purchase-orders");
+  revalidateTag(tags.purchaseOrders(ctx.orgId));
   redirect(`/purchase-orders/${newPO.id}`);
 }
 
@@ -598,5 +603,6 @@ export async function receiveLineItem(
 
   revalidatePath(`/purchase-orders/${poId}`);
   revalidatePath("/purchase-orders");
+  revalidateTag(tags.purchaseOrders(ctx.orgId));
   return { success: "Receipt recorded" };
 }

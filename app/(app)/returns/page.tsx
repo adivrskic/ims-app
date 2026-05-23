@@ -1,10 +1,12 @@
 import Link from "next/link";
-import { createClient } from "@/lib/supabase/server";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Badge } from "@/components/ui/Badge";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { RotateCcw } from "lucide-react";
 import { getActiveScope, scopeDescription } from "@/lib/facilityScope";
+import { getCurrentOrgContext } from "@/lib/data/user";
+import { getReturnsList } from "@/lib/data/returns";
+import { ReturnsRealtime } from "@/components/realtime/PageRealtime";
 
 export const metadata = { title: "Returns" };
 
@@ -96,47 +98,32 @@ export default async function ReturnsPage({
   const { disposition: rawDisp } = await searchParams;
   const activeFilter = FILTERS.find((f) => f.key === rawDisp) ?? FILTERS[0];
 
+  // Resolve scope once, then read listing + disposition counts from the
+  // cross-request cache (lib/data/returns.ts), keyed by org + facility +
+  // disposition and tagged tags.returns(orgId). ReturnsRealtime (mounted
+  // below) keeps the cache live, since returns are created externally.
   const scope = await getActiveScope();
-  const supabase = await createClient();
+  const ctx = await getCurrentOrgContext();
+  const facilityId = scope.mode === "single" ? scope.id : null;
 
-  let query = supabase
-    .from("returns")
-    .select(
-      "id, quantity, disposition, reason, reviewed_at, created_at, product:products ( id, name, barcode ), received_by_profile:profiles!returns_received_by_fkey ( full_name, email )"
-    )
-    .order("created_at", { ascending: false });
+  const data = ctx
+    ? await getReturnsList(ctx.orgId, facilityId, activeFilter.disposition)
+    : null;
 
-  if (scope.mode === "single") {
-    query = query.eq("warehouse_id", scope.id);
-  }
-  if (activeFilter.disposition) {
-    query = query.eq("disposition", activeFilter.disposition);
-  }
-
-  const { data } = await query;
-  const rows = (data ?? []) as ReturnRow[];
-
-  // Disposition counts — also scoped so the chip badges reflect what
-  // the user actually sees in the listing.
-  let countsQuery = supabase.from("returns").select("disposition, reviewed_at");
-  if (scope.mode === "single") {
-    countsQuery = countsQuery.eq("warehouse_id", scope.id);
-  }
-  const { data: allReturns } = await countsQuery;
-  const countMap = new Map<Disposition, number>();
-  let pendingReview = 0;
-  let total = 0;
-  for (const r of (allReturns ?? []) as Array<{
-    disposition: Disposition;
-    reviewed_at: string | null;
-  }>) {
-    countMap.set(r.disposition, (countMap.get(r.disposition) ?? 0) + 1);
-    total++;
-    if (!r.reviewed_at) pendingReview++;
-  }
+  const rows = (data?.rows ?? []) as ReturnRow[];
+  const total = data?.total ?? 0;
+  const pendingReview = data?.pendingReview ?? 0;
+  // Rebuild the Map the chip rendering expects. The fetcher returns a plain
+  // object because unstable_cache serializes its result to JSON.
+  const countMap = new Map<Disposition, number>(
+    Object.entries(data?.counts ?? {}) as [Disposition, number][]
+  );
 
   return (
     <div className="flex flex-col gap-32">
+      <ReturnsRealtime
+        warehouseId={scope.mode === "single" ? scope.id : null}
+      />
       <PageHeader
         eyebrow="Flow"
         title="Returns"

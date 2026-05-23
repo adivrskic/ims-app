@@ -19,11 +19,21 @@ interface Supplier {
 
 interface Props {
   categories: Category[];
-  suppliers: Supplier[];
+  suppliers?: Supplier[];
+  /**
+   * When provided (e.g. the /scan "Register product" deep link writes
+   * ?register=<barcode>, which the inventory page passes through), the
+   * modal opens automatically and the Barcode field is pre-filled.
+   */
+  initialBarcode?: string;
 }
 
-export function RegisterProductButton({ categories, suppliers }: Props) {
-  const [open, setOpen] = useState(false);
+export function RegisterProductButton({
+  categories,
+  suppliers = [],
+  initialBarcode,
+}: Props) {
+  const [open, setOpen] = useState<boolean>(Boolean(initialBarcode));
   const [state, formAction, pending] = useActionState(createProduct, undefined);
   const formRef = useRef<HTMLFormElement>(null);
   const router = useRouter();
@@ -35,6 +45,13 @@ export function RegisterProductButton({ categories, suppliers }: Props) {
       router.push(`/inventory/${state.id}`);
     }
   }, [state, router]);
+
+  // Auto-open when arriving with a barcode to register (deep link from /scan).
+  // Initialized in useState above so there's no open/closed flash on first
+  // paint; this effect covers a barcode arriving while already mounted.
+  useEffect(() => {
+    if (initialBarcode) setOpen(true);
+  }, [initialBarcode]);
 
   // Reset form when closing
   useEffect(() => {
@@ -117,7 +134,7 @@ export function RegisterProductButton({ categories, suppliers }: Props) {
                 mobile app or API.
               </p>
 
-              {/* ── Identity ─────────────────────────────────────────── */}
+              {/* ── Identity ───────────────────────────────────── */}
               <fieldset className="flex flex-col gap-12">
                 <legend className="label-text text-text-muted mb-2">
                   Identity
@@ -129,6 +146,7 @@ export function RegisterProductButton({ categories, suppliers }: Props) {
                     type="text"
                     required
                     autoComplete="off"
+                    defaultValue={initialBarcode}
                   />
                   <Input
                     label="Internal SKU"
@@ -170,7 +188,7 @@ export function RegisterProductButton({ categories, suppliers }: Props) {
                 </div>
               </fieldset>
 
-              {/* ── Physical ─────────────────────────────────────────── */}
+              {/* ── Physical ───────────────────────────────────── */}
               <fieldset className="flex flex-col gap-12">
                 <legend className="label-text text-text-muted mb-2">
                   Physical

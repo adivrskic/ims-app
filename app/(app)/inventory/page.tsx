@@ -1,4 +1,3 @@
-import { createClient } from "@/lib/supabase/server";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { EmptyState } from "@/components/ui/EmptyState";
 import {
@@ -16,6 +15,7 @@ import { getActiveScope, scopeDescription } from "@/lib/facilityScope";
 import { InventoryRealtime } from "@/components/realtime/PageRealtime";
 import { getCurrentOrgContext } from "@/lib/data/user";
 import { getCategories } from "@/lib/data/org";
+import { getInventoryList } from "@/lib/data/inventory";
 
 export const metadata = { title: "Inventory" };
 
@@ -24,14 +24,8 @@ interface SearchParams {
   category?: string;
   sort?: string;
   order?: string;
+  register?: string;
 }
-
-const SORT_COLUMNS: Record<SortKey, string> = {
-  name: "name",
-  updated: "updated_at",
-  reorder: "reorder_point",
-  manufacturer: "manufacturer",
-};
 
 function parseSort(raw: string | undefined): SortKey {
   if (
@@ -54,85 +48,33 @@ export default async function InventoryPage({
 }: {
   searchParams: Promise<SearchParams>;
 }) {
-  const { q, category, sort: rawSort, order: rawOrder } = await searchParams;
+  const {
+    q,
+    category,
+    sort: rawSort,
+    order: rawOrder,
+    register,
+  } = await searchParams;
   const sort = parseSort(rawSort);
   const order = parseOrder(rawOrder);
 
   const scope = await getActiveScope();
-  const supabase = await createClient();
-
-  // Products are org-scoped, not facility-scoped — the catalog itself
-  // doesn't change when you flip facilities. What changes is the
-  // location data we surface per product.
-  //
-  // We pre-fetch valid section IDs for the active facility (if scoped)
-  // and then strip non-matching locations out of each product's
-  // `locations` array after the main fetch. Cheap because section
-  // counts are tiny (10s) and the embedded locations are already in
-  // memory.
-  let validSectionIds: Set<string> | null = null;
-  if (scope.mode === "single") {
-    const { data: sec } = await supabase
-      .from("sections")
-      .select("id")
-      .eq("warehouse_id", scope.id);
-    validSectionIds = new Set((sec ?? []).map((s) => s.id));
-  }
-
-  // Categories rarely change — pull from the cross-request cache instead
-  // of re-querying on every page render. Invalidated by category mutations.
   const ctx = await getCurrentOrgContext();
+  const facilityId = scope.mode === "single" ? scope.id : null;
+
+  // Categories rarely change — pull from the cross-request cache.
+  // Invalidated by category mutations.
   const categories = ctx ? await getCategories(ctx.orgId) : [];
 
-  // Note: locations now includes `section_id` in the select so we can
-  // post-filter without re-querying.
-  let query = supabase
-    .from("products")
-    .select(
-      `
-      id, name, barcode, internal_sku, manufacturer, reorder_point, updated_at,
-      category:categories ( id, name ),
-      locations:locations ( quantity, bay, level, section_id, section:sections ( code, name ) )
-    `
-    )
-    .order(SORT_COLUMNS[sort], {
-      ascending: order === "asc",
-      nullsFirst: false,
-    })
-    .limit(200);
+  // Listing (section resolution + product query + facility-scope location
+  // filtering) lives in the cross-request cache (lib/data/inventory.ts),
+  // keyed by org + facility + filters and tagged tags.products / tags.inventory.
+  const data = ctx
+    ? await getInventoryList(ctx.orgId, facilityId, { q, category, sort, order })
+    : { products: [], totalCount: 0 };
 
-  if (q && q.trim().length > 0) {
-    const term = `%${q.trim()}%`;
-    query = query.or(
-      `name.ilike.${term},barcode.ilike.${term},internal_sku.ilike.${term}`
-    );
-  }
-  if (category) query = query.eq("category_id", category);
-
-  const { data: rawProducts } = await query;
-
-  // Strip non-facility locations when scoped. Products stay in the
-  // list even if they have 0 locations at the active facility — the
-  // catalog should always reflect what's registered, just with the
-  // facility-specific quantity (which can be 0).
-  type ProductRow = {
-    id: string;
-    locations: Array<{
-      section_id: string | null;
-      [k: string]: unknown;
-    }> | null;
-    [k: string]: unknown;
-  };
-  const products = ((rawProducts as ProductRow[] | null) ?? []).map((p) => {
-    if (!validSectionIds) return p;
-    return {
-      ...p,
-      locations: (p.locations ?? []).filter(
-        (l) => l.section_id && validSectionIds!.has(l.section_id)
-      ),
-    };
-  });
-  const totalCount = products.length;
+  const products = data.products;
+  const totalCount = data.totalCount;
 
   // Base params for sort URLs + CSV export — preserves filters
   const baseParams: Record<string, string> = {};
@@ -172,7 +114,10 @@ export default async function InventoryPage({
               <Download size={11} strokeWidth={1.5} />
               Export CSV
             </ButtonLink>
-            <RegisterProductButton categories={categories ?? []} />
+            <RegisterProductButton
+              categories={categories ?? []}
+              initialBarcode={register}
+            />
           </div>
         }
       />

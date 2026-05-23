@@ -1,8 +1,9 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { revalidatePath, revalidateTag } from "next/cache";
+import { tags } from "@/lib/cache-tags";
 
 async function getOrgContext() {
   const supabase = await createClient();
@@ -159,6 +160,7 @@ export async function createOrder(
   }
 
   revalidatePath("/orders");
+  revalidateTag(tags.orders(ctx.orgId));
   redirect(`/orders/${newOrder.id}`);
 }
 
@@ -187,6 +189,7 @@ export async function advanceOrderStatus(formData: FormData): Promise<void> {
 
   revalidatePath(`/orders/${id}`);
   revalidatePath("/orders");
+  revalidateTag(tags.orders(ctx.orgId));
 }
 
 export async function cancelOrder(formData: FormData): Promise<void> {

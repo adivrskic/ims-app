@@ -80,6 +80,23 @@ export function PurchaseOrderDetailRealtime({ poId }: { poId: string }) {
   return null;
 }
 
+/**
+ * Returns are created/dispositioned externally (mobile receiving-dock app),
+ * so the web list relies on this subscription to stay live — there's no
+ * web mutation to revalidate the tag. Scoped by facility when one is active.
+ */
+export function ReturnsRealtime({ warehouseId }: ScopedProps) {
+  useRealtimeRefresh({
+    subscriptions: [
+      {
+        table: "returns",
+        filter: warehouseId ? `warehouse_id=eq.${warehouseId}` : undefined,
+      },
+    ],
+  });
+  return null;
+}
+
 export function CycleCountsRealtime() {
   useRealtimeRefresh({
     subscriptions: [{ table: "cycle_counts" }],

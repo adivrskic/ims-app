@@ -1,7 +1,8 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
+import { revalidatePath, revalidateTag } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { tags } from "@/lib/cache-tags";
 import type { Customer, CustomerInput, PaymentTerms } from "./types";
 
 async function getOrgContext() {
@@ -163,6 +164,7 @@ export async function createCustomer(
   if (error) return { error: error.message };
 
   revalidatePath("/customers");
+  revalidateTag(tags.customers(ctx.orgId));
   return { id: data.id };
 }
 
@@ -206,6 +208,7 @@ export async function updateCustomer(
 
   revalidatePath("/customers");
   revalidatePath(`/customers/${id}`);
+  revalidateTag(tags.customers(ctx.orgId));
   return {};
 }
 
@@ -228,10 +231,9 @@ export async function setCustomerActive(
 
   revalidatePath("/customers");
   revalidatePath(`/customers/${id}`);
+  revalidateTag(tags.customers(ctx.orgId));
   return {};
 }
-
-// ── Search (for pickers in order forms etc.) ────────────────────────────
 
 // ── Search (for pickers in order forms etc.) ────────────────────────────
 

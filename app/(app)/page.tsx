@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { createClient } from "@/lib/supabase/server";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { KpiCard } from "@/components/ui/KpiCard";
 import { SectionTitle } from "@/components/ui/SectionTitle";
@@ -20,6 +19,8 @@ import {
   Truck,
 } from "lucide-react";
 import { getActiveScope, scopeDescription } from "@/lib/facilityScope";
+import { getCurrentOrgContext } from "@/lib/data/user";
+import { getOverviewData } from "@/lib/data/overview";
 
 export const metadata = { title: "Overview" };
 
@@ -62,112 +63,30 @@ function bucketByDay(scans: { scanned_at: string | null }[]): number[] {
 
 export default async function OverviewPage() {
   const scope = await getActiveScope();
-  const supabase = await createClient();
 
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const fourteenDaysAgo = new Date(today);
-  fourteenDaysAgo.setDate(today.getDate() - 14);
+  // All eight dashboard queries (+ the active-facility section ids) come
+  // from the cross-request cache (lib/data/overview.ts), keyed by org +
+  // facility and tagged products/sections/warehouses/inventory/scans.
+  // OverviewRealtime busts scans + inventory on activity so the "live"
+  // header stays honest. The lowStock / totalStock / trend computation
+  // below is unchanged — the fetcher returns the same raw datasets.
+  const ctx = await getCurrentOrgContext();
+  const facilityId = scope.mode === "single" ? scope.id : null;
+  const data = ctx ? await getOverviewData(ctx.orgId, facilityId) : null;
 
-  /*
-   * Pre-fetch valid section IDs for the active facility so low-stock
-   * calculations only count units physically located there. Same
-   * pattern as the inventory page — keeps the catalog visible but
-   * shows accurate on-hand at the active facility.
-   */
-  let validSectionIds: Set<string> | null = null;
-  if (scope.mode === "single") {
-    const { data: sec } = await supabase
-      .from("sections")
-      .select("id")
-      .eq("warehouse_id", scope.id);
-    validSectionIds = new Set((sec ?? []).map((s) => s.id));
-  }
-
-  /*
-   * What gets scoped vs. what stays workspace-wide:
-   *
-   * - products count:    NOT scoped — the catalog is org-level
-   * - sections count:    scoped     — sections belong to a facility
-   * - warehouses count:  NOT scoped — always show full count
-   * - locations stock:   scoped     — locations have warehouse_id directly
-   * - scan_history (×3): scoped     — scan_history has warehouse_id
-   * - low-stock products: catalog stays, but per-product on-hand is
-   *                       calculated only from active-facility sections
-   */
-  const productsQuery = supabase
-    .from("products")
-    .select("id", { count: "exact", head: true });
-
-  let sectionsQuery = supabase
-    .from("sections")
-    .select("id", { count: "exact", head: true });
-  if (scope.mode === "single") {
-    sectionsQuery = sectionsQuery.eq("warehouse_id", scope.id);
-  }
-
-  const warehousesQuery = supabase
-    .from("warehouses")
-    .select("id", { count: "exact", head: true });
-
-  let stockQuery = supabase.from("locations").select("quantity");
-  if (scope.mode === "single") {
-    stockQuery = stockQuery.eq("warehouse_id", scope.id);
-  }
-
-  let scansTodayQuery = supabase
-    .from("scan_history")
-    .select("id", { count: "exact", head: true })
-    .gte("scanned_at", today.toISOString());
-  if (scope.mode === "single") {
-    scansTodayQuery = scansTodayQuery.eq("warehouse_id", scope.id);
-  }
-
-  let scans14dQuery = supabase
-    .from("scan_history")
-    .select("scanned_at")
-    .gte("scanned_at", fourteenDaysAgo.toISOString());
-  if (scope.mode === "single") {
-    scans14dQuery = scans14dQuery.eq("warehouse_id", scope.id);
-  }
-
-  let recentScansQuery = supabase
-    .from("scan_history")
-    .select(
-      "id, action, scanned_at, quantity, product:products ( name, barcode )"
-    )
-    .order("scanned_at", { ascending: false })
-    .limit(10);
-  if (scope.mode === "single") {
-    recentScansQuery = recentScansQuery.eq("warehouse_id", scope.id);
-  }
-
-  const stockByProductQuery = supabase
-    .from("products")
-    .select(
-      "id, name, barcode, reorder_point, category:categories ( name ), locations:locations ( quantity, section_id )"
-    )
-    .gt("reorder_point", 0);
-
-  const [
-    { count: productCount },
-    { count: sectionCount },
-    { count: warehouseCount },
-    { data: stockRows },
-    { count: scansTodayCount },
-    { data: scans14d },
-    { data: recentScans },
-    { data: stockByProduct },
-  ] = await Promise.all([
-    productsQuery,
-    sectionsQuery,
-    warehousesQuery,
-    stockQuery,
-    scansTodayQuery,
-    scans14dQuery,
-    recentScansQuery,
-    stockByProductQuery,
-  ]);
+  const productCount = data?.productCount ?? 0;
+  const sectionCount = data?.sectionCount ?? 0;
+  const warehouseCount = data?.warehouseCount ?? 0;
+  const scansTodayCount = data?.scansTodayCount ?? 0;
+  const stockRows = data?.stockRows ?? [];
+  const scans14d = data?.scans14d ?? [];
+  const recentScans = data?.recentScans ?? [];
+  const stockByProduct = data?.stockByProduct ?? [];
+  // Rebuild the Set the lowStock filter expects (the fetcher returns a
+  // plain string[] because unstable_cache serializes its result to JSON).
+  const validSectionIds = data?.validSectionIds
+    ? new Set(data.validSectionIds)
+    : null;
 
   /*
    * Low-stock: post-filter the embedded locations by the active
