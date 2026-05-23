@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { PageHeader } from "@/components/ui/PageHeader";
-import { KpiCard } from "@/components/ui/KpiCard";
+import { GlowKpiGrid } from "@/components/dashboard/GlowKpiGrid";
 import { SectionTitle } from "@/components/ui/SectionTitle";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { CornerLink } from "@/components/ui/CornerButton";
@@ -64,12 +64,6 @@ function bucketByDay(scans: { scanned_at: string | null }[]): number[] {
 export default async function OverviewPage() {
   const scope = await getActiveScope();
 
-  // All eight dashboard queries (+ the active-facility section ids) come
-  // from the cross-request cache (lib/data/overview.ts), keyed by org +
-  // facility and tagged products/sections/warehouses/inventory/scans.
-  // OverviewRealtime busts scans + inventory on activity so the "live"
-  // header stays honest. The lowStock / totalStock / trend computation
-  // below is unchanged — the fetcher returns the same raw datasets.
   const ctx = await getCurrentOrgContext();
   const facilityId = scope.mode === "single" ? scope.id : null;
   const data = ctx ? await getOverviewData(ctx.orgId, facilityId) : null;
@@ -82,18 +76,10 @@ export default async function OverviewPage() {
   const scans14d = data?.scans14d ?? [];
   const recentScans = data?.recentScans ?? [];
   const stockByProduct = data?.stockByProduct ?? [];
-  // Rebuild the Set the lowStock filter expects (the fetcher returns a
-  // plain string[] because unstable_cache serializes its result to JSON).
   const validSectionIds = data?.validSectionIds
     ? new Set(data.validSectionIds)
     : null;
 
-  /*
-   * Low-stock: post-filter the embedded locations by the active
-   * facility's section IDs. Products with no locations at the facility
-   * collapse to total = 0, which triggers the reorder alert correctly
-   * — at the active facility, they ARE out of stock.
-   */
   const lowStock = (
     (stockByProduct ?? []) as Array<{
       id: string;
@@ -138,63 +124,64 @@ export default async function OverviewPage() {
   const totalScans14 = trend.reduce((a, b) => a + b, 0);
 
   return (
-    <div className="flex flex-col gap-32">
+    <PageHeader
+      live
+      eyebrow="Workspace"
+      title="Overview"
+      description={scopeDescription(scope, {
+        all: "Live operations across all facilities.",
+        single: (name) => `Live operations at ${name}.`,
+      })}
+      meta={[
+        {
+          label: scope.mode === "single" ? "Facility" : "Facilities",
+          value: scope.mode === "single" ? scope.name : warehouseCount ?? 0,
+        },
+        { label: "Last sync", value: "Just now", status: "live" },
+      ]}
+      actions={
+        <CornerLink href="/kiosk" variant="ghost" size="sm">
+          Kiosk view →
+        </CornerLink>
+      }
+    >
       <OverviewRealtime
         warehouseId={scope.mode === "single" ? scope.id : null}
-      />
-      <PageHeader
-        live
-        eyebrow="Workspace"
-        title="Overview"
-        description={scopeDescription(scope, {
-          all: "Live operations across all facilities.",
-          single: (name) => `Live operations at ${name}.`,
-        })}
-        meta={[
-          {
-            label: scope.mode === "single" ? "Facility" : "Facilities",
-            value: scope.mode === "single" ? scope.name : warehouseCount ?? 0,
-          },
-          { label: "Last sync", value: "Just now", status: "live" },
-        ]}
-        actions={
-          <CornerLink href="/?kiosk=1" variant="ghost" size="sm">
-            Kiosk view →
-          </CornerLink>
-        }
       />
 
       <section aria-labelledby="signals">
         <h2 id="signals" className="sr-only">
           Headline metrics
         </h2>
-        <div className="grid grid-cols-2 xl:grid-cols-4 gap-12">
-          <KpiCard
-            label="Scans · today"
-            value={(scansTodayCount ?? 0).toLocaleString()}
-            spark={trend}
-            delta={{
-              value: `${totalScans14.toLocaleString()} in 14d`,
-              direction: (scansTodayCount ?? 0) > 0 ? "up" : "flat",
-              tone: "accent",
-            }}
-          />
-          <KpiCard
-            label="Units on hand"
-            value={totalStock.toLocaleString()}
-            spark={new Array(14).fill(totalStock)}
-          />
-          <KpiCard
-            label="Products"
-            value={(productCount ?? 0).toLocaleString()}
-            spark={new Array(14).fill(productCount ?? 0)}
-          />
-          <KpiCard
-            label={scope.mode === "single" ? "Sections here" : "Sections"}
-            value={(sectionCount ?? 0).toLocaleString()}
-            spark={new Array(14).fill(sectionCount ?? 0)}
-          />
-        </div>
+        <GlowKpiGrid
+          kpis={[
+            {
+              label: "Scans · today",
+              value: (scansTodayCount ?? 0).toLocaleString(),
+              spark: trend,
+              delta: {
+                value: `${totalScans14.toLocaleString()} in 14d`,
+                direction: (scansTodayCount ?? 0) > 0 ? "up" : "flat",
+                tone: "neutral",
+              },
+            },
+            {
+              label: "Units on hand",
+              value: totalStock.toLocaleString(),
+              spark: new Array(14).fill(totalStock),
+            },
+            {
+              label: "Products",
+              value: (productCount ?? 0).toLocaleString(),
+              spark: new Array(14).fill(productCount ?? 0),
+            },
+            {
+              label: scope.mode === "single" ? "Sections here" : "Sections",
+              value: (sectionCount ?? 0).toLocaleString(),
+              spark: new Array(14).fill(sectionCount ?? 0),
+            },
+          ]}
+        />
       </section>
 
       {lowStock.length > 0 && (
@@ -322,6 +309,6 @@ export default async function OverviewPage() {
           ]}
         />
       </section>
-    </div>
+    </PageHeader>
   );
 }

@@ -718,7 +718,7 @@ table,
   text-transform: uppercase;
   color: var(--danger);
 }
-*/ .field-shell[data-with-icon] {
+.field-shell[data-with-icon] {
   display: flex;
   align-items: center;
 }
@@ -745,6 +745,16 @@ table,
      ~13px (icon glyph) + 10px (gap to text) = 37px. Round to 38 for a
      touch of breathing room. */
   left: 38px;
+}
+
+/* Floating-label fields: keep the placeholder hidden until focus, so the
+   resting label and the placeholder don't sit on top of each other. */
+.field-shell .field-input::placeholder {
+  color: transparent;
+}
+.field-shell:focus-within .field-input::placeholder {
+  color: var(--text-dim);
+  transition: color var(--dur-quick) var(--ease-out);
 }
 
 /* ═══ SKELETON / LOADING ═══ */

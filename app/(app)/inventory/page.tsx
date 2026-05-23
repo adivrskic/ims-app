@@ -1,46 +1,46 @@
 import { PageHeader } from "@/components/ui/PageHeader";
 import { EmptyState } from "@/components/ui/EmptyState";
-import {
-  InventoryTable,
-  type SortKey,
-  type SortOrder,
-} from "@/components/inventory/InventoryTable";
-import {
-  CornerButton as Button,
-  CornerLink as ButtonLink,
-} from "@/components/ui/CornerButton";
+import { InventoryTable } from "@/components/inventory/InventoryTable";
+import { InventoryToolbar } from "@/components/inventory/InventoryToolbar";
+import { InventoryPagination } from "@/components/inventory/InventoryPagination";
+import { CornerLink as ButtonLink } from "@/components/ui/CornerButton";
 import { RegisterProductButton } from "./RegisterProductButton";
-import { Boxes, Download, Search } from "lucide-react";
+import { Boxes, Download } from "lucide-react";
 import { getActiveScope, scopeDescription } from "@/lib/facilityScope";
 import { InventoryRealtime } from "@/components/realtime/PageRealtime";
 import { getCurrentOrgContext } from "@/lib/data/user";
 import { getCategories } from "@/lib/data/org";
-import { getInventoryList } from "@/lib/data/inventory";
+import {
+  getInventoryList,
+  parseSort,
+  parseOrder,
+  PAGE_SIZE_OPTIONS,
+  DEFAULT_PAGE_SIZE,
+} from "@/lib/data/inventory";
 
 export const metadata = { title: "Inventory" };
 
 interface SearchParams {
   q?: string;
   category?: string;
+  low?: string;
   sort?: string;
   order?: string;
+  page?: string;
+  pageSize?: string;
   register?: string;
 }
 
-function parseSort(raw: string | undefined): SortKey {
-  if (
-    raw === "name" ||
-    raw === "updated" ||
-    raw === "reorder" ||
-    raw === "manufacturer"
-  ) {
-    return raw;
-  }
-  return "updated";
+function parsePage(raw: string | undefined): number {
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : 1;
 }
 
-function parseOrder(raw: string | undefined): SortOrder {
-  return raw === "asc" ? "asc" : "desc";
+function parsePageSize(raw: string | undefined): number {
+  const n = Number(raw);
+  return (PAGE_SIZE_OPTIONS as readonly number[]).includes(n)
+    ? n
+    : DEFAULT_PAGE_SIZE;
 }
 
 export default async function InventoryPage({
@@ -51,41 +51,69 @@ export default async function InventoryPage({
   const {
     q,
     category,
+    low: rawLow,
     sort: rawSort,
     order: rawOrder,
+    page: rawPage,
+    pageSize: rawPageSize,
     register,
   } = await searchParams;
+
   const sort = parseSort(rawSort);
   const order = parseOrder(rawOrder);
+  const low = rawLow === "1";
+  const page = parsePage(rawPage);
+  const pageSize = parsePageSize(rawPageSize);
 
   const scope = await getActiveScope();
   const ctx = await getCurrentOrgContext();
   const facilityId = scope.mode === "single" ? scope.id : null;
 
-  // Categories rarely change — pull from the cross-request cache.
-  // Invalidated by category mutations.
+  // Categories (id + name) drive both the filter dropdown and the register form.
   const categories = ctx ? await getCategories(ctx.orgId) : [];
 
-  // Listing (section resolution + product query + facility-scope location
-  // filtering) lives in the cross-request cache (lib/data/inventory.ts),
-  // keyed by org + facility + filters and tagged tags.products / tags.inventory.
   const data = ctx
-    ? await getInventoryList(ctx.orgId, facilityId, { q, category, sort, order })
-    : { products: [], totalCount: 0 };
+    ? await getInventoryList(ctx.orgId, facilityId, {
+        q,
+        category,
+        low,
+        sort,
+        order,
+        page,
+        pageSize,
+      })
+    : {
+        products: [],
+        totalCount: 0,
+        page: 1,
+        pageSize,
+        totalPages: 1,
+      };
 
-  const products = data.products;
-  const totalCount = data.totalCount;
+  const { products, totalCount, totalPages } = data;
+  const servedPage = data.page;
+  const servedSize = data.pageSize;
 
-  // Base params for sort URLs + CSV export — preserves filters
-  const baseParams: Record<string, string> = {};
-  if (q) baseParams.q = q;
-  if (category) baseParams.category = category;
+  const filterParams: Record<string, string> = {};
+  if (q) filterParams.q = q;
+  if (category) filterParams.category = category;
+  if (low) filterParams.low = "1";
 
-  const exportQuery = new URLSearchParams(baseParams);
+  const tableBaseParams: Record<string, string> = {
+    ...filterParams,
+    pageSize: String(servedSize),
+  };
+
+  const paginationBaseParams: Record<string, string> = {
+    ...filterParams,
+    sort,
+    order,
+    pageSize: String(servedSize),
+  };
+
+  const exportQuery = new URLSearchParams(filterParams);
   exportQuery.set("sort", sort);
   exportQuery.set("order", order);
-  // The export route hits the same query — when we want the export to
-  // respect facility scope too, pass the scope id through here:
   if (scope.mode === "single") exportQuery.set("facility", scope.id);
   const exportHref = `/api/inventory/export?${exportQuery.toString()}`;
 
@@ -103,7 +131,7 @@ export default async function InventoryPage({
             `Every SKU in the catalog, with on-hand counts at ${name}.`,
         })}
         meta={[
-          { label: "Showing", value: totalCount },
+          { label: "Total", value: totalCount },
           ...(scope.mode === "single"
             ? [{ label: "Facility", value: scope.name }]
             : []),
@@ -122,38 +150,12 @@ export default async function InventoryPage({
         }
       />
 
-      {/* Search form. Preserves category/sort/order via hidden inputs. */}
-      <form
-        action="/inventory"
-        method="get"
-        className="flex items-center gap-10"
-      >
-        <div className="relative flex-1 max-w-[420px]">
-          <Search
-            size={12}
-            strokeWidth={1.5}
-            className="absolute left-12 top-1/2 -translate-y-1/2 text-text-dim pointer-events-none"
-            aria-hidden
-          />
-          <input
-            name="q"
-            defaultValue={q ?? ""}
-            placeholder="Search by name, SKU, or barcode"
-            className="field-shell w-full pl-32 pr-12 py-8 mono-sm"
-          />
-        </div>
-        {category && <input type="hidden" name="category" value={category} />}
-        <input type="hidden" name="sort" value={sort} />
-        <input type="hidden" name="order" value={order} />
-        <Button type="submit" variant="ghost" size="sm">
-          Search
-        </Button>
-      </form>
+      <InventoryToolbar categories={categories ?? []} />
 
       {totalCount === 0 ? (
         <EmptyState
           title={
-            q || category
+            q || category || low
               ? "No products match those filters"
               : scope.mode === "single"
               ? `No products at ${scope.name} yet`
@@ -163,14 +165,23 @@ export default async function InventoryPage({
           icon={<Boxes size={20} strokeWidth={1.5} />}
         />
       ) : (
-        <InventoryTable
-          products={products as never}
-          categories={categories ?? []}
-          activeCategory={category}
-          activeQuery={q}
-          sort={sort}
-          order={order}
-        />
+        <div className="flex flex-col">
+          <InventoryTable
+            products={products}
+            sort={sort}
+            order={order}
+            baseParams={tableBaseParams}
+          />
+          <InventoryPagination
+            page={servedPage}
+            totalPages={totalPages}
+            pageSize={servedSize}
+            totalCount={totalCount}
+            shown={products.length}
+            pageSizeOptions={PAGE_SIZE_OPTIONS}
+            baseParams={paginationBaseParams}
+          />
+        </div>
       )}
     </div>
   );

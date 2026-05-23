@@ -1,39 +1,72 @@
 /* PageHeader.module.css
  *
- * Sticky shrinking header. State driven by `data-stuck` on the .header
- * element (set by the .tsx via scroll listener).
+ * Two modes, one visual header:
  *
- * Stuck state shows ONLY:
- *   - title (smaller)
- *   - meta items
- *   - actions
- * Everything else (eyebrow, description) collapses out.
+ *   - SHELL mode (.shell): the header is the transparent static top of a
+ *     flex column; .scroll holds the page content and scrolls on its own.
+ *     .scroll carries a top mask so content fades to transparent as it nears
+ *     the header — revealing the REAL page background (texture/animation and
+ *     all), which a flat color/gradient could never match. Content never
+ *     renders under the header because the header is outside .scroll.
+ *
+ *   - BAR mode (.header.bar): legacy sticky bar pinned to the window scroll.
+ *
+ * The header itself has NO background in either mode — it stays fully
+ * transparent. `data-stuck` drives the compact state: eyebrow + description
+ * collapse, title shrinks, meta + actions stay.
  */
 
 .header {
-  position: sticky;
-  top: 0;
-  z-index: 20;
+  /* Transparent — never a colored bar. */
+  background: transparent;
   border-bottom: 1px solid var(--border-subtle);
   padding-top: 0;
   padding-bottom: 16px;
   transition: padding 200ms var(--ease-out),
-    background-color 200ms var(--ease-out),
     border-bottom-color 200ms var(--ease-out);
 }
 
+/* Legacy sticky-to-window behavior. */
+.bar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+}
+
 .header[data-stuck="true"] {
-  /* User-requested breathing room at the top of the stuck bar. */
   padding-top: 18px;
   padding-bottom: 14px;
-  /* Glass effect: subtle backdrop blur, ~92% opaque bg so a hint of
-     content shows through. */
-  /* background-color: color-mix(in srgb, var(--bg) 92%, transparent); */
-  /* backdrop-filter: saturate(180%) blur(12px);
-  -webkit-backdrop-filter: saturate(180%) blur(12px); */
-  /* Stronger bottom border to clearly differentiate the sticky header
-     from the section that scrolls beneath it. */
+  /* Stronger bottom border to separate from the content beneath. */
   border-bottom-color: var(--border);
+}
+
+/* ── Shell layout ─────────────────────────────────────────────────────── */
+.shell {
+  display: flex;
+  flex-direction: column;
+  /* height is set inline by the component (self-measured to fill the
+     viewport from its own top), so the shell scrolls internally regardless
+     of whether the parent layout provides a bounded height. */
+  min-height: 0;
+}
+
+.scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  /* Fade the top edge: content becomes transparent as it approaches the
+     header, so the real page background shows through (perfect match) and
+     content never visibly slides under the header. */
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 26px);
+  mask-image: linear-gradient(to bottom, transparent 0, #000 26px);
+}
+
+.scrollInner {
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+  padding-top: 10px;
+  padding-bottom: 48px;
 }
 
 .row {

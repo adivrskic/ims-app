@@ -6,6 +6,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { CornerButton, CornerLink } from "@/components/ui/CornerButton";
 import { Building2, MapPin, Phone, Layers, Package, Edit3 } from "lucide-react";
 import { AddWarehouseForm } from "./AddWarehouseForm";
+import { getCurrentOrgContext } from "@/lib/data/user";
 import { archiveWarehouse, restoreWarehouse } from "./actions";
 
 export const metadata = { title: "Facilities" };
@@ -32,11 +33,18 @@ interface WarehouseRow {
 export default async function FacilitiesPage() {
   const supabase = await createClient();
 
+  // Scope to the ACTIVE workspace. The RLS policy on `warehouses` spans
+  // every org the user belongs to, so without this filter a multi-org
+  // user sees other workspaces' facilities. getCurrentOrgContext() honors
+  // the workspace cookie (the same source the rest of the app uses).
+  const ctx = await getCurrentOrgContext();
+
   const { data, error } = await supabase
     .from("warehouses")
     .select(
       "id, name, address, city, state, zip, phone, is_active, created_at, sections:sections ( id, code, name, color ), locations:locations ( id )"
     )
+    .eq("org_id", ctx?.orgId ?? "")
     .order("created_at", { ascending: true });
 
   if (error) {

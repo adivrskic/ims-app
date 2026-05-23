@@ -6,15 +6,13 @@ import { cookies } from "next/headers";
 import { randomBytes } from "crypto";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import {
-  findResendIntegration,
-  sendInviteViaResend,
-} from "@/lib/integrations/resend";
+import { sendInviteEmail } from "@/lib/email/invite";
 import { CURRENT_WORKSPACE_COOKIE } from "@/lib/currentWorkspace";
 import { CURRENT_FACILITY_COOKIE } from "@/lib/currentFacility";
 
 export interface AdditionalWorkspaceState {
   error?: string;
+  invites?: { email: string; url: string }[];
 }
 
 function slugify(name: string): string {
@@ -51,9 +49,9 @@ function parseEmails(raw: string): string[] {
  *   3. Insert organization (unique slug)
  *   4. Insert owner membership
  *   5. Insert first facility (warehouse)
- *   6. Optional: insert org_invites for any teammates
+ *   6. Optional: insert org_invites for any teammates + email them
  *   7. Set the workspace cookie to the new org, clear facility cookie
- *   8. Revalidate + redirect to overview
+ *   8. Revalidate, then either show invite links or redirect to overview
  */
 export async function createAdditionalWorkspace(
   _prev: AdditionalWorkspaceState | undefined,
@@ -143,7 +141,8 @@ export async function createAdditionalWorkspace(
     };
   }
 
-  // 3e. Optional invites
+  // 3e. Optional invites — insert rows, email them, collect share links.
+  let inviteLinks: { email: string; url: string }[] = [];
   if (uniqueInvites.length > 0) {
     const expiresAtMs = Date.now() + 7 * 24 * 60 * 60 * 1000;
     const expiresAt = new Date(expiresAtMs).toISOString();
@@ -161,35 +160,38 @@ export async function createAdditionalWorkspace(
     if (inviteErr) {
       console.error("[create-workspace] invite inserts failed:", inviteErr);
     } else {
-      const resendIntegration = await findResendIntegration(org.id);
-      if (resendIntegration) {
-        const inviterName =
-          (user.user_metadata?.full_name as string | undefined) ??
-          user.email ??
-          "A new teammate";
-        await Promise.all(
-          inviteRows.map((row) =>
-            sendInviteViaResend(resendIntegration, {
-              inviterName,
-              inviterEmail: user.email ?? "",
-              orgName: workspaceName,
-              role: row.role,
-              token: row.token,
-              recipientEmail: row.email,
-              expiresAt: new Date(expiresAtMs),
-            }).catch((e) => {
-              console.error("[create-workspace] invite email failed:", e);
-            })
+      const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "";
+      const inviterName =
+        (user.user_metadata?.full_name as string | undefined) ??
+        user.email ??
+        "A teammate";
+      // Fire-and-forget the emails (platform Resend, or the org's own if
+      // connected). Rows are saved, and we surface copy-links regardless.
+      await Promise.all(
+        inviteRows.map((row) =>
+          sendInviteEmail(org.id, {
+            inviterName,
+            inviterEmail: user.email ?? "",
+            orgName: workspaceName,
+            role: row.role,
+            token: row.token,
+            recipientEmail: row.email,
+            expiresAt: new Date(expiresAtMs),
+          }).catch((e) =>
+            console.error("[create-workspace] invite email failed:", e)
           )
-        );
-      }
+        )
+      );
+      inviteLinks = inviteRows.map((row) => ({
+        email: row.email,
+        url: `${appUrl}/invite/${row.token}`,
+      }));
     }
   }
 
-  // ── 4. Auto-switch + redirect ────────────────────────────────────
-  // Set the new workspace cookie so when we redirect the user, every
-  // server component reads the new org. Clear facility cookie since the
-  // selection from the previous workspace doesn't apply.
+  // ── 4. Auto-switch, then show invite links or redirect ────────────
+  // Set the new workspace cookie so every server component reads the new
+  // org. Clear facility cookie since the previous selection doesn't apply.
   const cookieStore = await cookies();
   const cookieOpts = {
     path: "/",
@@ -200,5 +202,11 @@ export async function createAdditionalWorkspace(
   cookieStore.delete(CURRENT_FACILITY_COOKIE);
 
   revalidatePath("/", "layout");
+
+  // If we created invites, return them so the form can show copy-links.
+  // Otherwise go straight to the overview.
+  if (inviteLinks.length > 0) {
+    return { invites: inviteLinks };
+  }
   redirect("/");
 }

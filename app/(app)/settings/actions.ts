@@ -3,10 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { randomBytes, createHash } from "crypto";
 import { createClient } from "@/lib/supabase/server";
-import {
-  findResendIntegration,
-  sendInviteViaResend,
-} from "@/lib/integrations/resend";
+import { sendInviteEmail } from "@/lib/email/invite";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 async function getOrgContext() {
@@ -75,42 +72,37 @@ export async function inviteMember(_prev: unknown, formData: FormData) {
     };
   }
 
-  // If Resend is connected, fire-and-forget the invite email. The invite
-  // row is already saved, so even if email delivery fails the link can
-  // still be shared manually.
-  const resendIntegration = await findResendIntegration(ctx.orgId);
-  let emailDelivered = false;
-  if (resendIntegration) {
-    const admin = createAdminClient();
-    const [{ data: orgRow }, { data: inviterProfile }] = await Promise.all([
-      admin.from("orgs").select("name").eq("id", ctx.orgId).maybeSingle(),
-      admin
-        .from("profiles")
-        .select("full_name, email")
-        .eq("id", ctx.user.id)
-        .maybeSingle(),
-    ]);
-    const result = await sendInviteViaResend(resendIntegration, {
-      inviterName:
-        inviterProfile?.full_name ?? inviterProfile?.email ?? "A teammate",
-      inviterEmail: inviterProfile?.email ?? ctx.user.email ?? "",
-      orgName: orgRow?.name ?? "the workspace",
-      role,
-      token,
-      recipientEmail: email,
-      expiresAt: new Date(expiresAt),
-    });
-    emailDelivered = result.ok;
-    if (!result.ok) {
-      console.error("[invite] Resend send failed:", result.error);
-    }
+  // Email the invite via the platform sender (or the org's own Resend if
+  // connected). The row is already saved, so a failed send still leaves a
+  // shareable link.
+  const admin = createAdminClient();
+  const [{ data: orgRow }, { data: inviterProfile }] = await Promise.all([
+    admin.from("orgs").select("name").eq("id", ctx.orgId).maybeSingle(),
+    admin
+      .from("profiles")
+      .select("full_name, email")
+      .eq("id", ctx.user.id)
+      .maybeSingle(),
+  ]);
+  const sent = await sendInviteEmail(ctx.orgId, {
+    inviterName:
+      inviterProfile?.full_name ?? inviterProfile?.email ?? "A teammate",
+    inviterEmail: inviterProfile?.email ?? ctx.user.email ?? "",
+    orgName: orgRow?.name ?? "the workspace",
+    role,
+    token,
+    recipientEmail: email,
+    expiresAt: new Date(expiresAt),
+  });
+  if (!sent.ok) {
+    console.error("[invite] send failed:", sent.error);
   }
 
   revalidatePath("/settings/members");
   return {
-    success: emailDelivered
+    success: sent.ok
       ? `Invite emailed to ${email}`
-      : `Invite created for ${email} — share the link manually or connect Resend to auto-send`,
+      : `Invite created for ${email} — share the link manually`,
   };
 }
 

@@ -5,12 +5,11 @@ import { revalidatePath } from "next/cache";
 import { randomBytes } from "crypto";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import {
-  findResendIntegration,
-  sendInviteViaResend,
-} from "@/lib/integrations/resend";
+import { sendInviteEmail } from "@/lib/email/invite";
+
 export interface OnboardingState {
   error?: string;
+  invites?: { email: string; url: string }[];
 }
 
 function slugify(name: string): string {
@@ -45,7 +44,7 @@ function parseEmails(raw: string): string[] {
  *   2. Upsert the user's profile row (signup may not have created one)
  *   3. Insert org_members with role=owner
  *   4. Create the first facility (warehouse)
- *   5. Optionally create org_invites for any provided teammate emails
+ *   5. Optionally create org_invites for any provided teammate emails + email
  *
  * Non-atomic — if step 3 fails after step 1, the org is orphaned. For
  * v1 this is acceptable (rare; cleanup is a manual SQL). Future: wrap
@@ -168,6 +167,8 @@ export async function setUpWorkspace(
     };
   }
 
+  // 4f. Optional invites — insert rows, email them, collect share links.
+  let inviteLinks: { email: string; url: string }[] = [];
   if (uniqueInvites.length > 0) {
     const expiresAtMs = Date.now() + 7 * 24 * 60 * 60 * 1000;
     const expiresAt = new Date(expiresAtMs).toISOString();
@@ -185,35 +186,35 @@ export async function setUpWorkspace(
     if (inviteErr) {
       console.error("[onboarding] invite inserts failed:", inviteErr);
     } else {
-      // Auto-send via Resend if connected. This is the org's first
-      // moment of life — Resend will almost never be set up yet, but
-      // we wire the call so future re-runs benefit from it.
-      const resendIntegration = await findResendIntegration(org.id);
-      if (resendIntegration) {
-        const inviterName =
-          (user.user_metadata?.full_name as string | undefined) ??
-          user.email ??
-          "A new teammate";
-        await Promise.all(
-          inviteRows.map((row) =>
-            sendInviteViaResend(resendIntegration, {
-              inviterName,
-              inviterEmail: user.email ?? "",
-              orgName: workspaceName,
-              role: row.role,
-              token: row.token,
-              recipientEmail: row.email,
-              expiresAt: new Date(expiresAtMs),
-            }).catch((e) => {
-              console.error("[onboarding] invite email failed:", e);
-            })
-          )
-        );
-      }
+      const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "";
+      const inviterName =
+        (user.user_metadata?.full_name as string | undefined) ??
+        user.email ??
+        "A teammate";
+      await Promise.all(
+        inviteRows.map((row) =>
+          sendInviteEmail(org.id, {
+            inviterName,
+            inviterEmail: user.email ?? "",
+            orgName: workspaceName,
+            role: row.role,
+            token: row.token,
+            recipientEmail: row.email,
+            expiresAt: new Date(expiresAtMs),
+          }).catch((e) => console.error("[onboarding] invite email failed:", e))
+        )
+      );
+      inviteLinks = inviteRows.map((row) => ({
+        email: row.email,
+        url: `${appUrl}/invite/${row.token}`,
+      }));
     }
   }
 
-  // ── 5. Refresh + redirect ────────────────────────────────────────
+  // ── 5. Refresh, then show invite links or redirect ────────────────
   revalidatePath("/", "layout");
+  if (inviteLinks.length > 0) {
+    return { invites: inviteLinks };
+  }
   redirect("/");
 }

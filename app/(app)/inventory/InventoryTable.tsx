@@ -36,7 +36,8 @@ interface Props {
   products: Product[];
   sort: SortKey;
   order: SortOrder;
-  baseParams: Record<string, string>; // q, category etc.
+  /** q, category, pageSize — preserved on the sort links (page resets to 1) */
+  baseParams: Record<string, string>;
 }
 
 function firstSection(loc: Location): Section | null {
@@ -78,6 +79,7 @@ function buildSortUrl(
       : defaultOrder;
   q.set("sort", col);
   q.set("order", newOrder);
+  q.set("page", "1"); // re-sorting changes which rows land on page 1
   return `/inventory?${q.toString()}`;
 }
 
@@ -220,15 +222,6 @@ export function InventoryTable({ products, sort, order, baseParams }: Props) {
           </tbody>
         </table>
       </div>
-      <div className="px-20 py-12 hairline-t bg-[var(--bg-elevated)] flex items-center justify-between">
-        <p className="label-text">
-          Showing <span className="text-text tnum">{products.length}</span>{" "}
-          {products.length === 1 ? "product" : "products"}
-        </p>
-        <p className="label-text text-text-dim">
-          Max 200 rows · refine search to narrow
-        </p>
-      </div>
     </div>
   );
 }
@@ -277,32 +270,27 @@ function SortableTh({
   return (
     <th
       scope="col"
-      className={`px-20 py-14 ${
-        align === "right" ? "text-right" : "text-left"
-      }`}
+      className={`px-20 py-14 ${align === "right" ? "text-right" : "text-left"}`}
+      aria-sort={active ? (order === "asc" ? "ascending" : "descending") : "none"}
     >
       <Link
         href={href}
         className={`inline-flex items-center gap-6 label-text transition-colors ${
           active ? "text-[var(--accent)]" : "text-text-muted hover:text-text"
         } ${align === "right" ? "flex-row-reverse" : ""}`}
-        aria-sort={
-          active ? (order === "asc" ? "ascending" : "descending") : "none"
-        }
       >
         <span>{label}</span>
         {active ? (
           order === "asc" ? (
-            <ArrowUp size={9} strokeWidth={2} aria-hidden />
+            <ArrowUp size={11} strokeWidth={1.5} />
           ) : (
-            <ArrowDown size={9} strokeWidth={2} aria-hidden />
+            <ArrowDown size={11} strokeWidth={1.5} />
           )
         ) : (
           <ChevronsUpDown
-            size={9}
+            size={11}
             strokeWidth={1.5}
-            aria-hidden
-            className="opacity-50"
+            className="opacity-40"
           />
         )}
       </Link>
@@ -319,8 +307,8 @@ function Td({
 }) {
   return (
     <td
-      className={`px-20 py-16 align-middle ${
-        align === "right" ? "text-right" : ""
+      className={`px-20 py-12 align-middle ${
+        align === "right" ? "text-right" : "text-left"
       }`}
     >
       {children}

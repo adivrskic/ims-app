@@ -2,8 +2,10 @@
 
 import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
+import { randomBytes } from "crypto";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { sendInviteEmail } from "@/lib/email/invite";
 
 const VALID_ROLES = ["owner", "admin", "member"] as const;
 type Role = (typeof VALID_ROLES)[number];
@@ -161,50 +163,55 @@ export async function inviteMember(
     return { success: `${email} added to the workspace as ${role}` };
   }
 
-  const h = await headers();
-  const origin =
-    process.env.NEXT_PUBLIC_APP_URL ??
-    h.get("origin") ??
-    "https://app.Nautilus.io";
-  const redirectTo = `${origin}/auth/callback?next=/`;
+  // New user → token invite + email a join link. Unified with the rest of
+  // the app: no Supabase auth user is created up front; they sign up via the
+  // /invite/{token} link and acceptInvite() adds membership.
+  const token = randomBytes(16).toString("hex");
+  const expiresAtMs = Date.now() + 7 * 24 * 60 * 60 * 1000;
+  const expiresAt = new Date(expiresAtMs).toISOString();
 
-  const { data: inviteData, error: inviteError } =
-    await admin.auth.admin.inviteUserByEmail(email, { redirectTo });
-
-  if (inviteError || !inviteData?.user) {
-    return {
-      error: `Failed to send invite: ${
-        inviteError?.message ?? "unknown error"
-      }`,
-    };
-  }
-
-  const newUser = inviteData.user;
-
-  const { error: profileError } = await admin.from("profiles").insert({
-    id: newUser.id,
-    email,
-    full_name: null,
-    is_staff: false,
-  });
-  if (profileError) {
-    return {
-      error: `Profile insert failed: ${profileError.message}. The auth user was created but is orphaned — contact support.`,
-    };
-  }
-
-  const { error: memberError } = await admin.from("org_members").insert({
+  const { error: inviteInsertError } = await admin.from("org_invites").insert({
     org_id: orgId,
-    user_id: newUser.id,
+    email,
     role,
+    token,
+    invited_by: caller.userId,
+    expires_at: expiresAt,
   });
-  if (memberError) {
-    await admin.from("profiles").delete().eq("id", newUser.id);
-    return { error: `Membership insert failed: ${memberError.message}` };
+  if (inviteInsertError) {
+    return {
+      error: inviteInsertError.message.includes("duplicate")
+        ? `An invite for ${email} already exists`
+        : `Couldn't create the invite: ${inviteInsertError.message}`,
+    };
   }
+
+  const [{ data: orgRow }, { data: inviterProfile }] = await Promise.all([
+    admin.from("orgs").select("name").eq("id", orgId).maybeSingle(),
+    admin
+      .from("profiles")
+      .select("full_name, email")
+      .eq("id", caller.userId)
+      .maybeSingle(),
+  ]);
+
+  const sent = await sendInviteEmail(orgId, {
+    inviterName:
+      inviterProfile?.full_name ?? inviterProfile?.email ?? "A teammate",
+    inviterEmail: inviterProfile?.email ?? "",
+    orgName: orgRow?.name ?? "the workspace",
+    role,
+    token,
+    recipientEmail: email,
+    expiresAt: new Date(expiresAtMs),
+  });
 
   revalidatePath("/settings/team");
-  return { success: `Invite sent to ${email} as ${role}` };
+  return {
+    success: sent.ok
+      ? `Invite emailed to ${email} as ${role}`
+      : `Invite created for ${email} — share the join link manually`,
+  };
 }
 
 export async function updateMemberRole(formData: FormData): Promise<void> {
@@ -282,7 +289,7 @@ export async function removeMember(formData: FormData): Promise<void> {
  * ============================================================ */
 
 export type BulkRowStatus =
-  | "new" // will create auth user + send invite email
+  | "new" // will create a token invite + email a join link
   | "existing_user" // already in Nautilus elsewhere; will add to this org (no email)
   | "already_member" // already in this org; will skip
   | "error"; // validation failed; will skip
@@ -311,12 +318,13 @@ export interface BulkPreviewResult {
 }
 
 export interface BulkExecuteResult {
-  invited: number; // new auth users + invite emails sent
+  invited: number; // new token invites created + emails sent
   added: number; // existing users added to this org
   failed: number;
   errors: Array<{ row: number; email: string; message: string }>;
-  /** Magic links from the invite responses — for sales to copy-paste if
-   *  any email gets stuck. Same order as new-user rows in the input. */
+  /** /invite/{token} join links — for sales to copy-paste if any email
+   *  gets stuck. Same order as new-user rows in the input. (Field name kept
+   *  as magic_links for backward compatibility with the result UI.) */
   magic_links: Array<{ email: string; action_link: string | null }>;
 }
 
@@ -587,11 +595,33 @@ export async function executeBulkInvite(
   const orgId = String(formData.get("org_id") ?? "");
   const admin = createAdminClient();
   const h = await headers();
-  const origin =
-    process.env.NEXT_PUBLIC_APP_URL ??
-    h.get("origin") ??
-    "https://app.Nautilus.io";
-  const redirectTo = `${origin}/auth/callback?next=/`;
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? h.get("origin") ?? "";
+
+  // Inviter + workspace context for the invite emails / links.
+  const caller = await getCallerRole(orgId);
+  if (!caller) {
+    return {
+      ...empty,
+      failed: 1,
+      errors: [
+        { row: 0, email: "", message: "Not a member of this workspace" },
+      ],
+    };
+  }
+  const [{ data: orgRow }, { data: inviterProfile }] = await Promise.all([
+    admin.from("orgs").select("name").eq("id", orgId).maybeSingle(),
+    admin
+      .from("profiles")
+      .select("full_name, email")
+      .eq("id", caller.userId)
+      .maybeSingle(),
+  ]);
+  const orgName = orgRow?.name ?? "the workspace";
+  const inviterName =
+    inviterProfile?.full_name ?? inviterProfile?.email ?? "A teammate";
+  const inviterEmail = inviterProfile?.email ?? "";
+  const expiresAtMs = Date.now() + 7 * 24 * 60 * 60 * 1000;
+  const expiresAt = new Date(expiresAtMs).toISOString();
 
   let invited = 0;
   let added = 0;
@@ -669,66 +699,68 @@ export async function executeBulkInvite(
 
         added++;
       } else {
-        // New user — invite
-        const { data: inviteData, error: inviteError } =
-          await admin.auth.admin.inviteUserByEmail(row.email, {
-            data: { full_name: row.full_name || null },
-            redirectTo,
-          });
-
-        if (inviteError || !inviteData?.user) {
-          failed++;
-          errors.push({
-            row: row.row_number,
-            email: row.email,
-            message: inviteError?.message ?? "Invite failed",
-          });
-          continue;
-        }
-
-        const newUser = inviteData.user;
-
-        const { error: profileError } = await admin.from("profiles").insert({
-          id: newUser.id,
-          email: row.email,
-          full_name: row.full_name || null,
-          phone: row.phone || null,
-          default_warehouse_id: facilityId,
-          is_staff: false,
-        });
-
-        if (profileError) {
-          failed++;
-          errors.push({
-            row: row.row_number,
-            email: row.email,
-            message: `Profile insert: ${profileError.message}`,
-          });
-          continue;
-        }
-
-        const { error: memberError } = await admin.from("org_members").insert({
+        // New user — token invite + email a join link. No auth user or
+        // profile is created up front; they sign up via /invite/{token}
+        // and acceptInvite() creates membership. (CSV full_name/phone/
+        // facility are NOT applied for new users — there's no profile yet;
+        // those are only applied to existing users above.)
+        const token = randomBytes(16).toString("hex");
+        const { error: inviteError } = await admin.from("org_invites").insert({
           org_id: orgId,
-          user_id: newUser.id,
+          email: row.email,
           role: row.role,
+          token,
+          invited_by: caller.userId,
+          expires_at: expiresAt,
         });
 
-        if (memberError) {
-          // Best-effort rollback so the auth user isn't fully orphaned
-          await admin.from("profiles").delete().eq("id", newUser.id);
-          failed++;
-          errors.push({
-            row: row.row_number,
-            email: row.email,
-            message: `Membership insert: ${memberError.message}`,
-          });
-          continue;
+        let linkToken = token;
+        if (inviteError) {
+          if (inviteError.message.includes("duplicate")) {
+            // A pending invite already exists — reuse its token so the run
+            // is idempotent and still yields a shareable link.
+            const { data: existing } = await admin
+              .from("org_invites")
+              .select("token")
+              .eq("org_id", orgId)
+              .eq("email", row.email)
+              .maybeSingle();
+            if (!existing?.token) {
+              failed++;
+              errors.push({
+                row: row.row_number,
+                email: row.email,
+                message: inviteError.message,
+              });
+              continue;
+            }
+            linkToken = existing.token;
+          } else {
+            failed++;
+            errors.push({
+              row: row.row_number,
+              email: row.email,
+              message: inviteError.message,
+            });
+            continue;
+          }
+        } else {
+          // Only email on a fresh insert (don't re-spam existing invites).
+          await sendInviteEmail(orgId, {
+            inviterName,
+            inviterEmail,
+            orgName,
+            role: row.role,
+            token,
+            recipientEmail: row.email,
+            expiresAt: new Date(expiresAtMs),
+          }).catch((e) => console.error("[bulk-invite] email failed:", e));
         }
 
         invited++;
         magicLinks.push({
           email: row.email,
-          action_link: inviteData.properties?.action_link ?? null,
+          action_link: `${appUrl}/invite/${linkToken}`,
         });
       }
     } catch (err) {

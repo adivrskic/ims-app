@@ -3,6 +3,7 @@
 import { useActionState, useEffect, useRef, useState } from "react";
 import { Plus, X } from "lucide-react";
 import { Input } from "@/components/ui/Input";
+import { AddressFields } from "@/components/ui/AddressFields";
 import { CornerButton } from "@/components/ui/CornerButton";
 import { createWarehouse } from "./actions";
 
@@ -76,12 +77,15 @@ export function AddWarehouseForm() {
       />
       <Input label="Address" name="address" type="text" />
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-12">
-        <Input label="City" name="city" type="text" />
-        <Input label="State" name="state" type="text" />
-        <Input label="Zip" name="zip" type="text" />
-        <Input label="Phone" name="phone" type="tel" />
-      </div>
+      {/* City + State (dropdown) + ZIP (with autofill). Bare field names. */}
+      <AddressFields namePrefix="" />
+
+      <Input
+        label="Phone"
+        name="phone"
+        type="tel"
+        placeholder="(404) 555-0142"
+      />
 
       {state?.error && (
         <p

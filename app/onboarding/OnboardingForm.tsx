@@ -1,9 +1,11 @@
 "use client";
 
 import { useActionState, useState } from "react";
-import { AlertTriangle, ArrowRight, Check } from "lucide-react";
+import { AlertTriangle, ArrowRight } from "lucide-react";
 import { CornerButton } from "@/components/ui/CornerButton";
 import { Input } from "@/components/ui/Input";
+import { AddressFields } from "@/components/ui/AddressFields";
+import { InviteLinks } from "@/components/invites/InviteLinks";
 import { setUpWorkspace, type OnboardingState } from "./actions";
 
 interface Props {
@@ -12,14 +14,22 @@ interface Props {
 }
 
 export function OnboardingForm({ fullName, email }: Props) {
-  const [state, formAction, pending] = useActionState;
-  OnboardingState | undefined, FormData > (setUpWorkspace, undefined);
+  const [state, formAction, pending] = useActionState<
+    OnboardingState | undefined,
+    FormData
+  >(setUpWorkspace, undefined);
 
   const [workspaceName, setWorkspaceName] = useState("");
   const [facilityName, setFacilityName] = useState("");
   const [inviteEmails, setInviteEmails] = useState("");
 
   const firstName = fullName?.split(" ")[0] ?? "there";
+
+  // Workspace created with pending invites → show the share-links panel
+  // instead of the form. (No invites → the action redirects to "/".)
+  if (state?.invites?.length) {
+    return <InviteLinks invites={state.invites} />;
+  }
 
   return (
     <div className="flex flex-col gap-32">
@@ -108,29 +118,7 @@ export function OnboardingForm({ fullName, email }: Props) {
             onChange={(e) => setFacilityName(e.target.value)}
             placeholder="Main warehouse"
           />
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-12">
-            <Input
-              label="City"
-              name="facility_city"
-              type="text"
-              placeholder="Atlanta"
-              autoComplete="address-level2"
-            />
-            <Input
-              label="State"
-              name="facility_state"
-              type="text"
-              placeholder="GA"
-              autoComplete="address-level1"
-            />
-            <Input
-              label="ZIP"
-              name="facility_zip"
-              type="text"
-              placeholder="30309"
-              autoComplete="postal-code"
-            />
-          </div>
+          <AddressFields namePrefix="facility" />
         </section>
 
         {/* ── Optional teammates ────────────────────────────── */}
