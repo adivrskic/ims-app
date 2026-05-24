@@ -1,31 +1,125 @@
-# `app.nimbus` — Customer dashboard
+<div align="center">
 
-The customer-facing web dashboard for Nimbus. Operators and admins use it to
-manage inventory, run cycle counts, work orders + POs + returns, configure
-facilities, and connect integrations. Mobile pickers stay on the React Native
-app; this surface is for the desk.
+# Nautilus — Dashboard
 
-Marketing site lives at the apex domain (`nimbuswms.com` /
-`nimbusinventory.com`). This is `app.<apex>`.
+**The desk-bound web app for the Nautilus warehouse platform.**
+Inventory, orders, purchasing, returns, facilities, and integrations — for operators and admins at a desk. Mobile pickers stay on the React Native app; this surface is for the big screen.
+
+`Next.js 15` · `React 19` · `TypeScript` · `Supabase` · `Tailwind`
+
+_Internal engineering doc — Nautilus team only._
+
+</div>
+
+---
+
+## Table of contents
+
+- [What this is](#what-this-is)
+- [Where it sits in the suite](#where-it-sits-in-the-suite)
+- [Stack](#stack)
+- [Feature tour](#feature-tour)
+- [Getting started](#getting-started)
+- [Environment variables](#environment-variables)
+- [One-time Supabase configuration](#one-time-supabase-configuration)
+- [Architecture](#architecture)
+- [Design system](#design-system)
+- [Hardware integrations](#hardware-integrations)
+- [Kiosk / wallboard mode](#kiosk--wallboard-mode)
+- [Project layout](#project-layout)
+- [Common tasks](#common-tasks)
+- [Deploying](#deploying)
+- [Status snapshot](#status-snapshot)
+- [Engineering notes](#engineering-notes)
+
+---
+
+## What this is
+
+Nautilus Dashboard is the customer-facing web application that warehouse teams use to run their operation from a desk or wallboard: managing the product catalog, running cycle counts, working orders / purchase orders / returns, designing facility layouts in 2D and 3D, and wiring up integrations. It is a server-first Next.js App Router application backed by Supabase (Postgres + Auth + Realtime + Edge Functions), with row-level security isolating every workspace's data.
+
+This README is for the Nautilus engineering team. It assumes you have access to the shared Supabase project (ref `seypbrzjjiuibrwyxewj`), the sibling repos, and the internal design-system doc.
+
+> **Naming note.** The product and brand is **Nautilus**. Some internal identifiers still carry the original `nimbus` codename — the npm package (`app-nimbus`), the design-system doc (`nimbus-design-system.md`), the edge-functions repo (`nimbus-edge-functions`), and assorted CSS comments. These are intentionally left as-is so they remain greppable; treat **Nautilus** as canonical in all new user-facing copy.
+
+---
+
+## Where it sits in the suite
+
+Nautilus is a multi-surface product. This repo is one piece of it.
+
+| Surface                     | Repo / location              | Purpose                                            |
+| --------------------------- | ---------------------------- | -------------------------------------------------- |
+| **Marketing site**          | apex domain (`<apex>`)       | Public marketing + sign-up entry point             |
+| **Dashboard** _(this repo)_ | `app.<apex>`                 | Desk-bound operator + admin console                |
+| **Mobile app**              | React Native (separate repo) | On-the-floor barcode picking + adjustments         |
+| **Edge functions**          | `nimbus-edge-functions`      | AI narration (`narrate-event`) and background jobs |
+
+All four share one **Supabase project** and one **design system** (`nimbus-design-system.md`). The dashboard reads and writes exclusively to the `app` schema — it never touches `public`.
 
 ---
 
 ## Stack
 
-- **Framework** — Next.js 15 (App Router, React 19, TypeScript)
-- **Auth + DB** — Supabase (`@supabase/ssr`)
-- **Styling** — Tailwind CSS with Nimbus design tokens (CSS custom properties)
-- **3D viewer** — `three` + `@react-three/fiber` + `@react-three/drei` (lazy-loaded)
+- **Framework** — Next.js 15 (App Router, React 19, TypeScript, server-first)
+- **Auth + data** — Supabase via `@supabase/ssr` (Postgres, Auth, Realtime, Edge Functions)
+- **Styling** — Tailwind CSS driven by CSS-custom-property design tokens
+- **3D** — `three` + `@react-three/fiber` + `@react-three/drei` (lazy-loaded for the facility viewer)
+- **Motion** — GSAP
 - **Icons** — Lucide
-- **Hosting** — Netlify (second site sharing env scope conventions with the
-  marketing repo per the architecture doc)
-
-All data lives in the `app` schema of the Supabase project (project ref
-`seypbrzjjiuibrwyxewj`). The dashboard never touches the `public` schema.
+- **Hosting** — Netlify (a second site sharing env conventions with the marketing repo)
 
 ---
 
-## Setup
+## Feature tour
+
+### Operate
+
+- **Overview** — KPI strip, recent scans, low-stock signals, link into kiosk mode.
+- **Inventory** — Product catalog with detail pages, CSV import/export, per-product reorder point / safety stock / lead time.
+- **Analytics** — Headline metrics, a dead-stock report, and an AI-narrated operations summary.
+- **Cycle counts** — Variance recording and accuracy tracking.
+- **Scan workstation** — Browser-side barcode capture surface (see [Hardware](#hardware-integrations)).
+
+### Flow
+
+- **Orders** — Pick lists, deliveries, and customer pickups driven by a full status state machine.
+- **Purchase orders** — Manual creation plus **AI-drafted reorder POs**: for every product at or below its reorder point the system computes daily velocity from the last 60 days of scans, a reorder point (`velocity × lead time + safety stock`), an economic order quantity (EOQ), and a recommended quantity, then groups lines by preferred supplier and attaches a one-line reasoning sentence per item. Unit cost is snapshotted onto each line for historical cost analysis.
+- **Returns** — Disposition routing (restock / damaged / RMA).
+
+### Directory
+
+- **Suppliers** — Directory with a performance scorecard and default lead times.
+- **Customers** — Customer directory (business + individual).
+
+### Facilities
+
+- **Viewer** — Read-only 2D top-down (SVG) and 3D orbital (`react-three-fiber`, β) views.
+- **Builder** — Layout editor with snap-to-grid, smart guides, undo/redo, snapshots, and an AI blueprint scan. _(Editing is 2D-only today.)_
+- **Sections** — Bay × level slot grids with inventory placement.
+
+### Settings
+
+- **Account** — Profile and workspace membership.
+- **Security** — TOTP-based multi-factor auth via Supabase `auth.mfa`.
+- **Members** — Role management plus CSV bulk invite with Resend-delivered transactional email.
+- **Devices** — Pair/test barcode scanners and Zebra label printers.
+- **Billing** — Stripe-aware plan and seat management.
+- **API keys** — Tokens for the mobile app and integrations.
+- **Audit log** — Workspace activity history.
+- **Webhooks** — HMAC-signed outbound endpoints with a delivery log.
+
+### Integrations
+
+Built: **Slack** (reference implementation), **Shopify** (OAuth + webhook ingestion), **Resend** (transactional email), and custom webhook endpoints. Nine more providers (Square, WooCommerce, QuickBooks, Xero, Stripe, ShipStation, FedEx, Gmail, Zapier, HubSpot) ship as stubs — Slack is the template for building any new one.
+
+### Admin
+
+Staff-only console (gated by `profiles.is_staff`) for provisioning new customer workspaces at `/admin/onboard`. The route is deliberately invisible to non-staff: it redirects to `/` rather than 404-ing, so its existence isn't leaked.
+
+---
+
+## Getting started
 
 ### 1. Install
 
@@ -33,10 +127,7 @@ All data lives in the `app` schema of the Supabase project (project ref
 npm install
 ```
 
-> **Note on peer deps.** The 3D viewer pulls in `@react-three/fiber`, which
-> declares an optional React Native peer. If Expo is present elsewhere in your
-> tree (it can land via a workspace sibling), npm will trip on peer resolution.
-> Add `legacy-peer-deps=true` to a root `.npmrc` to keep installs frictionless.
+> **Peer-deps note.** The 3D viewer pulls in `@react-three/fiber`, which declares an optional React Native peer. If Expo is present elsewhere in your tree, npm may trip on peer resolution. Add `legacy-peer-deps=true` to a root `.npmrc` to keep installs frictionless.
 
 ### 2. Configure env
 
@@ -44,41 +135,11 @@ npm install
 cp .env.local.example .env.local
 ```
 
-The example has the project URL + publishable key for the `nimbus-wms`
-Supabase project. For production, swap to the prod project values.
+Fill in the values from the [environment variables](#environment-variables) table. For production, swap to the prod Supabase project values.
 
-Required env vars:
+### 3. One-time Supabase setup
 
-| Var                                      | Where it's used                                   |
-| ---------------------------------------- | ------------------------------------------------- |
-| `NEXT_PUBLIC_SUPABASE_URL`               | Browser + server clients                          |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY`          | Browser + RLS-scoped server reads                 |
-| `NEXT_PUBLIC_SUPABASE_DB_SCHEMA`         | Always `app`                                      |
-| `SUPABASE_SERVICE_ROLE_KEY`              | Admin client (server only — see RLS section)      |
-| `NEXT_PUBLIC_APP_URL`                    | OAuth redirect targets, transactional email links |
-| `SHOPIFY_API_KEY` / `SHOPIFY_API_SECRET` | Shopify OAuth callback only                       |
-| `RESEND_API_KEY`                         | Transactional email (invite delivery)             |
-
-### 3. One-time Supabase configuration
-
-These must be done in the Supabase dashboard before the app can talk to the
-database:
-
-1. **Expose the `app` schema to PostgREST.**
-   Settings → API → "Exposed schemas". Add `app`. Final value should be
-   `public, app, storage, graphql_public`.
-
-2. **Add the dashboard origin to allowed redirect URLs.**
-   Authentication → URL Configuration → Redirect URLs. Add:
-
-   - `http://localhost:3000/auth/callback` (dev)
-   - `https://app.<apex>/auth/callback` (prod)
-
-3. **Configure the Google OAuth provider.**
-   Authentication → Providers → Google. Paste the Google Cloud OAuth client ID
-   and secret. (Use the existing marketing-site Google OAuth client if there is
-   one — the redirect URI on Google's side is the Supabase callback URL, not
-   ours.)
+Complete the [Supabase configuration](#one-time-supabase-configuration) steps below — the app can't talk to the database until the `app` schema is exposed and redirect URLs are allowed.
 
 ### 4. Run
 
@@ -88,298 +149,226 @@ npm run dev
 
 Open <http://localhost:3000>. Unauthenticated traffic redirects to `/login`.
 
+### Scripts
+
+| Script              | Does                                                                                           |
+| ------------------- | ---------------------------------------------------------------------------------------------- |
+| `npm run dev`       | Start the dev server                                                                           |
+| `npm run build`     | Production build                                                                               |
+| `npm run start`     | Serve the production build                                                                     |
+| `npm run lint`      | Lint with Next's ESLint config                                                                 |
+| `npm run types:gen` | Regenerate Supabase types into `types/db.ts` (requires the Supabase CLI + a logged-in session) |
+
+---
+
+## Environment variables
+
+| Var                                      | Used by                                           |
+| ---------------------------------------- | ------------------------------------------------- |
+| `NEXT_PUBLIC_SUPABASE_URL`               | Browser + server clients                          |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY`          | Browser + RLS-scoped server reads                 |
+| `NEXT_PUBLIC_SUPABASE_DB_SCHEMA`         | Always `app`                                      |
+| `SUPABASE_SERVICE_ROLE_KEY`              | Admin (service-role) client — **server only**     |
+| `NEXT_PUBLIC_APP_URL`                    | OAuth redirect targets, transactional email links |
+| `SHOPIFY_API_KEY` / `SHOPIFY_API_SECRET` | Shopify OAuth callback                            |
+| `RESEND_API_KEY`                         | Transactional email (invite delivery)             |
+
+> Without `SUPABASE_SERVICE_ROLE_KEY`, every integration callback and all `/admin` routes throw. It must never be exposed to the client — see [Architecture](#the-three-supabase-clients).
+
+---
+
+## One-time Supabase configuration
+
+These are done once in the Supabase dashboard, per project (dev and prod):
+
+1. **Expose the `app` schema to PostgREST.** Settings → API → _Exposed schemas_. Final value: `public, app, storage, graphql_public`.
+2. **Allow the dashboard redirect URLs.** Authentication → URL Configuration → _Redirect URLs_:
+   - `http://localhost:3000/auth/callback` (dev)
+   - `https://app.<apex>/auth/callback` (prod)
+3. **Configure the Google OAuth provider.** Authentication → Providers → Google. The redirect URI on Google's side is the Supabase callback URL, not ours.
+
+---
+
+## Architecture
+
+### Server-first App Router
+
+Pages default to Server Components and fetch data directly with the RLS-scoped Supabase client. All mutations are **Server Actions** (`actions.ts` files co-located with their routes). Client Components are reserved for interactivity (the canvas builder, command palette, realtime mounts, forms).
+
+### The three Supabase clients
+
+| Client  | File                     | Scope                           | Use for                                    |
+| ------- | ------------------------ | ------------------------------- | ------------------------------------------ |
+| Browser | `lib/supabase/client.ts` | RLS, user JWT                   | Client Components                          |
+| Server  | `lib/supabase/server.ts` | RLS, user JWT                   | Server Components + actions                |
+| Admin   | `lib/supabase/admin.ts`  | **Bypasses RLS** (service role) | Integration callbacks, `/admin`, cron jobs |
+
+The admin client is **server-only**. Importing it from a Client Component throws at runtime, and the `"use server"` directive on every consumer keeps the service-role key out of the client bundle. Never call it from anywhere a user's intent isn't already authenticated at the route boundary — and when you do use it, **always filter by `org_id` explicitly**, because RLS is no longer protecting you.
+
+### Auth + RLS
+
+Middleware (`middleware.ts` → `lib/supabase/middleware.ts`) runs on every request: it refreshes the session and redirects unauthenticated traffic to `/login?next=…`, authenticated traffic away from auth pages, and org-less users to `/onboarding`. Every `app.*` table has RLS enabled, gated by two Postgres helpers:
+
+- `app.is_org_member(org_id) → boolean` — gates reads
+- `app.has_org_role(org_id, allowed text[]) → boolean` — gates owner/admin writes
+
+### Data-fetching layer
+
+Slow-changing org data (categories, suppliers, warehouses, …) is fetched through request-cached helpers in `lib/data/`, wrapped in `unstable_cache` with per-`org_id` cache keys and tags. Mutating actions call `revalidateTag(tags.X(orgId))` so the next read is fresh; a 1-hour revalidate is the safety net, not the primary strategy.
+
+### Realtime
+
+Per-page subscriptions live in `components/realtime/PageRealtime.tsx`. Each named subcomponent (`OverviewRealtime`, `OrdersRealtime`, etc.) opens a Supabase channel scoped to the relevant tables and active facility, then calls `router.refresh()` on change — so the page stays a Server Component.
+
+### AI narration
+
+Three copy surfaces route through `lib/ai/narrate.ts`, which invokes the `narrate-event` Supabase edge function (source in the `nimbus-edge-functions` repo): `narrateForecast` (Analytics summary), `narrateAnomaly` (notification title + body), and `narratePoDraft` (per-line PO reasoning). All three return `null` on failure so callers fall back to deterministic copy — the LLM being down never blocks an operation.
+
+---
+
+## Design system
+
+Every token, weight, and spacing rule is defined in `globals.css` and documented canonically in `nimbus-design-system.md` — **the shared source of truth across the marketing site, dashboard, and mobile app.** Keep all surfaces consistent by pulling from it rather than inventing values.
+
+- **Sharp corners** — 0px radius everywhere, except the avatar pill and live/status dots.
+- **Hairlines** — 1px borders in `var(--border)`; 1px dividers in `var(--border-subtle)` (~6% white). Cards are defined by their hairline, not a fill.
+- **Type** — Satoshi (display) + JetBrains Mono. Mono is used for every label, button, table header, ID, and numeric readout; tabular numerals (`.tnum`) wherever counts appear.
+- **Color** — black background, white text, a single gold accent (`#D4A853`) rationed to ≤3 instances per viewport. Reds/ambers are likewise rationed. A cream **light theme** is triggered by `[data-theme="light"]`.
+- **Signature affordances** — gold corner-bracket button hover, float-label inputs with a gold caret, self-contained focus rings.
+
+> **Fonts are referenced but not bundled.** Add `Satoshi` and `JetBrains Mono` woff2 files to `public/fonts/` (and the matching `@font-face` rules) before production. System fallbacks render acceptably in dev.
+
+---
+
+## Hardware integrations
+
+Two browser-native surfaces (both desktop-Chromium only — Firefox + Safari lack WebUSB):
+
+- **Barcode scanners** (USB / Bluetooth HID, keyboard-emulating) — `lib/useScanner.ts` debounces keystroke bursts into single scan events; `components/scanner/ScannerProvider.tsx` shares one capture surface across authenticated pages. Test pad under Settings → Devices.
+- **Zebra ZPL printers** (USB via WebUSB) — `lib/print/zebra.ts` handles pairing and the ZPL byte stream, used for bay/section labels and PO receipt labels. Templates assume 203 DPI desktop printers (ZD420/ZD620/GK420); 300 DPI industrial units need them rebuilt at 1.5× scale. Set the printer language to `ZPL` (not `EPL`/`Line`). WebUSB permissions are per-origin, per-browser, per-profile.
+
+---
+
+## Kiosk / wallboard mode
+
+Append `?kiosk=1` to any URL to set `data-kiosk="true"` on `<html>`. The matching CSS in `globals.css` hides the side rail, mobile nav, and ornamental layers, then inflates typography ~25% and KPI numerals for across-the-room reading. The Overview page links to it from its corner action.
+
 ---
 
 ## Project layout
 
 ```
 app/
-├── (auth)/                       # Sign-in surfaces (login, signup, magic-link, forgot, MFA)
-│   ├── actions.ts                # Server actions for every auth flow
-│   └── layout.tsx                # Centered card chrome
-├── (app)/                        # Authenticated surfaces
-│   ├── layout.tsx                # Top nav + side rail, fetches user + workspace
-│   ├── page.tsx                  # Overview (KPIs, recent scans, low-stock signals)
-│   │
-│   ├── inventory/                # Product catalog, detail, CSV import/export
-│   ├── analytics/                # Headline metrics + dead-stock report
-│   ├── cycle-counts/             # Variance recording + accuracy tracking
-│   │
-│   ├── orders/                   # Pick lists, deliveries, customer pickups
-│   ├── purchase-orders/          # Inbound from suppliers + AI-drafted POs
-│   ├── returns/                  # Disposition routing (restock/damaged/RMA)
-│   │
-│   ├── facilities/               # Warehouses, sections, layout builder + 2D/3D viewer
-│   │   └── [id]/
-│   │       ├── page.tsx          # Read-only viewer (2D SVG + 3D r3f scene)
-│   │       ├── builder/          # Layout editor with snap-to-grid, snapshots, AI blueprint scan
-│   │       └── sections/[sectionId]/  # Bay × level slot grid with inventory placement
-│   │
-│   ├── suppliers/                # Supplier directory + scorecard (canonical home)
-│   ├── customers/                # Customer directory
-│   ├── scan/                     # USB/Bluetooth HID barcode workstation
-│   ├── notifications/            # Inbox for stock alerts, scan summaries, system events
-│   │
-│   ├── integrations/             # Shopify, Slack, Resend, Webhooks (built); 9 more stubbed
-│   └── settings/                 # Account, Security (TOTP), Members, Devices, Billing,
-│                                 # API keys, Audit log, Webhooks
-│
-├── admin/                        # Internal staff dashboard (gated by profiles.is_staff)
-│   └── onboard/                  # Provision new customer workspaces
-│
-├── api/                          # Route handlers: OAuth callbacks, CSV exports,
-│                                 # webhook ingest, label print proxies
-├── onboarding/                   # First-run flow for new owners
-├── auth/callback/route.ts        # OAuth + magic-link exchange handler
-├── globals.css                   # All Nimbus design tokens + utility classes
-└── layout.tsx                    # Root shell
+├── (auth)/                  # Sign-in surfaces (login, signup, magic-link, forgot, MFA)
+│   ├── actions.ts           # Server actions for every auth flow
+│   └── layout.tsx           # Centered card chrome
+├── (app)/                   # Authenticated surfaces
+│   ├── layout.tsx           # Nav + side rail; fetches user + workspace
+│   ├── page.tsx             # Overview
+│   ├── inventory/           # Catalog, detail, CSV import/export
+│   ├── analytics/           # Metrics + dead-stock report
+│   ├── cycle-counts/        # Variance + accuracy tracking
+│   ├── orders/              # Pick lists, deliveries, pickups
+│   ├── purchase-orders/     # Manual + AI-drafted POs
+│   ├── returns/             # Disposition routing
+│   ├── facilities/[id]/     # Viewer (2D/3D) + builder + sections
+│   ├── suppliers/           # Supplier directory + scorecard
+│   ├── customers/           # Customer directory
+│   ├── scan/                # HID barcode workstation
+│   ├── notifications/       # Inbox for alerts, scan summaries, system events
+│   ├── integrations/        # Slack, Shopify, Resend, Webhooks (+ stubs)
+│   └── settings/            # Account, Security, Members, Devices, Billing, …
+├── admin/onboard/           # Staff-only workspace provisioning
+├── api/                     # OAuth callbacks, CSV exports, webhook ingest, print proxies
+├── onboarding/              # First-run flow for new owners
+├── auth/callback/route.ts   # OAuth + magic-link exchange
+├── globals.css              # Design tokens + utility classes
+└── layout.tsx               # Root shell
 
 components/
-├── nav/                          # TopNav, SideRail, CommandPalette, WorkspaceSwitcher
-├── ui/                           # Button, Input, KpiCard, PageHeader, Badge, EmptyState, …
-├── dashboard/                    # ScopeFilter, GlowCardGrid, ForecastNarration
-├── realtime/                     # PageRealtime — per-page Supabase channel subscriptions
-├── integrations/                 # ProviderLogo, IntegrationGrid
-├── print/                        # Zebra ZPL label generation + WebUSB driver
-└── effects/                      # AuthAtmosphere particle ring (auth pages only)
+├── nav/                     # TopNav, SideRail, CommandPalette, WorkspaceSwitcher
+├── ui/                       # Button, Input, KpiCard, PageHeader, Badge, EmptyState, …
+├── dashboard/               # ScopeFilter, GlowCardGrid, ForecastNarration
+├── realtime/                # PageRealtime — per-page Supabase channel subscriptions
+├── integrations/            # ProviderLogo, IntegrationGrid
+├── print/                   # Zebra ZPL generation + WebUSB driver
+└── effects/                 # AuthAtmosphere (auth pages only)
 
 lib/
-├── supabase/
-│   ├── client.ts                 # Browser client (Client Components)
-│   ├── server.ts                 # RLS-scoped server client
-│   ├── admin.ts                  # Service-role client (server only)
-│   └── middleware.ts             # Session refresh + auth gate
-├── ai/narrate.ts                 # Edge-function wrapper for AI-narrated forecasts + PO reasoning
-├── integrations/                 # Provider clients (shopify, slack, webhooks, resend)
-├── data/                         # Request-cached fetchers (user, org, suppliers, …)
-└── print/zebra.ts                # ZPL transport over WebUSB
+├── supabase/                # client / server / admin / middleware
+├── ai/narrate.ts            # Edge-function wrapper
+├── replenishment.ts         # velocity / ROP / EOQ math
+├── integrations/            # Provider clients (shopify, slack, webhooks, resend)
+├── data/                    # Request-cached fetchers
+└── print/zebra.ts           # ZPL transport over WebUSB
 
-types/db.ts                       # Hand-written DB types (regeneratable from Supabase)
-middleware.ts                     # Wires lib/supabase/middleware.ts into Next.js
+types/db.ts                  # Hand-written DB types (regeneratable)
+middleware.ts                # Wires the Supabase middleware into Next.js
 ```
 
 ---
 
-## Design system
+## Common tasks
 
-Every visible token, weight, and spacing rule comes from
-`nimbus-design-system.md` (the canonical document). Specifically:
+### Add a new authenticated page
 
-- **Sharp corners** — every component is 0px radius except the avatar pill and
-  the live/online status dots.
-- **Hairlines** — borders are 1px in `var(--border)`; dividers are 1px in
-  `var(--border-subtle)` (≈6% white).
-- **Type** — Satoshi (display) + JetBrains Mono. JetBrains Mono is used for
-  every label, button text, table header, ID, and numeric readout. Tabular
-  numerals (`.tnum`) are applied everywhere stock counts appear.
-- **Color** — black background, white text, a single gold accent (`#D4A853`)
-  rationed to ≤3 instances per viewport. Reds and ambers are likewise rationed.
-- **Signature affordances** — the gold corner-bracket button hover is on every
-  `Button`. Float-label inputs with the gold caret are the universal field
-  shell. Inputs and buttons set their own focus rings.
+1. Create `app/(app)/<route>/page.tsx` as a Server Component (no `"use client"`).
+2. Fetch via `createClient()` from `@/lib/supabase/server` — `.from("products")` hits `app.products`, RLS-scoped to the user's org.
+3. Compose with `PageHeader`, `KpiCard`, and the other UI primitives. Layout convention: header → KPI strip → primary content → secondary sections, separated by hairlines with ~56px vertical breathing room.
+4. Register the route in `lib/navData.ts` (it powers `SideRail`, `MobileNav`, and the command palette).
+5. Need live updates? Mount the relevant `*Realtime` component near the top.
 
-Custom fonts are referenced in `globals.css` but **not bundled** — add
-`Satoshi` and `JetBrains Mono` woff2 files to `public/fonts/` and the
-matching `@font-face` declarations to `globals.css` before going to production.
-Until then, the system stack fallbacks render acceptably for development.
+### Add a new integration
 
-### Adding a new page
+Copy the Slack provider as the reference implementation: add the client under `lib/integrations/`, the metadata in `app/(app)/integrations/providers.ts`, the OAuth/webhook route handlers under `app/api/`, and the logo slug in `components/integrations/ProviderLogo.tsx`.
 
-1. Create the route file under `app/(app)/<route>/page.tsx`.
-2. Mark it as a Server Component (the default — no `"use client"`).
-3. Pull data via `createClient()` from `@/lib/supabase/server`. Because the
-   client is scoped to the `app` schema, `.from("products")` hits
-   `app.products`. RLS scopes results to the user's org_id automatically.
-4. Compose the page with `PageHeader`, `KpiCard`, and the other UI primitives.
-   Follow the layout convention: header → KPI strip → primary content →
-   secondary sections separated by hairlines with 56px vertical breathing room.
-5. Add the route to `lib/navData.ts` (it powers `SideRail`, `MobileNav`, and
-   the command palette).
-
----
-
-## Auth flows
-
-The middleware (`middleware.ts` → `lib/supabase/middleware.ts`) runs on every
-request, refreshes the session if needed, and redirects:
-
-- Unauthenticated traffic to `/(app)/*` → `/login?next=<path>`
-- Authenticated traffic to `/(auth)/*` → `/`
-- Authenticated users without an org → `/onboarding`
-
-All sign-in/up actions live in `app/(auth)/actions.ts` as **Server Actions**.
-The OAuth and magic-link callbacks land on `/auth/callback`, which exchanges
-the code for a session cookie and redirects to `next` (or `/`).
-
-TOTP-based MFA is wired via Supabase's `auth.mfa` API at
-`/settings/security`. Sign-out is also a server action; the settings page has
-a button wired to it.
-
----
-
-## RLS
-
-Every `app.*` table has RLS enabled. Policies use two helper functions:
-
-- `app.is_org_member(org_id uuid) → boolean` — gates reads
-- `app.has_org_role(org_id uuid, allowed text[]) → boolean` — gates
-  privileged writes (owner/admin only)
-
-User-facing queries use the RLS-scoped client (`lib/supabase/server.ts`,
-`lib/supabase/client.ts`) — these run against the user's JWT and are subject
-to RLS.
-
-A service-role client also exists (`lib/supabase/admin.ts`) for the narrow
-set of operations that legitimately need to bypass RLS:
-
-- **Integration callbacks** (Shopify OAuth, Slack webhook delivery, custom
-  webhook fan-out) — the third party doesn't have a user session.
-- **Staff admin actions** at `/admin/*` — onboarding new customer workspaces
-  requires cross-org access.
-- **Cron-triggered routes** (inventory snapshots, scheduled emails) — run
-  without a user context.
-
-The service-role key is **server-only**. Importing `lib/supabase/admin.ts`
-from a client component will throw at runtime, and the `"use server"`
-directive on every consumer prevents accidental bundling into the client
-build. Never call the admin client from anywhere a user's intent isn't
-already authenticated at the route boundary.
-
----
-
-## Realtime
-
-Page-specific realtime subscriptions live in
-`components/realtime/PageRealtime.tsx`. Each named subcomponent
-(`OverviewRealtime`, `OrdersRealtime`, `PurchaseOrdersRealtime`,
-`InventoryRealtime`, `CycleCountsRealtime`, `NotificationsRealtime`,
-`OrderDetailRealtime`) opens a Supabase channel scoped to the relevant
-tables + (where applicable) the active facility, and triggers
-`router.refresh()` on relevant events.
-
-To add realtime to a new page: import the appropriate `*Realtime` component
-or add a new one to `PageRealtime.tsx`, mount it near the top of the page,
-and you're done — the rest of the page stays as a Server Component.
-
----
-
-## AI narration
-
-Three AI-generated copy surfaces are wired through `lib/ai/narrate.ts`,
-which calls an `narrate-event` Supabase edge function:
-
-- **`narrateForecast`** — 2-3 sentence operational summary on the Analytics
-  page.
-- **`narrateAnomaly`** — title + body for notification entries.
-- **`narratePoDraft`** — per-line reasoning on AI-drafted purchase orders
-  (rendered as the "Why" sub-row in the PO detail page).
-
-All three return `null` on edge-function failure so callers fall back to
-deterministic copy. The edge function is deployed separately from the
-dashboard — its source lives in the `nimbus-edge-functions` repo.
-
----
-
-## Hardware integrations
-
-Two browser-native hardware surfaces:
-
-- **Barcode scanners** (USB or Bluetooth HID, keyboard-emulating) —
-  `lib/useScanner.ts` debounces keystroke bursts into single scan events;
-  `components/scanner/ScannerProvider.tsx` lifts that into a context so
-  every authenticated page shares one capture surface. Settings → Devices
-  has a test pad.
-
-- **Zebra ZPL printers** (USB only, WebUSB) — `lib/print/zebra.ts` handles
-  pairing + ZPL byte stream. Used for bay/section labels (bulk + per-slot)
-  and PO receipt labels. Bluetooth/network printers are out of scope for
-  v1 — Chrome/Edge/Opera only since Firefox + Safari lack WebUSB.
-
----
-
-## Kiosk / wallboard mode
-
-Adding `?kiosk=1` to any URL sets `data-kiosk="true"` on `<html>`. The
-matching CSS rules in `globals.css` hide the side rail, mobile nav, and
-ornamental layers, then inflate typography ~25% for distance reading. The
-Overview page links to this mode from its corner action.
-
----
-
-## Type regeneration
-
-Whenever the schema changes:
+### Regenerate DB types after a schema change
 
 ```bash
 npm run types:gen
 ```
 
-This requires the Supabase CLI and a logged-in session. Output replaces
-`types/db.ts`. (The current `types/db.ts` is hand-written so the project
-compiles without running the CLI on a fresh clone.)
-
----
-
-## Status snapshot
-
-What's live today:
-
-- **Operate** — Overview, Inventory (+ detail, CSV import/export), Analytics
-  (+ dead-stock report), Cycle counts, Scan workstation
-- **Flow** — Orders (full status state machine), Purchase Orders (manual +
-  AI-drafted from low-stock with velocity/ROP/EOQ math), Returns
-- **Directory** — Suppliers (with scorecard), Customers
-- **Facilities** — list, 2D top-down viewer, 3D orbital viewer (β), full
-  builder with snap-to-grid, smart guides, undo/redo, snapshots, AI
-  blueprint scan, bay × level slot management
-- **Settings** — Account, Security (TOTP MFA), Members (with CSV bulk
-  invite + Resend-delivered transactional email), Devices, Billing
-  (Stripe-aware), API keys, Audit log, Webhooks (HMAC-signed custom
-  endpoints with delivery log)
-- **Integrations** — Slack (full), Shopify (full OAuth + webhook
-  ingestion), Resend (transactional email), custom webhook endpoints
-- **Admin** — Staff-only onboarding flow at `/admin/onboard`
-
-What's stubbed or partial:
-
-- **Workspace switching** — switcher renders, but `getCurrentOrgContext`
-  always returns `memberships[0]`. Until the workspace-cookie wiring lands,
-  multi-org users effectively see only their first org. (`lib/data/user.ts`
-  has the TODO.)
-- **Create workspace** button in the switcher is disabled — wiring to the
-  existing onboarding flow is pending.
-- **Integrations not built yet** (stub pages with "Not yet available"):
-  Square, WooCommerce, QuickBooks Online, Xero, Stripe, ShipStation, FedEx,
-  Gmail, Zapier, HubSpot. Slack is the reference implementation for any new
-  provider.
-- **Shopify v2 items** (called out on the integration page): inventory
-  write-back, fulfillment marking with tracking, multi-location routing,
-  unknown-SKU mapping, periodic reconciliation pull.
-- **3D builder mode** — only the viewer has a 2D/3D toggle. Editing is 2D
-  only.
-- **Custom font bundling** — Satoshi + JetBrains Mono woff2 files aren't in
-  `public/fonts/`; prod renders with system fallbacks.
-- **E2E tests** — none. Manual testing via the dev server only.
-
-What's been removed:
-
-- `components/ui/ComingSoon.tsx` — no longer imported anywhere. Safe to
-  delete on next cleanup pass.
+Requires the Supabase CLI and a logged-in session; output replaces `types/db.ts`. (The committed file is hand-written so fresh clones compile without the CLI.)
 
 ---
 
 ## Deploying
 
-Per the architecture doc this is a second Netlify site sharing the build
-profile with the marketing repo.
+A second Netlify site sharing the build profile with the marketing repo.
 
-- Build command: `npm run build`
-- Publish directory: `.next`
-- Plugin: `@netlify/plugin-nextjs`
-- Env vars: copy from `.env.local.example`, swap to production Supabase values.
-  Don't forget `SUPABASE_SERVICE_ROLE_KEY` — without it, every integration
-  callback and the `/admin` routes will throw.
+- **Build command:** `npm run build`
+- **Publish directory:** `.next`
+- **Plugin:** `@netlify/plugin-nextjs`
+- **Env:** copy from `.env.local.example`, swap to production Supabase values, and don't forget `SUPABASE_SERVICE_ROLE_KEY`.
+- Re-run the two [one-time Supabase steps](#one-time-supabase-configuration) (expose `app` schema, allow `https://app.<apex>/auth/callback`) against the prod project.
 
-Production Supabase configuration still requires the two manual steps under
-"One-time Supabase configuration" above — expose `app` schema, allow the
-`https://app.<apex>/auth/callback` redirect URL.
+---
+
+## Status snapshot
+
+**Live:** Operate (Overview, Inventory, Analytics, Cycle counts, Scan), Flow (Orders, POs incl. AI drafting, Returns), Directory (Suppliers, Customers), Facilities (2D + 3D viewer, full builder, slot management), Settings (TOTP MFA, Members + bulk invite, Devices, Billing, API keys, Audit, Webhooks), Integrations (Slack, Shopify, Resend, custom webhooks), Admin onboarding.
+
+**Stubbed / partial:**
+
+- **Workspace switching** — switcher renders but `getCurrentOrgContext` always returns `memberships[0]`; multi-org users see only their first org until the workspace-cookie wiring lands (`lib/data/user.ts` TODO). The _Create workspace_ button is disabled pending the same wiring.
+- **Integrations** — Square, WooCommerce, QuickBooks, Xero, Stripe, ShipStation, FedEx, Gmail, Zapier, HubSpot are "Not yet available" stubs.
+- **Shopify v2** — inventory write-back, fulfillment + tracking, multi-location routing, unknown-SKU mapping, reconciliation pull.
+- **3D builder** — only the viewer has a 2D/3D toggle; editing is 2D-only.
+- **Fonts** — Satoshi + JetBrains Mono woff2 not yet in `public/fonts/`; prod uses fallbacks.
+- **Tests** — no E2E suite; manual testing via the dev server.
+
+---
+
+## Engineering notes
+
+- Stay server-first: default to Server Components, mutate via Server Actions.
+- Pull every color, font, and spacing value from the design tokens — never hard-code hex or introduce a new font/radius. Consistency across the suite is a hard requirement; the canonical reference is `nimbus-design-system.md`.
+- Respect the client boundary: never import `lib/supabase/admin.ts` outside server code, and always filter admin-client queries by `org_id`.
+- See [`.github/copilot-instructions.md`](.github/copilot-instructions.md) for the full convention set (it also steers AI pair-programming).
+
+### Known sharp edges worth knowing before you touch them
+
+- **Workspace context is hardcoded.** `getCurrentOrgContext` always returns `memberships[0]` (`lib/data/user.ts` TODO). Don't build features assuming the active-workspace cookie exists yet — it doesn't.
+- **Onboarding is non-atomic.** `setUpWorkspace` runs org → profile → membership → facility as separate admin-client writes. A mid-sequence failure orphans the org; cleanup is currently manual SQL. The intended fix is a `SECURITY DEFINER` Postgres function.
+- **Admin client = no RLS.** The `lib/data/` cached fetchers use the service-role client, so an `org_id` filter is the _only_ thing isolating workspaces. Drop it and you leak cross-org data.
+- **No test suite.** Validate changes against the dev server manually until E2E lands.
