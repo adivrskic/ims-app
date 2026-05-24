@@ -22,12 +22,15 @@ interface Props {
    *  to signal that the page auto-refreshes via realtime. */
   live?: boolean;
   /**
-   * Page content. When provided, PageHeader renders in "shell" mode: the
-   * (transparent) header sits as the static top of a flex column and the
-   * content scrolls in its own region beneath it. The content region clips
-   * and fades at the top, so page content never renders under the header —
-   * and because the header lives OUTSIDE the scroll region, collapsing it
-   * can't feed back into the scroll position (no minimize oscillation).
+   * Page content. When provided, PageHeader renders in "shell" mode:
+   *
+   *   - Content scrolls inside an internal region whose scrollbar is hidden
+   *     (no x/y scrollbars around the content) and whose top edge carries a
+   *     fade mask, so content turns transparent — revealing the real page
+   *     background — before it would reach the header.
+   *   - The header is a TRANSPARENT overlay rendered outside that masked
+   *     region, so it never picks up a background and the fade never touches
+   *     it. It scrolls up with the page and pins at the top (manual sticky).
    *
    * When omitted, PageHeader is the legacy sticky bar that pins to the
    * window-scroll top.
@@ -98,20 +101,26 @@ export function PageHeader(props: Props) {
   );
 }
 
-/* ── Shell mode: transparent header + clipped/faded content region ─────── */
+/* ── Shell mode: transparent overlay header over a masked, scrollbar-hidden
+      content region. ─────────────────────────────────────────────────────── */
+
+// How far below the top the header rests before it scrolls up and pins. Tune
+// this to taste — it's the "scroll up N px, then stick" distance.
+const REST_GAP = 24;
 
 function PageHeaderShell({ children, contentClassName, ...header }: Props) {
   const [stuck, setStuck] = useState(false);
   const [height, setHeight] = useState<number>();
-  const shellRef = useRef<HTMLDivElement>(null);
+  const outerRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const headerRef = useRef<HTMLElement>(null);
+  const maxHRef = useRef(0);
 
-  // Size the shell to fill from its own top down to the bottom of the
-  // viewport (minus the parent's bottom padding), so the content scrolls
-  // INSIDE .scroll and the header stays pinned + compacts — without relying
-  // on the parent layout to provide a bounded height.
+  // Fill from our own top down to the bottom of the viewport, so content
+  // scrolls INSIDE .scroll. The internal scroll is what lets the top fade
+  // mask stay anchored to the top edge and lets us hide the scrollbar.
   useEffect(() => {
-    const el = shellRef.current;
+    const el = outerRef.current;
     if (!el) return;
     const measure = () => {
       const rect = el.getBoundingClientRect();
@@ -126,43 +135,69 @@ function PageHeaderShell({ children, contentClassName, ...header }: Props) {
     return () => window.removeEventListener("resize", measure);
   }, []);
 
-  // Compact the header once the content region has scrolled. Hysteresis
-  // only — no room-guard needed: the header lives outside .scroll, so
-  // collapsing it never changes the scrolled content's height (which is
-  // exactly why the old window-scroll oscillation can't happen here).
+  // Reserve the header's (expanded) height + rest gap as a spacer at the top of
+  // the scroll content, so content starts just below the resting header. Track
+  // the max height seen so compaction never shrinks the spacer (which would
+  // make content jump).
   useEffect(() => {
-    const el = scrollRef.current;
-    if (!el) return;
+    const head = headerRef.current;
+    const outer = outerRef.current;
+    if (!head || !outer) return;
+    const ro = new ResizeObserver(() => {
+      const h = head.offsetHeight;
+      if (h > maxHRef.current) {
+        maxHRef.current = h;
+        outer.style.setProperty("--ph-spacer", `${h + REST_GAP}px`);
+      }
+    });
+    ro.observe(head);
+    return () => ro.disconnect();
+  }, []);
+
+  // Manual sticky: the header overlay lives OUTSIDE the masked scroller (so the
+  // fade never touches it — hence it needs no background of its own). Translate
+  // it up as the content scrolls, clamp it at the top, and toggle the compact
+  // state once it pins.
+  useEffect(() => {
+    const scroll = scrollRef.current;
+    const head = headerRef.current;
+    if (!scroll || !head) return;
     let raf = 0;
-    const check = () => {
+    const apply = () => {
       raf = 0;
-      const y = el.scrollTop;
-      setStuck((prev) => (prev ? y > 8 : y > 16));
+      const y = scroll.scrollTop;
+      head.style.transform = `translateY(${Math.max(0, REST_GAP - y)}px)`;
+      setStuck((prev) => (prev ? y > REST_GAP - 8 : y >= REST_GAP));
     };
     const onScroll = () => {
       if (raf) return;
-      raf = requestAnimationFrame(check);
+      raf = requestAnimationFrame(apply);
     };
-    el.addEventListener("scroll", onScroll, { passive: true });
-    check();
+    scroll.addEventListener("scroll", onScroll, { passive: true });
+    apply();
     return () => {
-      el.removeEventListener("scroll", onScroll);
+      scroll.removeEventListener("scroll", onScroll);
       if (raf) cancelAnimationFrame(raf);
     };
   }, []);
 
   return (
     <div
-      ref={shellRef}
+      ref={outerRef}
       className={styles.shell}
       style={height ? { height } : undefined}
     >
-      <header className={styles.header} data-stuck={stuck}>
-        <HeaderInner {...header} />
-      </header>
       <div ref={scrollRef} className={styles.scroll}>
+        <div className={styles.headerSpacer} aria-hidden />
         <div className={contentClassName ?? styles.scrollInner}>{children}</div>
       </div>
+      <header
+        ref={headerRef}
+        className={`${styles.header} ${styles.shellHeader}`}
+        data-stuck={stuck}
+      >
+        <HeaderInner {...header} />
+      </header>
     </div>
   );
 }

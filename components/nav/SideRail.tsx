@@ -9,6 +9,7 @@ import {
   Search,
   Bell,
   Command,
+  Monitor,
   Settings,
   Users,
   CreditCard,
@@ -20,7 +21,6 @@ import { Logo } from "@/components/ui/Logo";
 import { NAV_GROUPS, findActiveHref, type NavItem } from "@/lib/navData";
 import { WorkspaceSwitcher, type WorkspaceOption } from "./WorkspaceSwitcher";
 import type { NotificationItem } from "./NotificationsDropdown";
-import { ThemeToggle } from "./ThemeToggle";
 import { signOut } from "@/app/(auth)/actions";
 import { FacilitiesNavItem } from "./FacilitiesNavItem";
 import type { FacilityOption } from "@/lib/currentFacility";
@@ -50,7 +50,7 @@ interface Props {
  *
  * Footer order (top → bottom):
  *   - Search → command palette
- *   - Notifications link + theme toggle
+ *   - Notifications link + kiosk link
  *   - Devices: Scan tile + Print tile (50/50 when expanded, stacked when collapsed)
  *   - User menu (upward-opening popover)
  *   - Collapse toggle (⌘B)
@@ -260,7 +260,7 @@ export function SideRail({
           )}
         </button>
 
-        {/* Notifications (link, not dropdown) + theme */}
+        {/* Notifications (link, not dropdown) + kiosk */}
         <div
           className={`flex items-center ${
             collapsed ? "flex-col gap-6" : "gap-6"
@@ -309,7 +309,14 @@ export function SideRail({
               </span>
             )}
           </Link>
-          <ThemeToggle />
+          <Link
+            href="/kiosk"
+            className="hairline-subtle hover:border-[var(--border-hover)] text-text-secondary hover:text-text transition-colors flex items-center justify-center shrink-0 h-28 w-28"
+            aria-label="Open kiosk mode"
+            title="Kiosk mode"
+          >
+            <Monitor size={12} strokeWidth={1.5} />
+          </Link>
         </div>
 
         {/* ── Devices section ─────────────────────────────────────────

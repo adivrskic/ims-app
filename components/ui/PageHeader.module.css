@@ -1,25 +1,26 @@
 /* PageHeader.module.css
  *
- * Two modes, one visual header:
+ * One visual header, two render modes:
  *
- *   - SHELL mode (.shell): the header is the transparent static top of a
- *     flex column; .scroll holds the page content and scrolls on its own.
- *     .scroll carries a top mask so content fades to transparent as it nears
- *     the header — revealing the REAL page background (texture/animation and
- *     all), which a flat color/gradient could never match. Content never
- *     renders under the header because the header is outside .scroll.
+ *   - SHELL mode (header + children): content scrolls inside an internal
+ *     region (.scroll) whose scrollbar is hidden and whose top edge carries a
+ *     fade mask, so content turns transparent before it reaches the header —
+ *     revealing the REAL page background (texture/animation and all). The
+ *     header (.shellHeader) is a TRANSPARENT overlay rendered OUTSIDE that
+ *     masked region, so the fade never touches it and it never needs a
+ *     background. JS translates it up as the page scrolls and pins it at the
+ *     top.
  *
  *   - BAR mode (.header.bar): legacy sticky bar pinned to the window scroll.
  *
- * The header itself has NO background in either mode — it stays fully
- * transparent. `data-stuck` drives the compact state: eyebrow + description
- * collapse, title shrinks, meta + actions stay.
+ * The header is transparent in BOTH modes — never a colored bar. `data-stuck`
+ * drives the compact state: eyebrow + description collapse, title shrinks,
+ * meta + actions stay.
  */
 
 .header {
-  /* Transparent — never a colored bar. */
+  /* Transparent — never a colored bar, in either mode. */
   background: transparent;
-  border-bottom: 1px solid var(--border-subtle);
   padding-top: 0;
   padding-bottom: 16px;
   transition: padding 200ms var(--ease-out),
@@ -33,39 +34,66 @@
   z-index: 20;
 }
 
+/* Shell mode: header is an overlay above the masked content region. Its
+   translateY is driven from JS (manual sticky), so the fade never reaches it. */
+.shellHeader {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 2;
+  will-change: transform;
+}
+
 .header[data-stuck="true"] {
-  padding-top: 18px;
   padding-bottom: 14px;
+  margin-top: -14px;
   /* Stronger bottom border to separate from the content beneath. */
   border-bottom-color: var(--border);
 }
 
 /* ── Shell layout ─────────────────────────────────────────────────────── */
 .shell {
-  display: flex;
-  flex-direction: column;
   /* height is set inline by the component (self-measured to fill the
      viewport from its own top), so the shell scrolls internally regardless
      of whether the parent layout provides a bounded height. */
+  position: relative;
   min-height: 0;
 }
 
 .scroll {
-  flex: 1;
-  min-height: 0;
+  position: absolute;
+  inset: 0;
   overflow-y: auto;
-  /* Fade the top edge: content becomes transparent as it approaches the
+  overflow-x: hidden;
+  /* Hide the scrollbar entirely — no x/y bars wrapping the content. */
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  /* Fade the top edge: content becomes transparent before it reaches the
      header, so the real page background shows through (perfect match) and
-     content never visibly slides under the header. */
-  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 26px);
-  mask-image: linear-gradient(to bottom, transparent 0, #000 26px);
+     content never visibly slides under the header. The fade completes ~100px
+     down, so content has fully dissolved well before the top. */
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 160px);
+  mask-image: linear-gradient(to bottom, transparent 0, #000 160px);
+}
+
+.scroll::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
+}
+
+/* Reserves the resting header band so content starts just below it. The
+   height is set from JS (expanded header height + rest gap). */
+.headerSpacer {
+  height: var(--ph-spacer, 104px);
 }
 
 .scrollInner {
   display: flex;
   flex-direction: column;
   gap: 32px;
-  padding-top: 10px;
+  padding-top: 0;
   padding-bottom: 48px;
 }
 
