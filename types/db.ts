@@ -115,8 +115,19 @@ export interface ProductRow {
   reorder_point: number | null;
   /** Opt-in: this product is lot/batch + expiry tracked. */
   track_lots: boolean;
+  /** Opt-in: this product is a kit/assembly defined by kit_components. */
+  is_kit: boolean;
   created_at: string | null;
   updated_at: string | null;
+}
+
+export interface KitComponentRow {
+  id: string;
+  org_id: string;
+  kit_product_id: string;
+  component_product_id: string;
+  quantity: number;
+  created_at: string;
 }
 
 export interface LotRow {
@@ -285,9 +296,15 @@ export type Database = {
         Row: ProductRow;
         Insert: WithGenerated<
           ProductRow,
-          "id" | "created_at" | "updated_at" | "track_lots"
+          "id" | "created_at" | "updated_at" | "track_lots" | "is_kit"
         >;
         Update: Partial<ProductRow>;
+        Relationships: [];
+      };
+      kit_components: {
+        Row: KitComponentRow;
+        Insert: WithGenerated<KitComponentRow, "id" | "created_at" | "quantity">;
+        Update: Partial<KitComponentRow>;
         Relationships: [];
       };
       lots: {
