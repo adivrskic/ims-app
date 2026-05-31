@@ -45,19 +45,48 @@ export async function createWarehouse(
 
   if (!name) return { error: "Name is required" };
 
-  const { error } = await ctx.supabase.from("warehouses").insert({
-    org_id: ctx.orgId,
-    name,
-    address: address || null,
-    city: city || null,
-    state: state || null,
-    zip: zip || null,
-    phone: phone || null,
-    owner_id: ctx.user.id,
-    is_active: true,
-  });
+  const { data: created, error } = await ctx.supabase
+    .from("warehouses")
+    .insert({
+      org_id: ctx.orgId,
+      name,
+      address: address || null,
+      city: city || null,
+      state: state || null,
+      zip: zip || null,
+      phone: phone || null,
+      owner_id: ctx.user.id,
+      is_active: true,
+    })
+    .select("id, floor_canvas_width, floor_canvas_height")
+    .single();
 
   if (error) return { error: error.message };
+
+  // Seed a default receiving door so the facility always has a travel-distance
+  // anchor for slotting (#8). Placed bottom-center of the default canvas; the
+  // user can move or relabel it in the builder. A door insert failure must not
+  // block facility creation, so we ignore its error.
+  if (created) {
+    const canvasW = Number(created.floor_canvas_width) || 1200;
+    const canvasH = Number(created.floor_canvas_height) || 800;
+    const doorW = 48;
+    const doorH = 12;
+    await ctx.supabase.from("layout_elements").insert({
+      org_id: ctx.orgId,
+      warehouse_id: created.id,
+      kind: "door",
+      floor_x: Math.max(0, canvasW / 2 - doorW / 2),
+      floor_y: Math.max(0, canvasH - doorH - 4),
+      floor_width: doorW,
+      floor_height: doorH,
+      rotation: 0,
+      color: "#D4A853",
+      label: "Receiving",
+      data: {},
+      sort_order: 0,
+    });
+  }
 
   revalidateTag(tags.warehouses(ctx.orgId));
   revalidatePath("/settings/facilities");

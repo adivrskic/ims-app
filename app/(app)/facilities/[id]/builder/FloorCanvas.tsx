@@ -22,6 +22,7 @@ interface Props {
   sections: SectionDraft[];
   elements: LayoutElementDraft[];
   selection: SelectionRef[];
+  overlappingSectionIds: Set<string>;
   isMobile: boolean;
   onPointerDownItem: (
     ref: SelectionRef,
@@ -66,6 +67,7 @@ export function FloorCanvas({
   sections,
   elements,
   selection,
+  overlappingSectionIds,
   isMobile,
   onPointerDownItem,
   onSetSelection,
@@ -652,6 +654,7 @@ export function FloorCanvas({
                 section={s}
                 selected={isRefSelected(selection, ref)}
                 showHandles={showHandlesFor(ref)}
+                overlapping={overlappingSectionIds.has(s.id)}
                 isMobile={isMobile}
                 onPointerDownItem={onPointerDownItem}
                 onMoveDelta={onMoveDelta}

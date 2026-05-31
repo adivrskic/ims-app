@@ -15,6 +15,27 @@ capacity. This is the classic WMS *directed putaway / slotting optimization*.
 
 ## 0. PREREQUISITE — polish the facility builder first
 
+> **Status: DONE (2026-05-30).** The polish pass below is complete. Resolved decisions:
+> - **Canonical unit:** floor coords are unitless numbers, **top-left origin, 1 coord = 1 unit**.
+>   `warehouses.floor_unit` ('ft' default, 'm' optional) is an **interpretive label only** —
+>   switching it relabels, it does NOT rescale geometry. Builder has a ft/m toggle
+>   (`setFloorUnit` in `builder/actions.ts`).
+> - **Source of truth:** the normalized `sections` + `layout_elements` tables (app schema).
+>   `warehouses.layout_json` does **not** exist as a live source; only `layout_snapshots.layout_json`
+>   (versioned backups). The engine reads the tables. (Resolves Open decision #1.)
+> - **Rotation** is applied in 2D/3D rendering and is consistent across viewers; centroid distance
+>   (with rotation) is the v1 metric. Overlap detection (`builder/overlap.ts`, SAT/OBB) now **blocks
+>   saving** while sections overlap, keeping geometry trustworthy for slotting.
+> - **Door anchor:** `createWarehouse` seeds a default `kind='door'` ("Receiving") element so every
+>   facility has a travel-distance origin; the builder shows a nudge if none exists.
+> - **Capacity:** `sections.slot_capacity int null` shipped (migration `app_sections_slot_capacity`).
+>   Editable in the section inspector; the section-detail slot grid shows per-slot fullness / full /
+>   over. NULL = unlimited (soft factor). (Resolves Open decision #2 → `sections.slot_capacity`.)
+> - Also done: undo/redo now persists across reload (sessionStorage per warehouse); snapshot restore
+>   guards against orphaning `locations` (hard confirm); 3D element fidelity (door footprint, note
+>   floor-anchor, walkway visibility).
+
+
 Slotting math reads the builder's spatial output, so the layout model must be
 trustworthy before we score against it. Verify/fix in the builder
 (`app/(app)/facilities/[id]/builder/`) and viewer (`FacilityViewer.tsx`,

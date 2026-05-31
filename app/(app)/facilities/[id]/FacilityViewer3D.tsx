@@ -393,7 +393,11 @@ function ElementMesh({ element: el }: { element: ViewerElement }) {
   switch (el.kind) {
     case "walkway": {
       // Low translucent slab on the floor with the element color, slightly raised
-      // so it doesn't z-fight the floor plane.
+      // so it doesn't z-fight the floor plane. A faint border helps the path
+      // read against the dark floor at a distance.
+      const wEdges = new THREE.EdgesGeometry(
+        new THREE.PlaneGeometry(el.floor_width, el.floor_height)
+      );
       return (
         <group position={[cx, 0.08, cz]} rotation={[0, ry(el.rotation), 0]}>
           <mesh rotation={[-Math.PI / 2, 0, 0]}>
@@ -401,10 +405,14 @@ function ElementMesh({ element: el }: { element: ViewerElement }) {
             <meshBasicMaterial
               color={el.color}
               transparent
-              opacity={0.18}
+              opacity={0.26}
               side={THREE.DoubleSide}
             />
           </mesh>
+          <lineSegments rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.02, 0]}>
+            <primitive object={wEdges} attach="geometry" />
+            <lineBasicMaterial color={el.color} transparent opacity={0.5} />
+          </lineSegments>
         </group>
       );
     }
@@ -464,8 +472,19 @@ function ElementMesh({ element: el }: { element: ViewerElement }) {
       const thickness = Math.min(el.floor_width, el.floor_height);
       const wide = el.floor_width >= el.floor_height;
       return (
-        <group position={[cx, h / 2, cz]} rotation={[0, ry(el.rotation), 0]}>
-          <mesh>
+        <group position={[cx, 0, cz]} rotation={[0, ry(el.rotation), 0]}>
+          {/* Floor footprint — marks where the door sits, since slotting uses
+              it as the receiving / travel-distance origin. */}
+          <mesh position={[0, 0.12, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+            <planeGeometry args={[el.floor_width, el.floor_height]} />
+            <meshBasicMaterial
+              color={el.color}
+              transparent
+              opacity={0.4}
+              side={THREE.DoubleSide}
+            />
+          </mesh>
+          <mesh position={[0, h / 2, 0]}>
             <boxGeometry
               args={
                 wide
@@ -503,23 +522,46 @@ function ElementMesh({ element: el }: { element: ViewerElement }) {
     }
 
     case "note": {
-      // Floating text label — no geometry, just a billboarded string.
+      // A floating label is hard to localize in 3D, so pin it to the floor
+      // with a thin stem and a small base marker, then billboard the text
+      // above the stem.
+      const labelY = 24;
+      const stem = new THREE.BufferGeometry();
+      stem.setAttribute(
+        "position",
+        new THREE.BufferAttribute(
+          new Float32Array([0, 0, 0, 0, labelY - 4, 0]),
+          3
+        )
+      );
       return (
-        <Billboard position={[cx, 8, cz]}>
-          <Text
-            fontSize={Math.min(
-              12,
-              Math.max(6, Math.max(el.floor_width, el.floor_height) / 6)
-            )}
-            color={el.color}
-            anchorX="center"
-            anchorY="middle"
-            outlineWidth={0.3}
-            outlineColor="#000"
-          >
-            {el.label || "Note"}
-          </Text>
-        </Billboard>
+        <group position={[cx, 0, cz]}>
+          {/* Base marker on the floor */}
+          <mesh position={[0, 0.1, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+            <circleGeometry args={[2, 16]} />
+            <meshBasicMaterial color={el.color} transparent opacity={0.7} />
+          </mesh>
+          {/* Stem */}
+          <line>
+            <primitive object={stem} attach="geometry" />
+            <lineBasicMaterial color={el.color} transparent opacity={0.5} />
+          </line>
+          <Billboard position={[0, labelY, 0]}>
+            <Text
+              fontSize={Math.min(
+                12,
+                Math.max(6, Math.max(el.floor_width, el.floor_height) / 6)
+              )}
+              color={el.color}
+              anchorX="center"
+              anchorY="middle"
+              outlineWidth={0.3}
+              outlineColor="#000"
+            >
+              {el.label || "Note"}
+            </Text>
+          </Billboard>
+        </group>
       );
     }
 

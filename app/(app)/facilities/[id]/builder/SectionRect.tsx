@@ -9,6 +9,7 @@ interface Props {
   section: SectionDraft;
   selected: boolean;
   showHandles: boolean;
+  overlapping?: boolean;
   onPointerDownItem: (
     ref: SelectionRef,
     e: React.PointerEvent,
@@ -36,6 +37,7 @@ export function SectionRect({
   section,
   selected,
   showHandles,
+  overlapping = false,
   onPointerDownItem,
   onMoveDelta,
   onResize,
@@ -133,11 +135,34 @@ export function SectionRect({
         height={h}
         fill={color}
         fillOpacity={selected ? 0.28 : 0.16}
-        stroke={selected ? "var(--accent)" : color}
-        strokeWidth={(selected ? 1.5 : 1) * inv}
+        stroke={
+          overlapping
+            ? "var(--danger)"
+            : selected
+            ? "var(--accent)"
+            : color
+        }
+        strokeWidth={(overlapping || selected ? 1.5 : 1) * inv}
         style={{ cursor: grabCursor }}
         onPointerDown={startDrag("move")}
       />
+
+      {/* Overlap warning — a dashed danger ring drawn over the fill so the
+          conflict reads even when the section is also selected. */}
+      {overlapping && (
+        <rect
+          x={x}
+          y={y}
+          width={w}
+          height={h}
+          fill="var(--danger)"
+          fillOpacity={0.1}
+          stroke="var(--danger)"
+          strokeWidth={1 * inv}
+          strokeDasharray={`${4 * inv} ${3 * inv}`}
+          pointerEvents="none"
+        />
+      )}
 
       {/* Interior bay/level grid — appears at higher zoom to expose the
           section's bays × levels structure. Drawn before the labels so the

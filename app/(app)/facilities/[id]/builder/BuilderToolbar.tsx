@@ -17,6 +17,7 @@ import {
   Layers,
   ChevronDown,
   History,
+  Ruler,
 } from "lucide-react";
 import { CornerButton } from "@/components/ui/CornerButton";
 import { ELEMENT_KINDS_ORDERED, ELEMENT_PRESETS } from "./elementPresets";
@@ -28,6 +29,7 @@ interface Props {
   selectionCount: number;
   dirty: boolean;
   saving: boolean;
+  saveBlocked?: boolean;
   canUndo: boolean;
   canRedo: boolean;
   canDuplicate: boolean;
@@ -42,6 +44,8 @@ interface Props {
   onSave: () => void;
   snapEnabled: boolean;
   onToggleSnap: () => void;
+  floorUnit: string;
+  onToggleUnit: () => void;
   zoomPercent: number;
   onZoomIn: () => void;
   onZoomOut: () => void;
@@ -55,6 +59,7 @@ export function BuilderToolbar({
   selectionCount,
   dirty,
   saving,
+  saveBlocked = false,
   canUndo,
   canRedo,
   canDuplicate,
@@ -69,6 +74,8 @@ export function BuilderToolbar({
   onSave,
   snapEnabled,
   onToggleSnap,
+  floorUnit,
+  onToggleUnit,
   zoomPercent,
   onZoomIn,
   onZoomOut,
@@ -241,6 +248,29 @@ export function BuilderToolbar({
         </span>
       </button>
 
+      <button
+        type="button"
+        onClick={onToggleUnit}
+        className="hairline-subtle px-10 py-7 inline-flex items-center gap-6 hover:border-[var(--border-hover)] text-text-secondary hover:text-text transition-colors"
+        aria-label={`Floor unit: ${
+          floorUnit === "m" ? "meters" : "feet"
+        }. Click to switch.`}
+        title="Floor measurement unit · switching only relabels (coordinates are not rescaled)"
+      >
+        <Ruler size={11} strokeWidth={1.5} />
+        <span
+          className="tnum"
+          style={{
+            fontFamily: "var(--mono)",
+            fontSize: 11,
+            letterSpacing: "1.2px",
+            textTransform: "uppercase",
+          }}
+        >
+          {floorUnit === "m" ? "m" : "ft"}
+        </span>
+      </button>
+
       <div className="ml-auto flex items-center gap-10 flex-wrap">
         <div className="flex items-center gap-2">
           <button
@@ -310,10 +340,13 @@ export function BuilderToolbar({
           size="sm"
           onClick={onSave}
           loading={saving}
-          disabled={!dirty || saving}
+          disabled={!dirty || saving || saveBlocked}
+          title={
+            saveBlocked ? "Resolve overlapping sections before saving" : undefined
+          }
         >
           <Save size={11} strokeWidth={1.5} />
-          {dirty ? "Save layout" : "Saved"}
+          {saveBlocked ? "Overlap" : dirty ? "Save layout" : "Saved"}
         </CornerButton>
       </div>
     </header>

@@ -14,7 +14,9 @@ export default async function SectionPage({
 
   const { data: section } = await supabase
     .from("sections")
-    .select("id, code, name, total_bays, total_levels, color, warehouse_id")
+    .select(
+      "id, code, name, total_bays, total_levels, color, warehouse_id, slot_capacity"
+    )
     .eq("id", sectionId)
     .maybeSingle();
 
@@ -96,6 +98,7 @@ export default async function SectionPage({
         sectionColor={section.color ?? "#D4A853"}
         totalBays={section.total_bays ?? 1}
         totalLevels={section.total_levels ?? 1}
+        slotCapacity={section.slot_capacity ?? null}
         locations={locations}
       />
     </>

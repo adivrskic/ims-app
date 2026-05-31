@@ -206,6 +206,30 @@ export function SectionInspector({
           {section.total_bays * section.total_levels} potential storage
           locations
         </p>
+        <div className="mt-10">
+          <Input
+            label="Slot capacity (units)"
+            type="number"
+            min={1}
+            placeholder="Unlimited"
+            value={section.slot_capacity ?? ""}
+            onChange={(e) => {
+              const raw = e.target.value.trim();
+              if (raw === "") {
+                onUpdate({ slot_capacity: null });
+                return;
+              }
+              const n = parseInt(raw, 10);
+              onUpdate({
+                slot_capacity: Number.isNaN(n) || n < 1 ? null : n,
+              });
+            }}
+          />
+          <p className="mono-sm text-text-dim mt-6" style={{ fontSize: 10 }}>
+            Max units per bay·level slot. Leave blank for unlimited — slotting
+            treats it as a soft factor.
+          </p>
+        </div>
       </div>
     </aside>
   );
