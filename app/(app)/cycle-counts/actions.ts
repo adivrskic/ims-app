@@ -38,6 +38,7 @@ export async function recordCycleCount(
   const productId = String(formData.get("product_id") ?? "").trim();
   const countedRaw = String(formData.get("counted_qty") ?? "").trim();
   const notes = String(formData.get("notes") ?? "").trim();
+  const reasonCode = String(formData.get("reason_code") ?? "").trim() || null;
 
   if (!locationId) return { error: "Pick a location" };
   if (!productId) return { error: "Pick a product" };
@@ -81,6 +82,7 @@ export async function recordCycleCount(
       expected_qty: expectedQty,
       counted_qty: countedQty,
       notes: notes || null,
+      reason_code: reasonCode,
       counted_by: ctx.user.id,
     })
     .select("id")

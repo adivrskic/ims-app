@@ -10,6 +10,10 @@ import { CycleCountsRealtime } from "@/components/realtime/PageRealtime";
 import { getCurrentOrgContext } from "@/lib/data/user";
 import { getCycleCountsPageData } from "@/lib/data/cycleCounts";
 import { CycleCountPriorityList } from "@/components/cycle-counts/CycleCountPriorityList";
+import { createClient } from "@/lib/supabase/server";
+import { getReasons } from "@/lib/data/adjustments";
+import { CornerLink } from "@/components/ui/CornerButton";
+import { ShieldCheck } from "lucide-react";
 export const metadata = { title: "Cycle counts" };
 
 interface SearchParams {
@@ -45,6 +49,12 @@ export default async function CycleCountsPage({
   // cross-request cache (lib/data/cycleCounts.ts), keyed by org + product +
   // variance filter and tagged tags.cycleCounts / tags.inventory.
   const ctx = await getCurrentOrgContext();
+  const reasons = ctx
+    ? (await getReasons(await createClient(), ctx.orgId, true)).map((r) => ({
+        code: r.code,
+        label: r.label,
+      }))
+    : [];
   const data = ctx
     ? await getCycleCountsPageData(ctx.orgId, {
         productId: productParam ?? null,
@@ -120,6 +130,12 @@ export default async function CycleCountsPage({
               accuracyPct != null && accuracyPct >= 95 ? "live" : undefined,
           },
         ]}
+        actions={
+          <CornerLink href="/settings/adjustments" variant="ghost" size="sm">
+            <ShieldCheck size={11} strokeWidth={1.5} />
+            Reasons &amp; approvals
+          </CornerLink>
+        }
       />
 
       {/* Active filter pill — only when a product filter is set via URL */}
@@ -143,6 +159,7 @@ export default async function CycleCountsPage({
         <NewCountForm
           products={products}
           locations={locations}
+          reasons={reasons}
           initialProductId={focusedProduct?.id ?? null}
         />
       </section>

@@ -3,6 +3,7 @@
 import { revalidatePath, revalidateTag } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { tags } from "@/lib/cache-tags";
+import { applyOrQueueAdjustment } from "@/lib/data/adjustments";
 
 async function getOrgContext() {
   const supabase = await createClient();
@@ -240,36 +241,57 @@ export async function updateLocationQuantity({
   sectionId,
   locationId,
   quantity,
+  reasonCode,
 }: {
   warehouseId: string;
   sectionId: string;
   locationId: string;
   quantity: number;
-}): Promise<{ error?: string; location?: LocationRow }> {
+  reasonCode?: string | null;
+}): Promise<{ error?: string; location?: LocationRow; queued?: boolean }> {
   const ctx = await getOrgContext();
   if ("error" in ctx) return { error: ctx.error };
   if (quantity < 0) return { error: "Quantity must be 0 or greater" };
 
-  const { data, error } = await ctx.supabase
+  // Read current qty so the adjustment governance layer can compute the delta
+  // and decide whether to commit or queue for approval.
+  const { data: cur, error: curErr } = await ctx.supabase
     .from("locations")
-    .update({ quantity })
+    .select("id, quantity, product_id, warehouse_id")
     .eq("id", locationId)
     .eq("org_id", ctx.orgId)
+    .maybeSingle();
+  if (curErr) return { error: curErr.message };
+  if (!cur) return { error: "Location not found" };
+
+  const result = await applyOrQueueAdjustment(
+    ctx.supabase,
+    { orgId: ctx.orgId, userId: ctx.user.id },
+    {
+      locationId,
+      warehouseId: (cur as any).warehouse_id ?? warehouseId,
+      productId: (cur as any).product_id ?? null,
+      currentQty: (cur as any).quantity ?? 0,
+      requestedQty: quantity,
+      reasonCode: reasonCode ?? null,
+    }
+  );
+  if (result.error) return { error: result.error };
+
+  // Over threshold / reason-gated → queued for approval, on-hand unchanged.
+  if (result.queued) {
+    revalidatePath(`/facilities/${warehouseId}/sections/${sectionId}`);
+    return { queued: true };
+  }
+
+  // Committed (or no-op). Return the authoritative row for the UI to reconcile.
+  const { data, error } = await ctx.supabase
+    .from("locations")
     .select(`${LOCATION_SELECT}, section_id, product_id, warehouse_id`)
+    .eq("id", locationId)
+    .eq("org_id", ctx.orgId)
     .single();
   if (error) return { error: error.message };
-
-  await writeScanHistory(ctx, {
-    productId: (data as any).product_id,
-    warehouseId: (data as any).warehouse_id,
-    action: "adjust",
-    toLocation: {
-      section_id: (data as any).section_id,
-      bay: data.bay,
-      level: data.level,
-    },
-    quantity,
-  });
 
   revalidatePath(`/facilities/${warehouseId}`);
   revalidatePath(`/facilities/${warehouseId}/sections/${sectionId}`);
