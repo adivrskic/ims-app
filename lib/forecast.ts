@@ -93,9 +93,16 @@ export function dayOfWeekSeasonality(
   );
   let peakDow = 0;
   for (let d = 1; d < 7; d++) if (factors[d] > factors[peakDow]) peakDow = d;
-  const max = Math.max(...factors);
-  const min = Math.min(...factors);
-  const significant = series.length >= 28 && overall > 0 && max / (min || 1) >= 1.5;
+
+  // Significance via coefficient of variation across the weekday factors, not a
+  // max/min ratio: a single zero-demand weekday (common for low-volume SKUs)
+  // sent min→0 and the old `max/(min||1) >= 1.5` test falsely flagged it. Also
+  // require every weekday to be observed, so a factor isn't an unsupported guess.
+  const allDaysObserved = counts.every((c) => c > 0);
+  const factorMean = mean(factors);
+  const factorCoV = factorMean > 0 ? stdDev(factors) / factorMean : 0;
+  const significant =
+    series.length >= 28 && overall > 0 && allDaysObserved && factorCoV >= 0.2;
   return { factors, significant, peakDow };
 }
 

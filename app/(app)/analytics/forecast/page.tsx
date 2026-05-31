@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { createClient } from "@/lib/supabase/server";
 import { getCurrentOrgContext } from "@/lib/data/user";
 import { getActiveScope, scopeDescription } from "@/lib/facilityScope";
 import { getForecastWorklist } from "@/lib/data/forecast";
@@ -21,9 +20,8 @@ export default async function ForecastPage() {
   if (!ctx) {
     return <PageHeader eyebrow="Analytics" title="Forecast" description="No workspace." />;
   }
-  const supabase = await createClient();
   const warehouseId = scope.mode === "single" ? scope.id : null;
-  const rows = await getForecastWorklist(supabase, ctx.orgId, warehouseId);
+  const rows = await getForecastWorklist(ctx.orgId, warehouseId);
 
   const raises = rows.filter((r) => r.reorderPointDelta > 0).length;
   const lowers = rows.filter((r) => r.reorderPointDelta < 0).length;

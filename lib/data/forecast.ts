@@ -1,6 +1,9 @@
 import "server-only";
+import { unstable_cache } from "next/cache";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { buildForecast, type ForecastResult } from "@/lib/forecast";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { tags } from "@/lib/cache-tags";
 
 /**
  * Demand-forecast reads. Builds daily demand series from scan_history
@@ -154,23 +157,52 @@ export interface ForecastWorklistRow {
 /**
  * Products whose current reorder settings diverge from what demand suggests —
  * the demand-planning worklist. Ranked by impact (ROP gap × demand).
+ *
+ * Cross-request cached (mirrors getInventoryList): the per-product buildForecast
+ * over a 90-day scan_history window is expensive and ran on every page render.
+ * Uses the service-role client (filtering org_id explicitly), keyed by org +
+ * facility + tuning params, tagged products/inventory so reorder-point edits and
+ * new scans bust it, with a 30-min TTL so the rolling window stays fresh.
  */
-export async function getForecastWorklist(
-  supabase: Client,
+export function getForecastWorklist(
   orgId: string,
   warehouseId: string | null,
   opts?: { serviceLevel?: number; minDelta?: number; limit?: number }
 ): Promise<ForecastWorklistRow[]> {
-  const days = FORECAST_WINDOW_DAYS;
   const serviceLevel = opts?.serviceLevel ?? DEFAULT_SERVICE_LEVEL;
   const minDelta = opts?.minDelta ?? 1;
   const limit = opts?.limit ?? 50;
 
-  const bundle = await getDailyDemandSeries(supabase, orgId, null, days, warehouseId);
+  return unstable_cache(
+    () => computeForecastWorklist(orgId, warehouseId, serviceLevel, minDelta, limit),
+    [
+      "forecast-worklist",
+      orgId,
+      warehouseId ?? "all",
+      String(serviceLevel),
+      String(minDelta),
+      String(limit),
+    ],
+    { tags: [tags.products(orgId), tags.inventory(orgId)], revalidate: 1800 }
+  )();
+}
+
+async function computeForecastWorklist(
+  orgId: string,
+  warehouseId: string | null,
+  serviceLevel: number,
+  minDelta: number,
+  limit: number
+): Promise<ForecastWorklistRow[]> {
+  const days = FORECAST_WINDOW_DAYS;
+  // Service-role client (bypasses RLS) — every query below filters org_id.
+  const admin = createAdminClient() as unknown as Client;
+
+  const bundle = await getDailyDemandSeries(admin, orgId, null, days, warehouseId);
   const productIds = [...bundle.seriesByProduct.keys()];
   if (productIds.length === 0) return [];
 
-  const { data: products } = await supabase
+  const { data: products } = await admin
     .from("products")
     .select("id, name, internal_sku, reorder_point, safety_stock, lead_time_days")
     .eq("org_id", orgId)

@@ -268,8 +268,9 @@ export async function cancelOrder(formData: FormData): Promise<void> {
     .update({ status: "cancelled" as OrderStatus })
     .eq("id", id)
     .eq("org_id", ctx.orgId);
-  // Release the reservation so the stock returns to ATP for other orders.
-  await releaseOrderAllocationInternal(ctx.supabase, id);
+  // Release the reservation so the unpicked stock returns to ATP for other
+  // orders (already-picked units stay accounted for — see the internal).
+  await releaseOrderAllocationInternal(ctx.supabase, ctx.orgId, id);
   revalidatePath(`/orders/${id}`);
   revalidatePath("/orders");
   revalidateTag(tags.orders(ctx.orgId));

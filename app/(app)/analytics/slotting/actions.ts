@@ -94,7 +94,7 @@ export async function applySlottingMove(
   // ── 2. Validate the target section (same facility) + slot bounds. ──────
   const { data: targetSection, error: secErr } = await ctx.supabase
     .from("sections")
-    .select("total_bays, total_levels, warehouse_id")
+    .select("total_bays, total_levels, warehouse_id, slot_capacity")
     .eq("id", args.toSectionId)
     .eq("org_id", ctx.orgId)
     .maybeSingle();
@@ -137,20 +137,28 @@ export async function applySlottingMove(
     .maybeSingle();
   if (tgtErr) return { error: tgtErr.message };
 
+  // ── Capacity: don't overflow the section's per-slot unit cap (null = unlimited).
+  const slotCapacity = (targetSection as { slot_capacity: number | null })
+    .slot_capacity;
+  if (slotCapacity != null) {
+    const resultingQty =
+      (existingTarget?.quantity ?? 0) + (source.quantity ?? 0);
+    if (resultingQty > slotCapacity) {
+      return {
+        error: `Target slot would hold ${resultingQty}, over its capacity of ${slotCapacity}`,
+      };
+    }
+  }
+
   if (existingTarget) {
-    const newQty = (existingTarget.quantity ?? 0) + (source.quantity ?? 0);
-    const { error: mergeErr } = await ctx.supabase
-      .from("locations")
-      .update({ quantity: newQty })
-      .eq("id", existingTarget.id)
-      .eq("org_id", ctx.orgId);
+    // Atomic merge (bump target + deactivate source in one transaction) so a
+    // failure between the two writes can't double-count stock.
+    const { error: mergeErr } = await ctx.supabase.rpc("merge_location_into", {
+      p_org_id: ctx.orgId,
+      p_source_id: source.id,
+      p_target_id: existingTarget.id,
+    });
     if (mergeErr) return { error: mergeErr.message };
-    const { error: deErr } = await ctx.supabase
-      .from("locations")
-      .update({ is_active: false })
-      .eq("id", source.id)
-      .eq("org_id", ctx.orgId);
-    if (deErr) return { error: deErr.message };
   } else {
     // ── 4. Plain move — repoint section/bay/level on the source row. ─────
     const { error: moveErr } = await ctx.supabase
