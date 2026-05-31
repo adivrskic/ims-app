@@ -15,6 +15,7 @@ import {
   ArrowLeftRight,
   Blocks,
   ScanBarcode,
+  Waypoints,
 } from "lucide-react";
 import type { ComponentType } from "react";
 import { primaryNavKeys } from "@/lib/industries";
@@ -55,6 +56,7 @@ export const NAV_GROUPS: NavGroup[] = [
     label: "Flow",
     items: [
       { key: "orders", href: "/orders", label: "Orders", icon: ClipboardList },
+      { key: "picking", href: "/picking", label: "Picking", icon: Waypoints },
       {
         key: "purchase-orders",
         href: "/purchase-orders",

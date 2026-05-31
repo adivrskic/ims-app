@@ -12,6 +12,7 @@ import {
   Calendar,
   User,
   FileText,
+  Waypoints,
 } from "lucide-react";
 import { advanceOrderStatus, cancelOrder, allocateOrder } from "../actions";
 import { OrderDetailRealtime } from "@/components/realtime/PageRealtime";
@@ -97,7 +98,7 @@ export default async function OrderDetailPage({
   const { data: order } = await supabase
     .from("orders")
     .select(
-      "id, order_number, order_type, status, customer_name, customer_phone, customer_address, delivery_date, delivery_window, notes, created_at, updated_at, assigned_to, warehouse:warehouses!orders_warehouse_id_fkey ( name ), destination:warehouses!orders_destination_warehouse_id_fkey ( name ), assignee:profiles!orders_assigned_to_fkey ( full_name, email )"
+      "id, order_number, order_type, status, customer_name, customer_phone, customer_address, delivery_date, delivery_window, notes, created_at, updated_at, assigned_to, pick_wave_id, warehouse:warehouses!orders_warehouse_id_fkey ( name ), destination:warehouses!orders_destination_warehouse_id_fkey ( name ), assignee:profiles!orders_assigned_to_fkey ( full_name, email ), pick_wave:pick_waves!orders_pick_wave_id_fkey ( id, code, status )"
     )
     .eq("id", id)
     .maybeSingle();
@@ -156,6 +157,9 @@ export default async function OrderDetailPage({
   const assignee = Array.isArray(order.assignee)
     ? order.assignee[0]
     : order.assignee;
+  const pickWave = Array.isArray(order.pick_wave)
+    ? order.pick_wave[0]
+    : order.pick_wave;
 
   const nextStatusLabel = NEXT_LABEL[status];
   const canCancel = status !== "complete" && status !== "cancelled";
@@ -206,6 +210,16 @@ export default async function OrderDetailPage({
                 ? `${warehouse?.name ?? "—"} → ${destination?.name ?? "—"}`
                 : warehouse?.name ?? "—"}
             </span>
+            {pickWave && (
+              <Link
+                href={`/picking/${pickWave.id}`}
+                className="mono-sm text-[var(--accent)] hover:underline inline-flex items-center gap-4"
+                title={`In pick wave ${pickWave.code} (${pickWave.status})`}
+              >
+                <Waypoints size={11} strokeWidth={1.5} />
+                {pickWave.code}
+              </Link>
+            )}
 
             {nextStatusLabel && (
               <form action={advanceOrderStatus}>

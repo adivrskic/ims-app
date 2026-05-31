@@ -158,6 +158,21 @@ export function SectionInspector({
         <p className="mono-sm text-text-dim mt-6" style={{ fontSize: 10 }}>
           Slotting prefers homing this category's products here.
         </p>
+        <div className="mt-10">
+          <Input
+            label="Pick zone"
+            value={section.pick_zone ?? ""}
+            onChange={(e) =>
+              onUpdate({ pick_zone: e.target.value.trim() || null })
+            }
+            placeholder="(its own zone)"
+            maxLength={40}
+          />
+          <p className="mono-sm text-text-dim mt-6" style={{ fontSize: 10 }}>
+            Group sections into a named zone for wave picking. Blank = the
+            section is its own zone.
+          </p>
+        </div>
       </div>
 
       <div className="hairline-t pt-12">

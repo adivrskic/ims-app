@@ -44,7 +44,7 @@ export default async function BuilderPage({
       supabase
         .from("sections")
         .select(
-          "id, code, name, color, total_bays, total_levels, sort_order, floor_x, floor_y, floor_width, floor_height, rotation, slot_capacity, default_category"
+          "id, code, name, color, total_bays, total_levels, sort_order, floor_x, floor_y, floor_width, floor_height, rotation, slot_capacity, default_category, pick_zone"
         )
         .eq("warehouse_id", id)
         .order("sort_order", { ascending: true }),
@@ -78,6 +78,7 @@ export default async function BuilderPage({
     sort_order: s.sort_order ?? 0,
     slot_capacity: s.slot_capacity ?? null,
     default_category: s.default_category ?? null,
+    pick_zone: s.pick_zone ?? null,
   }));
 
   const categoryOptions = ((categories ?? []) as Array<{
