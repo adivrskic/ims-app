@@ -3,13 +3,19 @@
 import { Trash2 } from "lucide-react";
 import { SectionInspector } from "./SectionInspector";
 import { ElementInspector } from "./ElementInspector";
-import type { SectionDraft, LayoutElementDraft, SelectionRef } from "./types";
+import type {
+  SectionDraft,
+  LayoutElementDraft,
+  SelectionRef,
+  CategoryOption,
+} from "./types";
 
 interface Props {
   selection: SelectionRef[];
   sections: SectionDraft[];
   elements: LayoutElementDraft[];
   floorUnit: string;
+  categories: CategoryOption[];
   onUpdateSection: (id: string, patch: Partial<SectionDraft>) => void;
   onUpdateElement: (id: string, patch: Partial<LayoutElementDraft>) => void;
   onDeleteSelected: () => void;
@@ -20,6 +26,7 @@ export function Inspector({
   sections,
   elements,
   floorUnit,
+  categories,
   onUpdateSection,
   onUpdateElement,
   onDeleteSelected,
@@ -99,6 +106,7 @@ export function Inspector({
       <SectionInspector
         section={section}
         floorUnit={floorUnit}
+        categories={categories}
         onUpdate={(patch) => section && onUpdateSection(section.id, patch)}
         onDelete={onDeleteSelected}
       />

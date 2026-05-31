@@ -16,6 +16,15 @@ export interface SectionDraft {
   // Max units a single (bay, level) slot in this section can hold.
   // null = unlimited / unknown (slotting treats capacity as a soft factor).
   slot_capacity: number | null;
+  // Preferred product category for this section (uuid → categories) — drives
+  // the slotting category-match factor. null = no preference.
+  default_category: string | null;
+}
+
+/** Minimal category option for the section inspector's category picker. */
+export interface CategoryOption {
+  id: string;
+  name: string;
 }
 
 // ── Layout elements ───────────────────────────────────────────────────────

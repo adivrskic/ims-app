@@ -8,6 +8,7 @@ import type {
   LayoutElementDraft,
   SelectionRef,
   ElementKind,
+  CategoryOption,
 } from "./types";
 
 interface Props {
@@ -16,6 +17,7 @@ interface Props {
   sections: SectionDraft[];
   elements: LayoutElementDraft[];
   floorUnit: string;
+  categories: CategoryOption[];
   onUpdateSection: (id: string, patch: Partial<SectionDraft>) => void;
   onUpdateElement: (id: string, patch: Partial<LayoutElementDraft>) => void;
   onDeleteSelected: () => void;
@@ -38,6 +40,7 @@ export function MobileInspectorSheet({
   sections,
   elements,
   floorUnit,
+  categories,
   onUpdateSection,
   onUpdateElement,
   onDeleteSelected,
@@ -118,6 +121,7 @@ export function MobileInspectorSheet({
             sections={sections}
             elements={elements}
             floorUnit={floorUnit}
+            categories={categories}
             onUpdateSection={onUpdateSection}
             onUpdateElement={onUpdateElement}
             onDeleteSelected={onDeleteSelected}

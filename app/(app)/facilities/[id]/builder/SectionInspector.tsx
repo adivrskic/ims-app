@@ -3,7 +3,7 @@
 import { Trash2 } from "lucide-react";
 import { Input } from "@/components/ui/Input";
 import { CornerButton } from "@/components/ui/CornerButton";
-import type { SectionDraft } from "./types";
+import type { SectionDraft, CategoryOption } from "./types";
 
 const COLORS = [
   "#D4A853",
@@ -18,6 +18,7 @@ const COLORS = [
 interface Props {
   section: SectionDraft | null;
   floorUnit: string;
+  categories: CategoryOption[];
   onUpdate: (patch: Partial<SectionDraft>) => void;
   onDelete: () => void;
 }
@@ -25,6 +26,7 @@ interface Props {
 export function SectionInspector({
   section,
   floorUnit,
+  categories,
   onUpdate,
   onDelete,
 }: Props) {
@@ -128,6 +130,34 @@ export function SectionInspector({
             />
           ))}
         </div>
+      </div>
+
+      <div className="hairline-t pt-12">
+        <label
+          className="label-text text-text-muted block mb-6"
+          htmlFor="section-category"
+        >
+          Default category
+        </label>
+        <select
+          id="section-category"
+          value={section.default_category ?? ""}
+          onChange={(e) =>
+            onUpdate({ default_category: e.target.value || null })
+          }
+          className="field-input w-full"
+          style={{ fontFamily: "var(--mono)", fontSize: 12 }}
+        >
+          <option value="">No preference</option>
+          {categories.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.name}
+            </option>
+          ))}
+        </select>
+        <p className="mono-sm text-text-dim mt-6" style={{ fontSize: 10 }}>
+          Slotting prefers homing this category's products here.
+        </p>
       </div>
 
       <div className="hairline-t pt-12">

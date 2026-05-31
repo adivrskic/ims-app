@@ -160,6 +160,19 @@ Return top N (e.g., 5) suggestions, each with human reasons for trust.
 
 ## 6. Phasing
 
+> **Status (2026-05-31):** 6a + 6b **DONE** on `feat/slotting-suggestions`.
+> - `lib/data/slotting.ts` — engine (candidate gen + `scoreSlot` + reasons),
+>   `getSlottingSuggestions`, `getSlottingHealth`. Centroid-Euclidean distance to
+>   nearest door/staging; proximity factor auto-skips when no origin exists.
+> - `/analytics/slotting` — scope-aware health report (KPIs + per-facility ranked
+>   "current → suggested" moves), linked from the analytics index.
+> - Section `default_category` picker added to the builder (activates the
+>   category factor); persisted via saveLayout/restoreSnapshot.
+> - §6b inline hints: "Suggested slot" per open line on receivable POs +
+>   "Recommended slot" card on product detail.
+> - **Remaining: 6c** (write-side "apply / re-slot" relocate) — not started.
+
+
 - **6a** — engine (`lib/data/slotting.ts`) + the **health report** page (read-only; highest
   insight, zero mutation risk). Ship first.
 - **6b** — inline "Suggested slot" hints on receive + product detail.

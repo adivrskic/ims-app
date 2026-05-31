@@ -9,6 +9,9 @@ import { SectionTitle } from "@/components/ui/SectionTitle";
 import { CornerLink } from "@/components/ui/CornerButton";
 import { ProductDetailRealtime } from "@/components/realtime/PageRealtime";
 import { formatCurrency } from "@/lib/dashboard";
+import { getCurrentOrgContext } from "@/lib/data/user";
+import { getActiveScope } from "@/lib/facilityScope";
+import { getSlottingSuggestions } from "@/lib/data/slotting";
 import { productVelocity } from "@/lib/data/velocity";
 import { daysToStockout } from "@/lib/replenishment";
 import { expiryStatus, expiryLabel } from "@/lib/lots";
@@ -148,6 +151,85 @@ export default async function ProductDetailPage({
   // demand signal, which we render as a plain-language state rather than ∞.
   const velocity = await productVelocity(supabase, id);
   const daysLeft = daysToStockout({ onHand: totalStock, velocity });
+
+  // Recommended slot (#8 / §6b). Slotting is per-facility, so we pick a target:
+  // the active-scope facility if one is selected, else the facility where this
+  // product holds the most stock. We then suggest the best slot there and note
+  // when the product is already optimally placed.
+  type LocLite = {
+    bay: number | null;
+    level: number | null;
+    quantity: number | null;
+    section: { code: string | null } | { code: string | null }[] | null;
+    warehouse: { id: string; name: string } | { id: string; name: string }[] | null;
+  };
+  const locsForSlot = (product.locations ?? []) as LocLite[];
+  const oneOf = <T,>(v: T | T[] | null): T | null =>
+    Array.isArray(v) ? v[0] ?? null : v;
+
+  const [orgCtx, activeScope] = await Promise.all([
+    getCurrentOrgContext(),
+    getActiveScope(),
+  ]);
+
+  // Per-facility on-hand for this product + current slot labels.
+  const facilityAgg = new Map<
+    string,
+    { name: string; qty: number; labels: Set<string> }
+  >();
+  for (const loc of locsForSlot) {
+    const wh = oneOf(loc.warehouse);
+    if (!wh) continue;
+    const sec = oneOf(loc.section);
+    const entry =
+      facilityAgg.get(wh.id) ?? { name: wh.name, qty: 0, labels: new Set<string>() };
+    entry.qty += loc.quantity ?? 0;
+    if (sec?.code && loc.bay != null && loc.level != null) {
+      entry.labels.add(
+        `${sec.code.trim()}-${String(loc.bay).padStart(2, "0")}-${loc.level}`
+      );
+    }
+    facilityAgg.set(wh.id, entry);
+  }
+
+  let targetFacilityId: string | null = null;
+  let targetFacilityName = "";
+  if (activeScope.mode === "single") {
+    targetFacilityId = activeScope.id;
+    targetFacilityName = activeScope.name;
+  } else {
+    let bestQty = -1;
+    for (const [fid, agg] of facilityAgg) {
+      if (agg.qty > bestQty) {
+        bestQty = agg.qty;
+        targetFacilityId = fid;
+        targetFacilityName = agg.name;
+      }
+    }
+  }
+
+  let recommendedSlot:
+    | { label: string; reasons: string[]; alreadyThere: boolean; facility: string }
+    | null = null;
+  if (orgCtx && targetFacilityId) {
+    const r = await getSlottingSuggestions(
+      supabase,
+      orgCtx.orgId,
+      targetFacilityId,
+      id,
+      { limit: 1, quantity: Math.max(1, facilityAgg.get(targetFacilityId)?.qty ?? 1) }
+    );
+    const top = r.suggestions[0];
+    if (top) {
+      const currentLabels = facilityAgg.get(targetFacilityId)?.labels ?? new Set();
+      recommendedSlot = {
+        label: top.label,
+        reasons: top.reasons,
+        alreadyThere: currentLabels.has(top.label),
+        facility: targetFacilityName,
+      };
+    }
+  }
 
   const unitCostNum =
     product.unit_cost == null ? null : parseFloat(String(product.unit_cost));
@@ -437,6 +519,33 @@ export default async function ProductDetailPage({
             <p className="mono-sm text-text-dim">
               Not placed in any location yet.
             </p>
+          )}
+
+          {recommendedSlot && (
+            <div className="hairline-t mt-16 pt-16">
+              <p className="label-text text-text-muted mb-8">Recommended slot</p>
+              {recommendedSlot.alreadyThere ? (
+                <p className="mono-sm text-[var(--success)]">
+                  Optimally slotted at {recommendedSlot.label}
+                  <span className="text-text-dim"> · {recommendedSlot.facility}</span>
+                </p>
+              ) : (
+                <>
+                  <p className="mono-body text-[var(--accent)]">
+                    {recommendedSlot.label}
+                    <span className="text-text-dim mono-sm">
+                      {" · "}
+                      {recommendedSlot.facility}
+                    </span>
+                  </p>
+                  {recommendedSlot.reasons.length > 0 && (
+                    <p className="mono-sm text-text-muted mt-4">
+                      {recommendedSlot.reasons.slice(0, 3).join(" · ")}
+                    </p>
+                  )}
+                </>
+              )}
+            </div>
           )}
         </article>
       </section>

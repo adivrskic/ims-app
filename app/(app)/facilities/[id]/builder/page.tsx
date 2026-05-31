@@ -39,22 +39,28 @@ export default async function BuilderPage({
    * entirely, which crashed BuilderToolbar's `state.elements.length` read
    * on the very first render.
    */
-  const [{ data: sections }, { data: elements }] = await Promise.all([
-    supabase
-      .from("sections")
-      .select(
-        "id, code, name, color, total_bays, total_levels, sort_order, floor_x, floor_y, floor_width, floor_height, rotation, slot_capacity"
-      )
-      .eq("warehouse_id", id)
-      .order("sort_order", { ascending: true }),
-    supabase
-      .from("layout_elements")
-      .select(
-        "id, kind, floor_x, floor_y, floor_width, floor_height, rotation, color, label, data, sort_order"
-      )
-      .eq("warehouse_id", id)
-      .order("sort_order", { ascending: true }),
-  ]);
+  const [{ data: sections }, { data: elements }, { data: categories }] =
+    await Promise.all([
+      supabase
+        .from("sections")
+        .select(
+          "id, code, name, color, total_bays, total_levels, sort_order, floor_x, floor_y, floor_width, floor_height, rotation, slot_capacity, default_category"
+        )
+        .eq("warehouse_id", id)
+        .order("sort_order", { ascending: true }),
+      supabase
+        .from("layout_elements")
+        .select(
+          "id, kind, floor_x, floor_y, floor_width, floor_height, rotation, color, label, data, sort_order"
+        )
+        .eq("warehouse_id", id)
+        .order("sort_order", { ascending: true }),
+      // Org-scoped via RLS — no explicit org filter needed (matches inventory).
+      supabase
+        .from("categories")
+        .select("id, name")
+        .order("name", { ascending: true }),
+    ]);
 
   const initialSections = (sections ?? []).map((s) => ({
     id: s.id,
@@ -71,7 +77,13 @@ export default async function BuilderPage({
     color: s.color ?? "#D4A853",
     sort_order: s.sort_order ?? 0,
     slot_capacity: s.slot_capacity ?? null,
+    default_category: s.default_category ?? null,
   }));
+
+  const categoryOptions = ((categories ?? []) as Array<{
+    id: string;
+    name: string;
+  }>).map((c) => ({ id: c.id, name: c.name }));
 
   const initialElements = (elements ?? [])
     .filter((e): e is typeof e & { kind: ElementKind } =>
@@ -115,6 +127,7 @@ export default async function BuilderPage({
         canvasWidth={Number(warehouse.floor_canvas_width)}
         canvasHeight={Number(warehouse.floor_canvas_height)}
         floorUnit={warehouse.floor_unit}
+        categories={categoryOptions}
         initialSections={initialSections}
         initialElements={initialElements}
       />
