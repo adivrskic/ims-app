@@ -7,9 +7,11 @@ import type { SupabaseClient } from "@supabase/supabase-js";
  * kit" action and work-order completion.
  *
  * Direct-component model: sub-assemblies are consumed as built units (build them
- * via their own work order first). On-hand is adjusted at the location level
- * (greedy decrement across the product's slots) and every leg is written to
- * scan_history for auditability. Validates sufficiency before mutating.
+ * via their own work order first). The entire consume-and-produce runs inside
+ * the `app.assemble_kit` RPC, which locks the relevant location rows FOR UPDATE
+ * and validates sufficiency against live (post-lock) on-hand — so two concurrent
+ * builds can't both pass validation and drive stock negative. Every leg is still
+ * written to scan_history for auditability.
  */
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -32,108 +34,27 @@ export async function assembleKit(
     return { error: "Quantity must be a positive number" };
   }
 
-  const { data: comps } = await supabase
-    .from("kit_components")
-    .select("component_product_id, quantity")
-    .eq("org_id", ctx.orgId)
-    .eq("kit_product_id", kitId);
-  const components = (comps ?? []) as Array<{
-    component_product_id: string;
-    quantity: number;
-  }>;
-  if (components.length === 0) {
-    return { error: "Define the kit's bill of materials first" };
-  }
-
-  const productIds = [kitId, ...components.map((c) => c.component_product_id)];
-  const { data: locData } = await supabase
-    .from("locations")
-    .select("id, product_id, quantity")
-    .eq("org_id", ctx.orgId)
-    .eq("warehouse_id", warehouseId)
-    .in("product_id", productIds);
-  type Loc = { id: string; product_id: string | null; quantity: number | null };
-  const locs = (locData ?? []) as Loc[];
-
-  const locsByProduct = new Map<string, Loc[]>();
-  for (const l of locs) {
-    if (!l.product_id) continue;
-    const arr = locsByProduct.get(l.product_id) ?? [];
-    arr.push(l);
-    locsByProduct.set(l.product_id, arr);
-  }
-  const onHand = (pid: string) =>
-    (locsByProduct.get(pid) ?? []).reduce((s, l) => s + (l.quantity ?? 0), 0);
-
-  // Validate sufficiency of every component before any mutation.
-  for (const c of components) {
-    if (onHand(c.component_product_id) < c.quantity * qty) {
-      return {
-        error: `Not enough stock at this facility to build ${qty} — short on a component.`,
-      };
-    }
-  }
-
-  const consumed = new Map<string, number>();
-
-  // Consume components (greedy decrement across the product's locations).
-  for (const c of components) {
-    const need = c.quantity * qty;
-    let remaining = need;
-    const rows = (locsByProduct.get(c.component_product_id) ?? []).sort(
-      (a, b) => (b.quantity ?? 0) - (a.quantity ?? 0)
-    );
-    for (const row of rows) {
-      if (remaining <= 0) break;
-      const have = row.quantity ?? 0;
-      const take = Math.min(have, remaining);
-      if (take <= 0) continue;
-      await supabase
-        .from("locations")
-        .update({ quantity: have - take })
-        .eq("id", row.id);
-      remaining -= take;
-    }
-    consumed.set(c.component_product_id, need);
-    await supabase.from("scan_history").insert({
-      org_id: ctx.orgId,
-      product_id: c.component_product_id,
-      warehouse_id: warehouseId,
-      scanned_by: ctx.userId,
-      action: "adjust",
-      quantity: -need,
-      notes: `${reason}: consumed for ${qty}× build`,
-    });
-  }
-
-  // Produce the finished good: increment an existing location or stage one.
-  const kitLocs = locsByProduct.get(kitId) ?? [];
-  if (kitLocs[0]) {
-    await supabase
-      .from("locations")
-      .update({ quantity: (kitLocs[0].quantity ?? 0) + qty })
-      .eq("id", kitLocs[0].id);
-  } else {
-    await supabase.from("locations").insert({
-      org_id: ctx.orgId,
-      product_id: kitId,
-      warehouse_id: warehouseId,
-      section_id: null,
-      bay: 0,
-      level: 0,
-      quantity: qty,
-      placed_by: ctx.userId,
-    });
-  }
-  await supabase.from("scan_history").insert({
-    org_id: ctx.orgId,
-    product_id: kitId,
-    warehouse_id: warehouseId,
-    scanned_by: ctx.userId,
-    action: "adjust",
-    quantity: qty,
-    notes: `${reason}: assembled ${qty} unit${qty === 1 ? "" : "s"}`,
+  const { data, error } = await supabase.rpc("assemble_kit", {
+    p_org_id: ctx.orgId,
+    p_warehouse_id: warehouseId,
+    p_kit_id: kitId,
+    p_qty: qty,
+    p_reason: reason,
   });
+  if (error) return { error: error.message };
 
-  return { consumed, producedQty: qty };
+  return parseAssembleResult(data);
+}
+
+/** Shape returned by the assemble_kit / complete_work_order RPCs. */
+export function parseAssembleResult(data: unknown): AssembleResult {
+  const obj = (data ?? {}) as {
+    consumed?: Record<string, number>;
+    produced_qty?: number;
+  };
+  const consumed = new Map<string, number>();
+  for (const [pid, n] of Object.entries(obj.consumed ?? {})) {
+    consumed.set(pid, Number(n));
+  }
+  return { consumed, producedQty: obj.produced_qty ?? undefined };
 }

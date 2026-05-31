@@ -9,15 +9,23 @@ import type { SupabaseClient } from "@supabase/supabase-js";
  * holds stock back from being promised twice.
  *
  *   on_hand     = Σ locations.quantity (active) for a product in a facility
- *   allocated   = Σ max(0, quantity_allocated - quantity_picked) over OPEN orders
- *                 (only the *unpicked* part still holds on-hand; picked units have
- *                 already physically left the shelf)
- *   ATP         = on_hand - allocated         (what's free to promise)
+ *   committed   = Σ max(quantity_allocated, quantity_picked) over OPEN orders
+ *                 (units held back from being promised: the reservation, or what
+ *                 has already been picked if that's more — see the picking note)
+ *   ATP         = on_hand - committed         (what's free to promise)
  *   backordered = quantity_requested - quantity_allocated   (per line, ≥ 0)
  *
- * Allocation is per-facility: an order's `warehouse_id` is the source. Picking
- * and the physical on-hand decrement happen on the mobile app; this layer never
- * touches `locations`.
+ * Allocation is per-facility: an order's `warehouse_id` is the source.
+ *
+ * PICKING CONTRACT (verified against the mobile app, repo `hello-world2`,
+ * app/orders/[id].tsx): confirming a pick writes `quantity_picked` + a 'pick'
+ * scan_history row but does NOT decrement `locations.quantity` — and no order
+ * transition (ship/complete) decrements it either. So on-hand is "nominal until
+ * shipped": picked units are still counted in `on_hand`. We therefore hold back
+ * `max(allocated, picked)` rather than the unpicked remainder `allocated - picked`
+ * — otherwise picking an order would progressively raise its ATP and oversell the
+ * picked-but-unshipped units. (Physically depleting on-hand at ship is a separate,
+ * larger change — see docs/audit-followups.md.)
  */
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -35,9 +43,9 @@ export const OPEN_ORDER_STATUSES = [
 
 export interface StockAvailability {
   onHand: number;
-  /** Unpicked reserved units across open orders (holds on-hand back). */
+  /** Committed units across open orders = Σ max(allocated, picked) (holds on-hand back). */
   allocated: number;
-  /** on_hand − allocated. Can go negative if over-allocated; callers clamp. */
+  /** on_hand − committed. Can go negative if over-committed; callers clamp. */
   atp: number;
   /** Open backordered demand for this product in this facility. */
   backordered: number;
@@ -112,7 +120,7 @@ export async function getStockAvailability(
       const allocated = it.quantity_allocated ?? 0;
       const picked = it.quantity_picked ?? 0;
       const requested = it.quantity_requested ?? 0;
-      cur.allocated += Math.max(0, allocated - picked);
+      cur.allocated += Math.max(allocated, picked);
       cur.backordered += Math.max(0, requested - allocated);
       out.set(it.product_id, cur);
     }
@@ -156,7 +164,7 @@ export async function getProductAllocationOrgWide(
     quantity_allocated: number | null;
     quantity_picked: number | null;
   }>) {
-    allocated += Math.max(0, (it.quantity_allocated ?? 0) - (it.quantity_picked ?? 0));
+    allocated += Math.max(it.quantity_allocated ?? 0, it.quantity_picked ?? 0);
     backordered += Math.max(0, (it.quantity_requested ?? 0) - (it.quantity_allocated ?? 0));
   }
   return { allocated, backordered };
@@ -194,9 +202,10 @@ export interface PlannedLine {
  * Greedy allocation for a set of lines against a per-product free pool.
  *
  * `freePool` is the stock available to THIS order per product — i.e. on-hand
- * minus everyone else's unpicked reservations (the caller computes it by
- * excluding this order). Allocation never drops below already-picked units and
- * never exceeds requested. Lines sharing a product draw the pool in order.
+ * minus everyone else's committed units (Σ max(allocated, picked); the caller
+ * computes it by excluding this order). Allocation never drops below already-
+ * picked units and never exceeds requested. Lines sharing a product draw the
+ * pool in order.
  */
 export function planAllocation(
   lines: AllocLine[],
@@ -333,6 +342,11 @@ export interface AllocateSummary {
  * (Re)allocate one order against current availability. Idempotent: re-running
  * with unchanged stock is a no-op. Excludes the order's own current reservation
  * from the pool so re-allocation doesn't fight itself.
+ *
+ * Runs entirely inside the `app.allocate_order` RPC under a per-facility
+ * advisory lock, so two orders for the same SKU can't each subtract the same
+ * ATP and oversell. The greedy planner (see {@link planAllocation}) is mirrored
+ * in SQL there.
  */
 export async function allocateOrderInternal(
   supabase: AllocClient,
@@ -348,94 +362,21 @@ export async function allocateOrderInternal(
     fullyAllocated: false,
   };
 
-  const { data: order } = await supabase
-    .from("orders")
-    .select("id, warehouse_id, status")
-    .eq("id", orderId)
-    .eq("org_id", orgId)
-    .maybeSingle();
-  if (!order) return { ...none, reason: "not found" };
-  const o = order as { warehouse_id: string | null; status: string };
-  if (!o.warehouse_id) return { ...none, reason: "no facility" };
-  if (!(OPEN_ORDER_STATUSES as unknown as string[]).includes(o.status)) {
-    return { ...none, reason: "not open" };
-  }
+  const { data, error } = await supabase.rpc("allocate_order", {
+    p_org_id: orgId,
+    p_order_id: orderId,
+  });
+  if (error) return { ...none, reason: error.message };
 
-  const { data: itemRows } = await supabase
-    .from("order_items")
-    .select("id, product_id, quantity_requested, quantity_allocated, quantity_picked")
-    .eq("order_id", orderId);
-
-  const lines: AllocLine[] = ((itemRows ?? []) as Array<{
-    id: string;
-    product_id: string | null;
-    quantity_requested: number | null;
-    quantity_allocated: number | null;
-    quantity_picked: number | null;
-  }>)
-    .filter((r) => r.product_id)
-    .map((r) => ({
-      id: r.id,
-      productId: r.product_id as string,
-      requested: r.quantity_requested ?? 0,
-      allocated: r.quantity_allocated ?? 0,
-      picked: r.quantity_picked ?? 0,
-    }));
-  if (lines.length === 0) return { ...none, reason: "no lines" };
-
-  const productIds = [...new Set(lines.map((l) => l.productId))];
-  const avail = await getStockAvailability(
-    supabase,
-    orgId,
-    o.warehouse_id,
-    productIds
-  );
-
-  // Free pool for THIS order = ATP + the order's own current unpicked
-  // reservation (added back so re-allocating doesn't double-subtract itself).
-  const ownUnpicked = new Map<string, number>();
-  for (const l of lines) {
-    ownUnpicked.set(
-      l.productId,
-      (ownUnpicked.get(l.productId) ?? 0) + Math.max(0, l.allocated - l.picked)
-    );
-  }
-  const freePool = new Map<string, number>();
-  for (const pid of productIds) {
-    const a = avail.get(pid);
-    freePool.set(pid, Math.max(0, (a?.atp ?? 0) + (ownUnpicked.get(pid) ?? 0)));
-  }
-
-  const planned = planAllocation(lines, freePool);
-  const plannedById = new Map(planned.map((p) => [p.id, p]));
-
-  for (const p of planned) {
-    if (!p.changed) continue;
-    await supabase
-      .from("order_items")
-      .update({ quantity_allocated: p.allocated })
-      .eq("id", p.id);
-  }
-
-  let requestedUnits = 0;
-  let allocatedUnits = 0;
-  let backorderedUnits = 0;
-  let changedLines = 0;
-  for (const l of lines) {
-    const na = plannedById.get(l.id)?.allocated ?? l.allocated;
-    requestedUnits += l.requested;
-    allocatedUnits += na;
-    backorderedUnits += Math.max(0, l.requested - na);
-    if (na !== l.allocated) changedLines++;
-  }
-
+  const r = (data ?? {}) as Partial<AllocateSummary> & { skipped?: boolean };
+  if (r.skipped) return { ...none, reason: r.reason };
   return {
     skipped: false,
-    changedLines,
-    requestedUnits,
-    allocatedUnits,
-    backorderedUnits,
-    fullyAllocated: backorderedUnits === 0,
+    changedLines: r.changedLines ?? 0,
+    requestedUnits: r.requestedUnits ?? 0,
+    allocatedUnits: r.allocatedUnits ?? 0,
+    backorderedUnits: r.backorderedUnits ?? 0,
+    fullyAllocated: r.fullyAllocated ?? false,
   };
 }
 
