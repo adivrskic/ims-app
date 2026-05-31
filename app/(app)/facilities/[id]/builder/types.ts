@@ -19,6 +19,9 @@ export interface SectionDraft {
   // Preferred product category for this section (uuid → categories) — drives
   // the slotting category-match factor. null = no preference.
   default_category: string | null;
+  // Optional zone label grouping sections for wave/zone picking. null/"" = the
+  // section is its own zone.
+  pick_zone: string | null;
 }
 
 /** Minimal category option for the section inspector's category picker. */

@@ -1,0 +1,163 @@
+"use server";
+
+import { redirect } from "next/navigation";
+import { revalidatePath } from "next/cache";
+import { getActionContext } from "@/lib/data/actionContext";
+import { getEligibleOrders, WAVE_STATUSES } from "@/lib/data/picking";
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type AnyClient = any;
+
+async function nextWaveCode(
+  supabase: AnyClient,
+  orgId: string
+): Promise<string> {
+  const { data: last } = await supabase
+    .from("pick_waves")
+    .select("code")
+    .eq("org_id", orgId)
+    .like("code", "WAVE-%")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  const n = last?.code?.match(/WAVE-(\d+)/)?.[1];
+  const next = n ? parseInt(n, 10) + 1 : 1;
+  return `WAVE-${String(next).padStart(4, "0")}`;
+}
+
+/** Create a wave from a set of orders and attach them. Returns the wave id. */
+async function createWave(
+  supabase: AnyClient,
+  orgId: string,
+  userId: string,
+  warehouseId: string,
+  orderIds: string[]
+): Promise<string | null> {
+  if (orderIds.length === 0) return null;
+  const code = await nextWaveCode(supabase, orgId);
+  const { data: wave, error } = await supabase
+    .from("pick_waves")
+    .insert({
+      org_id: orgId,
+      warehouse_id: warehouseId,
+      code,
+      status: "planned",
+      created_by: userId,
+    })
+    .select("id")
+    .single();
+  if (error || !wave) return null;
+
+  // Only attach orders still eligible (same facility, not already in a wave).
+  await supabase
+    .from("orders")
+    .update({ pick_wave_id: wave.id })
+    .in("id", orderIds)
+    .eq("org_id", orgId)
+    .eq("warehouse_id", warehouseId)
+    .is("pick_wave_id", null);
+
+  return wave.id as string;
+}
+
+export async function buildWave(formData: FormData): Promise<void> {
+  const ctx = await getActionContext();
+  if ("error" in ctx) return;
+  const warehouseId = String(formData.get("warehouse_id") ?? "");
+  const orderIds = formData
+    .getAll("order_id")
+    .map(String)
+    .filter(Boolean);
+  if (!warehouseId || orderIds.length === 0) return;
+
+  const waveId = await createWave(
+    ctx.supabase,
+    ctx.orgId,
+    ctx.user.id,
+    warehouseId,
+    orderIds
+  );
+  revalidatePath("/picking");
+  revalidatePath("/orders");
+  if (waveId) redirect(`/picking/${waveId}`);
+}
+
+export async function autoBuildWave(formData: FormData): Promise<void> {
+  const ctx = await getActionContext();
+  if ("error" in ctx) return;
+  const warehouseId = String(formData.get("warehouse_id") ?? "");
+  if (!warehouseId) return;
+
+  const eligible = await getEligibleOrders(ctx.supabase, ctx.orgId, warehouseId);
+  if (eligible.length === 0) {
+    revalidatePath("/picking");
+    return;
+  }
+  const waveId = await createWave(
+    ctx.supabase,
+    ctx.orgId,
+    ctx.user.id,
+    warehouseId,
+    eligible.map((o) => o.id)
+  );
+  revalidatePath("/picking");
+  revalidatePath("/orders");
+  if (waveId) redirect(`/picking/${waveId}`);
+}
+
+export async function setWaveStatus(formData: FormData): Promise<void> {
+  const ctx = await getActionContext();
+  if ("error" in ctx) return;
+  const waveId = String(formData.get("wave_id") ?? "");
+  const status = String(formData.get("status") ?? "");
+  if (!waveId || !(WAVE_STATUSES as readonly string[]).includes(status)) return;
+
+  await ctx.supabase
+    .from("pick_waves")
+    .update({ status })
+    .eq("id", waveId)
+    .eq("org_id", ctx.orgId);
+
+  // Cancelling a wave releases its orders back to the eligible pool.
+  if (status === "cancelled") {
+    await ctx.supabase
+      .from("orders")
+      .update({ pick_wave_id: null })
+      .eq("pick_wave_id", waveId)
+      .eq("org_id", ctx.orgId);
+  }
+
+  revalidatePath(`/picking/${waveId}`);
+  revalidatePath("/picking");
+  revalidatePath("/orders");
+}
+
+/** Claim the wave (assign to the current user) or release it. */
+export async function claimWave(formData: FormData): Promise<void> {
+  const ctx = await getActionContext();
+  if ("error" in ctx) return;
+  const waveId = String(formData.get("wave_id") ?? "");
+  const release = String(formData.get("release") ?? "") === "1";
+  if (!waveId) return;
+  await ctx.supabase
+    .from("pick_waves")
+    .update({ assigned_to: release ? null : ctx.user.id })
+    .eq("id", waveId)
+    .eq("org_id", ctx.orgId);
+  revalidatePath(`/picking/${waveId}`);
+}
+
+export async function removeOrderFromWave(formData: FormData): Promise<void> {
+  const ctx = await getActionContext();
+  if ("error" in ctx) return;
+  const waveId = String(formData.get("wave_id") ?? "");
+  const orderId = String(formData.get("order_id") ?? "");
+  if (!orderId) return;
+  await ctx.supabase
+    .from("orders")
+    .update({ pick_wave_id: null })
+    .eq("id", orderId)
+    .eq("org_id", ctx.orgId);
+  revalidatePath(`/picking/${waveId}`);
+  revalidatePath("/picking");
+  revalidatePath("/orders");
+}

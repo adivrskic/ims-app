@@ -181,6 +181,7 @@ function reducer(state: State, action: Action): State {
         sort_order: nextSort,
         slot_capacity: null,
         default_category: null,
+        pick_zone: null,
       };
       const next = pushHistory(state);
       return {
@@ -430,6 +431,7 @@ function reducer(state: State, action: Action): State {
         sort_order: i + 1,
         slot_capacity: null,
         default_category: null,
+        pick_zone: null,
       }));
       const newDeleted = [
         ...state.deletedSectionIds,

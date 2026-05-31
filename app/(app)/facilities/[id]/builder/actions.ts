@@ -82,6 +82,7 @@ export async function saveLayout({
         sort_order: s.sort_order,
         slot_capacity: s.slot_capacity,
         default_category: s.default_category,
+        pick_zone: s.pick_zone,
       })
       .eq("id", s.id)
       .eq("org_id", ctx.orgId);
@@ -107,6 +108,7 @@ export async function saveLayout({
       sort_order: s.sort_order,
       slot_capacity: s.slot_capacity,
       default_category: s.default_category,
+      pick_zone: s.pick_zone,
     }));
     const { error } = await ctx.supabase.from("sections").insert(rows);
     if (error) return { error: `Insert sections failed: ${error.message}` };
@@ -404,6 +406,7 @@ export async function restoreSnapshot(
       sort_order: s.sort_order ?? 0,
       slot_capacity: s.slot_capacity ?? null,
       default_category: s.default_category ?? null,
+      pick_zone: s.pick_zone ?? null,
     };
   });
 
@@ -510,6 +513,7 @@ export async function restoreSnapshot(
         sort_order: r.sort_order,
         slot_capacity: r.slot_capacity ?? null,
         default_category: r.default_category ?? null,
+        pick_zone: r.pick_zone ?? null,
       })),
       elements: elementRows.map((r) => ({
         id: r.id,
