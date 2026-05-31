@@ -3,8 +3,9 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { KpiCard } from "@/components/ui/KpiCard";
 import { SectionTitle } from "@/components/ui/SectionTitle";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { CornerLink } from "@/components/ui/CornerButton";
 import type { ScanAction } from "@/types/db";
-import { BarChart3 } from "lucide-react";
+import { BarChart3, Scale, Snowflake } from "lucide-react";
 import { getActiveScope, scopeDescription } from "@/lib/facilityScope";
 import { Suspense } from "react";
 import { ForecastNarration } from "@/components/analytics/ForecastNarration";
@@ -199,6 +200,18 @@ export default async function AnalyticsPage() {
           { label: "Window", value: "Last 14 days" },
           { label: "Last sync", value: "Just now", status: "live" },
         ]}
+        actions={
+          <div className="flex items-center gap-10">
+            <CornerLink href="/analytics/valuation" variant="ghost" size="sm">
+              <Scale size={11} strokeWidth={1.5} />
+              Valuation
+            </CornerLink>
+            <CornerLink href="/analytics/dead-stock" variant="ghost" size="sm">
+              <Snowflake size={11} strokeWidth={1.5} />
+              Dead stock
+            </CornerLink>
+          </div>
+        }
       />
 
       {!empty && (
