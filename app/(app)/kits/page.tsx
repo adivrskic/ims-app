@@ -4,7 +4,8 @@ import { getCurrentOrgContext } from "@/lib/data/user";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { SectionTitle } from "@/components/ui/SectionTitle";
 import { EmptyState } from "@/components/ui/EmptyState";
-import { Blocks, Trash2 } from "lucide-react";
+import { Blocks, Trash2, Hammer } from "lucide-react";
+import { CornerLink } from "@/components/ui/CornerButton";
 import { AddKitComponentForm } from "./AddKitComponentForm";
 import { BuildKitForm } from "./BuildKitForm";
 import { setKitFlag, removeKitComponent } from "./actions";
@@ -100,6 +101,12 @@ export default async function KitsPage() {
             status: totalBuildable > 0 ? "live" : undefined,
           },
         ]}
+        actions={
+          <CornerLink href="/work-orders" variant="ghost" size="sm">
+            <Hammer size={11} strokeWidth={1.5} />
+            Work orders
+          </CornerLink>
+        }
       />
 
       {/* Kit BOMs */}

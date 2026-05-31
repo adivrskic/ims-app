@@ -2,6 +2,8 @@
 
 import { revalidatePath } from "next/cache";
 import { getActionContext } from "@/lib/data/actionContext";
+import { bomCreatesCycle } from "@/lib/data/bom";
+import { assembleKit } from "@/lib/data/assemble";
 
 /** Mark a product as a kit (or not). Opt-in, like lot tracking. */
 export async function setKitFlag(formData: FormData): Promise<void> {
@@ -41,6 +43,14 @@ export async function addKitComponent(
   }
   if (!Number.isFinite(qty) || qty <= 0) {
     return { error: "Quantity must be a positive number" };
+  }
+
+  // Multi-level BOM: reject edges that would create a cycle (A→B→…→A), not
+  // just direct self-reference.
+  if (await bomCreatesCycle(ctx.supabase, ctx.orgId, kitProductId, componentProductId)) {
+    return {
+      error: "That would create a circular BOM (the component already contains this kit)",
+    };
   }
 
   const { error } = await ctx.supabase.from("kit_components").insert({
@@ -86,112 +96,18 @@ export async function buildKit(
     return { error: "Quantity must be a positive number" };
   }
 
-  const { data: comps } = await ctx.supabase
-    .from("kit_components")
-    .select("component_product_id, quantity")
-    .eq("org_id", ctx.orgId)
-    .eq("kit_product_id", kitId);
-  const components = (comps ?? []) as Array<{
-    component_product_id: string;
-    quantity: number;
-  }>;
-  if (components.length === 0) {
-    return { error: "Define the kit's bill of materials first" };
-  }
-
-  // Locations for the kit + all components AT this facility.
-  const productIds = [kitId, ...components.map((c) => c.component_product_id)];
-  const { data: locData } = await ctx.supabase
-    .from("locations")
-    .select("id, product_id, quantity")
-    .eq("org_id", ctx.orgId)
-    .eq("warehouse_id", warehouseId)
-    .in("product_id", productIds);
-  type Loc = { id: string; product_id: string | null; quantity: number | null };
-  const locs = (locData ?? []) as Loc[];
-
-  const locsByProduct = new Map<string, Loc[]>();
-  for (const l of locs) {
-    if (!l.product_id) continue;
-    const arr = locsByProduct.get(l.product_id) ?? [];
-    arr.push(l);
-    locsByProduct.set(l.product_id, arr);
-  }
-  const onHand = (pid: string) =>
-    (locsByProduct.get(pid) ?? []).reduce((s, l) => s + (l.quantity ?? 0), 0);
-
-  // Validate enough of every component at this facility before mutating.
-  for (const c of components) {
-    const need = c.quantity * qty;
-    if (onHand(c.component_product_id) < need) {
-      return {
-        error: `Not enough stock at this facility to build ${qty} — short on a component.`,
-      };
-    }
-  }
-
-  const now = new Date().toISOString();
-
-  // Consume components (greedy decrement across the product's locations).
-  for (const c of components) {
-    let remaining = c.quantity * qty;
-    const rows = (locsByProduct.get(c.component_product_id) ?? []).sort(
-      (a, b) => (b.quantity ?? 0) - (a.quantity ?? 0)
-    );
-    for (const row of rows) {
-      if (remaining <= 0) break;
-      const have = row.quantity ?? 0;
-      const take = Math.min(have, remaining);
-      if (take <= 0) continue;
-      await ctx.supabase
-        .from("locations")
-        .update({ quantity: have - take })
-        .eq("id", row.id);
-      remaining -= take;
-    }
-    await ctx.supabase.from("scan_history").insert({
-      org_id: ctx.orgId,
-      product_id: c.component_product_id,
-      warehouse_id: warehouseId,
-      scanned_by: ctx.user.id,
-      action: "adjust",
-      quantity: -(c.quantity * qty),
-      notes: `Kit build: consumed for ${qty}× kit`,
-    });
-    revalidatePath(`/inventory/${c.component_product_id}`);
-  }
-
-  // Produce the kit: increment an existing kit location, or stage a new one.
-  const kitLocs = locsByProduct.get(kitId) ?? [];
-  if (kitLocs[0]) {
-    await ctx.supabase
-      .from("locations")
-      .update({ quantity: (kitLocs[0].quantity ?? 0) + qty })
-      .eq("id", kitLocs[0].id);
-  } else {
-    await ctx.supabase.from("locations").insert({
-      org_id: ctx.orgId,
-      product_id: kitId,
-      warehouse_id: warehouseId,
-      section_id: null,
-      bay: 0,
-      level: 0,
-      quantity: qty,
-      placed_by: ctx.user.id,
-    });
-  }
-  await ctx.supabase.from("scan_history").insert({
-    org_id: ctx.orgId,
-    product_id: kitId,
-    warehouse_id: warehouseId,
-    scanned_by: ctx.user.id,
-    action: "adjust",
-    quantity: qty,
-    notes: `Kit build: assembled ${qty} unit${qty === 1 ? "" : "s"}`,
-  });
+  const result = await assembleKit(
+    ctx.supabase,
+    { orgId: ctx.orgId, userId: ctx.user.id },
+    { kitId, warehouseId, qty, reason: "Kit build" }
+  );
+  if (result.error) return { error: result.error };
 
   revalidatePath("/kits");
   revalidatePath(`/inventory/${kitId}`);
+  for (const componentId of result.consumed?.keys() ?? []) {
+    revalidatePath(`/inventory/${componentId}`);
+  }
   return { success: `Built ${qty} × kit` };
 }
 
