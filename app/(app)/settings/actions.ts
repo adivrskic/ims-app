@@ -3,46 +3,15 @@
 import { revalidatePath } from "next/cache";
 import { randomBytes, createHash } from "crypto";
 import { createClient } from "@/lib/supabase/server";
+import { getActionContext } from "@/lib/data/actionContext";
 import { sendInviteEmail } from "@/lib/email/invite";
 import { createAdminClient } from "@/lib/supabase/admin";
-import {
-  effectivePermissions,
-  ALL_PERMISSIONS,
-  type Permission,
-} from "@/lib/permissions";
-
-async function getOrgContext() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return { error: "Not signed in" as const };
-
-  const { data: membership } = await supabase
-    .from("org_members")
-    .select("org_id, role, permissions")
-    .eq("user_id", user.id)
-    .limit(1)
-    .maybeSingle();
-
-  if (!membership) return { error: "No workspace membership" as const };
-  const perms = effectivePermissions(
-    membership.role as string,
-    (membership.permissions as string[] | null) ?? null
-  );
-  return {
-    supabase,
-    user,
-    orgId: membership.org_id as string,
-    role: membership.role as string,
-    can: (p: Permission) => perms.has(p),
-  };
-}
+import { ALL_PERMISSIONS } from "@/lib/permissions";
 
 // ─── MEMBERS ───────────────────────────────────────────────────
 
 export async function inviteMember(_prev: unknown, formData: FormData) {
-  const ctx = await getOrgContext();
+  const ctx = await getActionContext();
   if ("error" in ctx) return { error: ctx.error };
 
   const email = String(formData.get("email") ?? "")
@@ -117,7 +86,7 @@ export async function inviteMember(_prev: unknown, formData: FormData) {
 }
 
 export async function revokeInvite(formData: FormData) {
-  const ctx = await getOrgContext();
+  const ctx = await getActionContext();
   if ("error" in ctx) return;
   const id = String(formData.get("id") ?? "");
   await ctx.supabase
@@ -129,7 +98,7 @@ export async function revokeInvite(formData: FormData) {
 }
 
 export async function removeMember(formData: FormData) {
-  const ctx = await getOrgContext();
+  const ctx = await getActionContext();
   if ("error" in ctx) return;
   if (!ctx.can("members.manage")) return;
   const userId = String(formData.get("user_id") ?? "");
@@ -151,7 +120,7 @@ async function removeMemberInner(
 
 /** Set (or reset) a member's explicit permission overrides. */
 export async function setMemberPermissions(formData: FormData): Promise<void> {
-  const ctx = await getOrgContext();
+  const ctx = await getActionContext();
   if ("error" in ctx) return;
   if (!ctx.can("members.manage")) return;
   const userId = String(formData.get("user_id") ?? "");
@@ -189,7 +158,7 @@ export async function setMemberPermissions(formData: FormData): Promise<void> {
 // ─── API KEYS ──────────────────────────────────────────────────
 
 export async function createApiKey(_prev: unknown, formData: FormData) {
-  const ctx = await getOrgContext();
+  const ctx = await getActionContext();
   if ("error" in ctx) return { error: ctx.error };
   if (!ctx.can("settings.manage")) {
     return { error: "Only admins can create keys" };
@@ -222,7 +191,7 @@ export async function createApiKey(_prev: unknown, formData: FormData) {
 }
 
 export async function revokeApiKey(formData: FormData) {
-  const ctx = await getOrgContext();
+  const ctx = await getActionContext();
   if ("error" in ctx) return;
   if (!ctx.can("settings.manage")) return;
   const id = String(formData.get("id") ?? "");

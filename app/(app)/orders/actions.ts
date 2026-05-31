@@ -40,6 +40,9 @@ export async function createOrder(
 ): Promise<{ error?: string; success?: string; id?: string }> {
   const ctx = await getActionContext();
   if ("error" in ctx) return { error: ctx.error };
+  if (!ctx.can("orders.manage")) {
+    return { error: "You don't have permission to manage orders" };
+  }
 
   const orderType = String(formData.get("order_type") ?? "installer_job");
   const customerName = String(formData.get("customer_name") ?? "").trim();
@@ -229,6 +232,7 @@ export async function createOrder(
 export async function advanceOrderStatus(formData: FormData): Promise<void> {
   const ctx = await getActionContext();
   if ("error" in ctx) return;
+  if (!ctx.can("orders.manage")) return;
 
   const id = String(formData.get("id") ?? "");
   const currentStatus = String(
@@ -257,6 +261,7 @@ export async function advanceOrderStatus(formData: FormData): Promise<void> {
 export async function cancelOrder(formData: FormData): Promise<void> {
   const ctx = await getActionContext();
   if ("error" in ctx) return;
+  if (!ctx.can("orders.manage")) return;
   const id = String(formData.get("id") ?? "");
   await ctx.supabase
     .from("orders")
@@ -275,6 +280,7 @@ export async function cancelOrder(formData: FormData): Promise<void> {
 export async function allocateOrder(formData: FormData): Promise<void> {
   const ctx = await getActionContext();
   if ("error" in ctx) return;
+  if (!ctx.can("orders.allocate")) return;
   const id = String(formData.get("id") ?? "");
   if (!id) return;
   await allocateOrderInternal(ctx.supabase, ctx.orgId, id);
@@ -288,6 +294,7 @@ export async function allocateOrder(formData: FormData): Promise<void> {
 export async function fillBackorders(formData: FormData): Promise<void> {
   const ctx = await getActionContext();
   if ("error" in ctx) return;
+  if (!ctx.can("orders.allocate")) return;
   const warehouseId = String(formData.get("warehouse_id") ?? "");
   const productId = String(formData.get("product_id") ?? "");
   const poId = String(formData.get("po_id") ?? "");

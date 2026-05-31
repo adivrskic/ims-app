@@ -39,6 +39,9 @@ export async function createProduct(
 ): Promise<{ error?: string; success?: string; id?: string }> {
   const ctx = await getActionContext();
   if ("error" in ctx) return { error: ctx.error };
+  if (!ctx.can("inventory.manage")) {
+    return { error: "You don't have permission to manage the catalog" };
+  }
 
   const barcode = String(formData.get("barcode") ?? "").trim();
   const name = String(formData.get("name") ?? "").trim();

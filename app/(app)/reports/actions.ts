@@ -11,6 +11,9 @@ export async function saveReport(
 ): Promise<{ error?: string }> {
   const ctx = await getActionContext();
   if ("error" in ctx) return { error: ctx.error };
+  if (!ctx.can("reports.manage")) {
+    return { error: "You don't have permission to manage reports" };
+  }
 
   const name = String(formData.get("name") ?? "").trim();
   const dataset = String(formData.get("dataset") ?? "").trim();
@@ -55,6 +58,7 @@ export async function saveReport(
 export async function deleteReport(formData: FormData): Promise<void> {
   const ctx = await getActionContext();
   if ("error" in ctx) return;
+  if (!ctx.can("reports.manage")) return;
   const id = String(formData.get("id") ?? "");
   if (!id) return;
   await ctx.supabase

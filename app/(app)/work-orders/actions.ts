@@ -30,6 +30,9 @@ export async function createWorkOrder(
 ): Promise<{ error?: string }> {
   const ctx = await getActionContext();
   if ("error" in ctx) return { error: ctx.error };
+  if (!ctx.can("work_orders.manage")) {
+    return { error: "You don't have permission to manage work orders" };
+  }
 
   const productId = String(formData.get("product_id") ?? "").trim();
   const warehouseId = String(formData.get("warehouse_id") ?? "").trim();
@@ -104,6 +107,7 @@ export async function createWorkOrder(
 export async function setWorkOrderStatus(formData: FormData): Promise<void> {
   const ctx = await getActionContext();
   if ("error" in ctx) return;
+  if (!ctx.can("work_orders.manage")) return;
   const id = String(formData.get("id") ?? "");
   const status = String(formData.get("status") ?? "");
   // Completion has its own action (it mutates stock).
@@ -129,6 +133,9 @@ export async function completeWorkOrder(
 ): Promise<{ error?: string; success?: string }> {
   const ctx = await getActionContext();
   if ("error" in ctx) return { error: ctx.error };
+  if (!ctx.can("work_orders.manage")) {
+    return { error: "You don't have permission to manage work orders" };
+  }
   const id = String(formData.get("id") ?? "");
   if (!id) return { error: "Missing work order" };
 
@@ -157,6 +164,7 @@ export async function completeWorkOrder(
 export async function claimWorkOrder(formData: FormData): Promise<void> {
   const ctx = await getActionContext();
   if ("error" in ctx) return;
+  if (!ctx.can("work_orders.manage")) return;
   const id = String(formData.get("id") ?? "");
   const release = String(formData.get("release") ?? "") === "1";
   if (!id) return;
