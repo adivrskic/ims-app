@@ -333,7 +333,8 @@ export async function receiveLineItem(
   }
   // Inbound QC: receiving with "Hold for QC" quarantines the line for
   // inspection before it's cleared for putaway.
-  if (String(formData.get("qc_hold") ?? "") === "1") {
+  const qcHold = String(formData.get("qc_hold") ?? "") === "1";
+  if (qcHold) {
     lineUpdate.qc_status = "hold";
   }
 
@@ -395,6 +396,47 @@ export async function receiveLineItem(
   }
 
   await ctx.supabase.from("po_line_items").update(lineUpdate).eq("id", lineId);
+
+  // QC hold → land the received units as QUARANTINED on-hand: real stock (counts
+  // in valuation) that's held out of availability (ATP / pick / assembly) until
+  // QC clears it. Linked to the PO line so review can release/remove exactly
+  // these units. Held goods are not put away normally — they sit in quarantine
+  // until passed, so this doesn't double-count with a later putaway.
+  if (qcHold && productId) {
+    const { data: po } = await ctx.supabase
+      .from("purchase_orders")
+      .select("warehouse_id")
+      .eq("id", poId)
+      .maybeSingle();
+    const warehouseId =
+      (po as { warehouse_id: string | null } | null)?.warehouse_id ?? null;
+    if (warehouseId) {
+      await ctx.supabase.from("locations").insert({
+        org_id: ctx.orgId,
+        warehouse_id: warehouseId,
+        product_id: productId,
+        section_id: null,
+        // Holding pseudo-slot (no section). bay/level must be > 0 per the
+        // locations_{bay,level}_check constraints.
+        bay: 1,
+        level: 1,
+        quantity: qty,
+        is_active: true,
+        quarantined: true,
+        po_line_id: lineId,
+        placed_by: ctx.user.id,
+      });
+      await ctx.supabase.from("scan_history").insert({
+        org_id: ctx.orgId,
+        product_id: productId,
+        warehouse_id: warehouseId,
+        scanned_by: ctx.user.id,
+        action: "receive",
+        quantity: qty,
+        notes: "Received to QC quarantine",
+      });
+    }
+  }
 
   // Re-evaluate parent PO status
   const { data: allLines } = await ctx.supabase

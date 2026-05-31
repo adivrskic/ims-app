@@ -1,7 +1,8 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
+import { revalidatePath, revalidateTag } from "next/cache";
 import { getActionContext } from "@/lib/data/actionContext";
+import { tags } from "@/lib/cache-tags";
 
 /**
  * Record a QC decision on a held PO line: pass (cleared for putaway) or fail
@@ -37,6 +38,26 @@ export async function reviewQcLine(formData: FormData): Promise<void> {
     })
     .eq("id", lineId);
 
+  // Resolve the quarantined on-hand this line landed (see receiveLineItem):
+  //   pass → release it into available stock (clear the quarantine flag)
+  //   fail → remove it from on-hand (soft-delete; flagged for vendor return)
+  if (decision === "pass") {
+    await ctx.supabase
+      .from("locations")
+      .update({ quarantined: false })
+      .eq("po_line_id", lineId)
+      .eq("org_id", ctx.orgId)
+      .eq("quarantined", true);
+  } else {
+    await ctx.supabase
+      .from("locations")
+      .update({ is_active: false })
+      .eq("po_line_id", lineId)
+      .eq("org_id", ctx.orgId)
+      .eq("quarantined", true);
+  }
+
   revalidatePath("/receiving");
   if (poId) revalidatePath(`/purchase-orders/${poId}`);
+  revalidateTag(tags.inventory(ctx.orgId));
 }

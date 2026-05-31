@@ -473,6 +473,7 @@ async function loadPickSlots(
     .eq("org_id", orgId)
     .eq("warehouse_id", warehouseId)
     .eq("is_active", true)
+    .eq("quarantined", false) // never pick from QC quarantine
     .in("product_id", productIds);
 
   for (const l of (data ?? []) as Array<{
