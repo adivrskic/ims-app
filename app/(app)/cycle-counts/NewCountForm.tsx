@@ -25,6 +25,7 @@ interface LocationOption {
 interface Props {
   products: ProductOption[];
   locations: LocationOption[];
+  reasons: { code: string; label: string }[];
   initialProductId?: string | null;
 }
 
@@ -56,12 +57,14 @@ function sectionCode(loc: LocationOption): string {
 export function NewCountForm({
   products,
   locations,
+  reasons,
   initialProductId,
 }: Props) {
   const [, formAction] = useActionState(recordCycleCount, undefined);
   const [productId, setProductId] = useState(initialProductId ?? "");
   const [locationId, setLocationId] = useState("");
   const [countedQty, setCountedQty] = useState("");
+  const [reasonCode, setReasonCode] = useState("");
 
   const productLocations = locations.filter((l) => l.product_id === productId);
 
@@ -93,6 +96,7 @@ export function NewCountForm({
       */}
       <input type="hidden" name="product_id" value={productId} />
       <input type="hidden" name="location_id" value={locationId} />
+      <input type="hidden" name="reason_code" value={reasonCode} />
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-[1fr_1fr_140px_auto] gap-12 items-start">
         <Select
@@ -142,13 +146,25 @@ export function NewCountForm({
         </div>
       </div>
 
-      <Input
-        label="Notes (optional)"
-        name="notes"
-        type="text"
-        maxLength={500}
-        aria-label="Notes about this count"
-      />
+      <div className="grid grid-cols-1 md:grid-cols-[220px_1fr] gap-12">
+        {reasons.length > 0 && (
+          <Select
+            label="Reason (optional)"
+            value={reasonCode}
+            onChange={setReasonCode}
+            options={reasons.map((r) => ({ value: r.code, label: r.label }))}
+            placeholder="— None —"
+            ariaLabel="Adjustment reason"
+          />
+        )}
+        <Input
+          label="Notes (optional)"
+          name="notes"
+          type="text"
+          maxLength={500}
+          aria-label="Notes about this count"
+        />
+      </div>
     </form>
   );
 }

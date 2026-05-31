@@ -110,6 +110,10 @@ export function SectionDetail({
     if (r.error) {
       setLocations(prev);
       setError(r.error);
+    } else if (r.queued) {
+      // Over the approval threshold — on-hand unchanged until an admin approves.
+      setLocations(prev);
+      setError("Adjustment sent for approval — over the threshold.");
     } else if (r.location) {
       // Use the server's authoritative row in case anything else changed.
       setLocations((p) => p.map((l) => (l.id === locId ? r.location! : l)));
