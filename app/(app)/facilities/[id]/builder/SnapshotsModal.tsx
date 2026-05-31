@@ -48,6 +48,11 @@ export function SnapshotsModal({
   const [pendingRestore, setPendingRestore] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  // Set when a restore would orphan locations and we need a hard confirm.
+  const [unlinkConfirm, setUnlinkConfirm] = useState<{
+    id: string;
+    count: number;
+  } | null>(null);
 
   // Load on mount
   useEffect(() => {
@@ -93,17 +98,24 @@ export function SnapshotsModal({
     }
   };
 
-  const handleRestore = async (id: string) => {
-    if (pendingRestore !== id) {
+  const handleRestore = async (id: string, confirmUnlink = false) => {
+    if (!confirmUnlink && pendingRestore !== id) {
       setPendingRestore(id);
       setPendingDelete(null);
       return;
     }
     setBusyId(id);
     setErr(null);
-    const r = await restoreSnapshot(id);
+    const r = await restoreSnapshot(id, { confirmUnlink });
     setBusyId(null);
+    // Restore would orphan locations — surface a hard confirm, no writes yet.
+    if (r.needsConfirm) {
+      setUnlinkConfirm({ id, count: r.unlinkedLocations ?? 0 });
+      setPendingRestore(null);
+      return;
+    }
     setPendingRestore(null);
+    setUnlinkConfirm(null);
     if (r.error) {
       setErr(r.error);
       return;
@@ -208,6 +220,57 @@ export function SnapshotsModal({
             </CornerButton>
           </div>
         </div>
+
+        {/* Orphan-location confirmation — restore would unlink stored stock. */}
+        {unlinkConfirm && (
+          <div
+            className="px-18 py-14 hairline-b flex flex-col gap-10 shrink-0"
+            style={{ background: "var(--danger-dim)" }}
+            role="alertdialog"
+            aria-label="Confirm restore"
+          >
+            <div className="flex items-start gap-8">
+              <AlertTriangle
+                size={12}
+                strokeWidth={1.5}
+                className="mt-1 shrink-0 text-[var(--danger)]"
+              />
+              <p
+                className="mono-sm text-[var(--danger)]"
+                style={{ lineHeight: 1.55 }}
+              >
+                Restoring removes sections not in this snapshot. That will unlink{" "}
+                <strong>
+                  {unlinkConfirm.count} stored location
+                  {unlinkConfirm.count === 1 ? "" : "s"}
+                </strong>{" "}
+                from their section (the stock records stay, but lose their slot).
+              </p>
+            </div>
+            <div className="flex items-center gap-8">
+              <CornerButton
+                type="button"
+                variant="danger"
+                size="sm"
+                onClick={() => handleRestore(unlinkConfirm.id, true)}
+                loading={busyId === unlinkConfirm.id}
+                disabled={busyId === unlinkConfirm.id}
+              >
+                <RotateCcw size={11} strokeWidth={1.5} />
+                Restore &amp; unlink
+              </CornerButton>
+              <CornerButton
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => setUnlinkConfirm(null)}
+                disabled={busyId === unlinkConfirm.id}
+              >
+                Cancel
+              </CornerButton>
+            </div>
+          </div>
+        )}
 
         {/* List */}
         <div className="flex-1 min-h-0 overflow-y-auto">

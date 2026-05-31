@@ -13,6 +13,9 @@ export interface SectionDraft {
   total_levels: number;
   color: string;
   sort_order: number;
+  // Max units a single (bay, level) slot in this section can hold.
+  // null = unlimited / unknown (slotting treats capacity as a soft factor).
+  slot_capacity: number | null;
 }
 
 // ── Layout elements ───────────────────────────────────────────────────────

@@ -80,6 +80,7 @@ export async function saveLayout({
         total_levels: s.total_levels,
         color: s.color,
         sort_order: s.sort_order,
+        slot_capacity: s.slot_capacity,
       })
       .eq("id", s.id)
       .eq("org_id", ctx.orgId);
@@ -103,6 +104,7 @@ export async function saveLayout({
       total_levels: s.total_levels,
       color: s.color,
       sort_order: s.sort_order,
+      slot_capacity: s.slot_capacity,
     }));
     const { error } = await ctx.supabase.from("sections").insert(rows);
     if (error) return { error: `Insert sections failed: ${error.message}` };
@@ -160,6 +162,36 @@ export async function saveLayout({
   revalidatePath("/settings/facilities");
   revalidatePath(`/settings/facilities/${warehouseId}/builder`);
   return { success: "Layout saved" };
+}
+
+// ── Floor unit ──────────────────────────────────────────────────────────
+
+// Canonical layout unit. Floor coordinates are stored as unitless numbers
+// (1 coord = 1 unit, top-left origin); `floor_unit` is the interpretive
+// label only — switching it relabels, it does NOT rescale geometry.
+const VALID_FLOOR_UNITS = ["ft", "m"] as const;
+export type FloorUnit = (typeof VALID_FLOOR_UNITS)[number];
+
+export async function setFloorUnit(
+  warehouseId: string,
+  unit: FloorUnit
+): Promise<{ error?: string; unit?: FloorUnit }> {
+  const ctx = await getOrgContext();
+  if ("error" in ctx) return { error: ctx.error };
+  if (!["owner", "admin"].includes(ctx.role)) {
+    return { error: "Only admins can change the floor unit" };
+  }
+  if (!VALID_FLOOR_UNITS.includes(unit)) {
+    return { error: "Unsupported unit" };
+  }
+  const { error } = await ctx.supabase
+    .from("warehouses")
+    .update({ floor_unit: unit })
+    .eq("id", warehouseId)
+    .eq("org_id", ctx.orgId);
+  if (error) return { error: error.message };
+  revalidatePath(`/settings/facilities/${warehouseId}/builder`);
+  return { unit };
 }
 
 // ── Snapshots ───────────────────────────────────────────────────────────
@@ -288,9 +320,16 @@ export interface RestoreSnapshotResult {
   unlinkedLocations: number;
 }
 
-export async function restoreSnapshot(snapshotId: string): Promise<{
+export async function restoreSnapshot(
+  snapshotId: string,
+  opts?: { confirmUnlink?: boolean }
+): Promise<{
   error?: string;
   result?: RestoreSnapshotResult;
+  // Set when the restore would orphan locations and the caller hasn't yet
+  // confirmed. No writes happen in this case — re-call with confirmUnlink.
+  needsConfirm?: boolean;
+  unlinkedLocations?: number;
 }> {
   const ctx = await getOrgContext();
   if ("error" in ctx) return { error: ctx.error };
@@ -361,6 +400,7 @@ export async function restoreSnapshot(snapshotId: string): Promise<{
       total_levels: s.total_levels ?? 1,
       color: s.color ?? "#D4A853",
       sort_order: s.sort_order ?? 0,
+      slot_capacity: s.slot_capacity ?? null,
     };
   });
 
@@ -404,6 +444,12 @@ export async function restoreSnapshot(snapshotId: string): Promise<{
       .in("section_id", sectionsToDelete);
     if (countErr) return { error: countErr.message };
     unlinkedLocations = count ?? 0;
+  }
+
+  // ── 4b. Guard: if this restore would orphan locations, bail for an
+  //        explicit confirmation before mutating anything. ──────────────
+  if (unlinkedLocations > 0 && !opts?.confirmUnlink) {
+    return { needsConfirm: true, unlinkedLocations };
   }
 
   // ── 5. Apply: upsert snapshot rows, then delete extras. ──────────────
@@ -459,6 +505,7 @@ export async function restoreSnapshot(snapshotId: string): Promise<{
         total_levels: r.total_levels,
         color: r.color,
         sort_order: r.sort_order,
+        slot_capacity: r.slot_capacity ?? null,
       })),
       elements: elementRows.map((r) => ({
         id: r.id,

@@ -1,11 +1,20 @@
 "use client";
 
-import { useCallback, useEffect, useReducer, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useReducer,
+  useRef,
+  useState,
+} from "react";
+import { AlertTriangle } from "lucide-react";
 import { BuilderToolbar } from "./BuilderToolbar";
+import { overlappingSectionIds as computeOverlaps } from "./overlap";
 import { FloorCanvas } from "./FloorCanvas";
 import { Inspector } from "./Inspector";
 import { ScanUploadModal } from "./ScanUploadModal";
-import { saveLayout } from "./actions";
+import { saveLayout, setFloorUnit, type FloorUnit } from "./actions";
 import { useViewport } from "./useViewport";
 import { ELEMENT_PRESETS } from "./elementPresets";
 import { refsEqual } from "./types";
@@ -77,7 +86,20 @@ type Action =
   | { type: "undo" }
   | { type: "redo" }
   | { type: "reset_dirty" }
-  | { type: "apply_restored"; result: RestoreSnapshotResult };
+  | { type: "apply_restored"; result: RestoreSnapshotResult }
+  | { type: "hydrate"; entry: PersistedState };
+
+// The slice of builder state we persist to sessionStorage so an accidental
+// reload doesn't wipe unsaved edits + undo history. Transient fields
+// (selection, drag, moveSnapshot) are intentionally excluded.
+interface PersistedState {
+  sections: SectionDraft[];
+  elements: LayoutElementDraft[];
+  deletedSectionIds: string[];
+  deletedElementIds: string[];
+  past: HistoryEntry[];
+  future: HistoryEntry[];
+}
 
 const SECTION_COLORS = [
   "#D4A853",
@@ -155,6 +177,7 @@ function reducer(state: State, action: Action): State {
         total_levels: 3,
         color: SECTION_COLORS[state.sections.length % SECTION_COLORS.length],
         sort_order: nextSort,
+        slot_capacity: null,
       };
       const next = pushHistory(state);
       return {
@@ -402,6 +425,7 @@ function reducer(state: State, action: Action): State {
         total_levels: d.approximate_levels,
         color: SECTION_COLORS[i % SECTION_COLORS.length],
         sort_order: i + 1,
+        slot_capacity: null,
       }));
       const newDeleted = [
         ...state.deletedSectionIds,
@@ -463,17 +487,43 @@ function reducer(state: State, action: Action): State {
 
     case "reset_dirty":
       return { ...state, dirty: false };
+
+    case "hydrate":
+      return {
+        ...state,
+        sections: action.entry.sections,
+        elements: action.entry.elements,
+        deletedSectionIds: action.entry.deletedSectionIds,
+        deletedElementIds: action.entry.deletedElementIds,
+        past: action.entry.past,
+        future: action.entry.future,
+        selection: [],
+        dragInProgress: false,
+        moveSnapshot: null,
+        // We only persist while dirty, so a hydrated layout is by definition
+        // unsaved work to restore.
+        dirty: true,
+      };
   }
 }
+
+const STORAGE_VERSION = 1;
+const storageKey = (warehouseId: string) =>
+  `nimbus.builder.v${STORAGE_VERSION}.${warehouseId}`;
 
 export function BuilderShell({
   warehouseId,
   canvasWidth,
   canvasHeight,
-  floorUnit,
+  floorUnit: initialFloorUnit,
   initialSections,
   initialElements,
 }: Props) {
+  // Canonical unit is feet; meters is the only alternative. Switching only
+  // relabels (coords are unitless) — see setFloorUnit in actions.ts.
+  const [floorUnit, setFloorUnitState] = useState<FloorUnit>(
+    initialFloorUnit === "m" ? "m" : "ft"
+  );
   const [state, dispatch] = useReducer(reducer, {
     sections: initialSections,
     elements: initialElements,
@@ -495,6 +545,18 @@ export function BuilderShell({
   const [snapshotsOpen, setSnapshotsOpen] = useState(false);
   const [scanOpen, setScanOpen] = useState(false);
   const [snapEnabled, setSnapEnabled] = useState(true);
+
+  // Slotting (#8) reads a `door` element as the receiving / travel-distance
+  // origin. Surface a non-blocking nudge when a facility has none.
+  const hasDoor = state.elements.some((e) => e.kind === "door");
+
+  // Overlapping sections corrupt slotting geometry, so saving is blocked
+  // until they're separated. Recomputed only when section geometry changes.
+  const overlapIds = useMemo(
+    () => computeOverlaps(state.sections),
+    [state.sections]
+  );
+  const hasOverlap = overlapIds.size > 0;
 
   const containerRef = useRef<HTMLDivElement | null>(null);
   const viewportApi = useViewport();
@@ -519,6 +581,60 @@ export function BuilderShell({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Rehydrate unsaved edits + undo history from sessionStorage once on mount,
+  // so an accidental reload doesn't discard work. Keyed per warehouse/tab.
+  const hydratedRef = useRef(false);
+  useEffect(() => {
+    if (hydratedRef.current) return;
+    hydratedRef.current = true;
+    try {
+      const raw = sessionStorage.getItem(storageKey(warehouseId));
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as PersistedState;
+      if (Array.isArray(parsed?.sections) && Array.isArray(parsed?.elements)) {
+        dispatch({ type: "hydrate", entry: parsed });
+      }
+    } catch {
+      // Corrupt/incompatible payload — ignore and start from server state.
+    }
+  }, [warehouseId]);
+
+  // Persist the working state whenever it changes (and we're not mid-drag, to
+  // avoid stringifying on every frame). Clears the key once saved/clean.
+  useEffect(() => {
+    if (state.dragInProgress) return;
+    try {
+      if (state.dirty) {
+        const payload: PersistedState = {
+          sections: state.sections,
+          elements: state.elements,
+          deletedSectionIds: state.deletedSectionIds,
+          deletedElementIds: state.deletedElementIds,
+          past: state.past,
+          future: state.future,
+        };
+        sessionStorage.setItem(
+          storageKey(warehouseId),
+          JSON.stringify(payload)
+        );
+      } else {
+        sessionStorage.removeItem(storageKey(warehouseId));
+      }
+    } catch {
+      // Storage full or unavailable — non-fatal; persistence is best-effort.
+    }
+  }, [
+    warehouseId,
+    state.dirty,
+    state.dragInProgress,
+    state.sections,
+    state.elements,
+    state.deletedSectionIds,
+    state.deletedElementIds,
+    state.past,
+    state.future,
+  ]);
+
   const handleRestored = useCallback((result: RestoreSnapshotResult) => {
     dispatch({ type: "apply_restored", result });
     setFeedback({
@@ -534,6 +650,14 @@ export function BuilderShell({
   }, []);
 
   const handleSave = useCallback(async () => {
+    if (computeOverlaps(state.sections).size > 0) {
+      setFeedback({
+        kind: "err",
+        msg: "Resolve overlapping sections before saving",
+      });
+      setTimeout(() => setFeedback(null), 3000);
+      return;
+    }
     setSaving(true);
     setFeedback(null);
     const result = await saveLayout({
@@ -558,6 +682,18 @@ export function BuilderShell({
     state.elements,
     state.deletedElementIds,
   ]);
+
+  const handleToggleUnit = useCallback(async () => {
+    const next: FloorUnit = floorUnit === "ft" ? "m" : "ft";
+    const prev = floorUnit;
+    setFloorUnitState(next); // optimistic — it's only a label
+    const r = await setFloorUnit(warehouseId, next);
+    if (r.error) {
+      setFloorUnitState(prev);
+      setFeedback({ kind: "err", msg: r.error });
+      setTimeout(() => setFeedback(null), 2500);
+    }
+  }, [floorUnit, warehouseId]);
 
   const viewportCenterFloor = useCallback((): { x: number; y: number } => {
     const el = containerRef.current;
@@ -804,6 +940,7 @@ export function BuilderShell({
         selectionCount={state.selection.length}
         dirty={state.dirty}
         saving={saving}
+        saveBlocked={hasOverlap}
         canUndo={state.past.length > 0}
         canRedo={state.future.length > 0}
         canDuplicate={state.selection.length > 0}
@@ -818,12 +955,64 @@ export function BuilderShell({
         onSave={handleSave}
         snapEnabled={snapEnabled}
         onToggleSnap={() => setSnapEnabled((v) => !v)}
+        floorUnit={floorUnit}
+        onToggleUnit={handleToggleUnit}
         zoomPercent={viewport.zoom * 100}
         onZoomIn={handleZoomIn}
         onZoomOut={handleZoomOut}
         onZoomReset={resetZoom}
         onFit={handleFit}
       />
+
+      {hasOverlap && (
+        <div
+          className="hairline-subtle px-12 py-8 flex items-center gap-10 shrink-0"
+          style={{ background: "var(--danger-dim)" }}
+          role="alert"
+        >
+          <AlertTriangle
+            size={12}
+            strokeWidth={1.5}
+            className="shrink-0 text-[var(--danger)]"
+          />
+          <span className="mono-sm text-[var(--danger)] flex-1">
+            {overlapIds.size} section{overlapIds.size === 1 ? "" : "s"} overlap
+            another. Saving is blocked until sections occupy distinct floor
+            space.
+          </span>
+        </div>
+      )}
+
+      {!hasDoor && (
+        <div
+          className="hairline-subtle px-12 py-8 flex items-center gap-10 shrink-0"
+          style={{ background: "var(--accent-dim)" }}
+          role="status"
+        >
+          <AlertTriangle
+            size={12}
+            strokeWidth={1.5}
+            className="shrink-0 text-[var(--accent)]"
+          />
+          <span className="mono-sm text-text-secondary flex-1">
+            No dock door placed. Slotting suggestions use a door as the
+            travel-distance origin — add one for accurate golden-zone scoring.
+          </span>
+          <button
+            type="button"
+            onClick={() => handleAddElement("door")}
+            className="hairline-subtle px-10 py-5 hover:border-[var(--accent)] hover:text-[var(--accent)] text-text-secondary transition-colors shrink-0"
+            style={{
+              fontFamily: "var(--mono)",
+              fontSize: 10,
+              letterSpacing: "0.8px",
+              textTransform: "uppercase",
+            }}
+          >
+            Add door
+          </button>
+        </div>
+      )}
 
       <div className="flex gap-12 flex-1 min-h-0">
         <FloorCanvas
@@ -833,6 +1022,7 @@ export function BuilderShell({
           sections={state.sections}
           elements={state.elements}
           selection={state.selection}
+          overlappingSectionIds={overlapIds}
           onPointerDownItem={handlePointerDownItem}
           onSetSelection={handleSetSelection}
           onMoveDelta={handleMoveDelta}

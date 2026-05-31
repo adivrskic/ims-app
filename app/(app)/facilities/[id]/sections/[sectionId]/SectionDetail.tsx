@@ -33,6 +33,7 @@ interface Props {
   sectionColor: string;
   totalBays: number;
   totalLevels: number;
+  slotCapacity: number | null;
   locations: LocationRow[];
 }
 
@@ -46,6 +47,7 @@ export function SectionDetail({
   sectionColor,
   totalBays,
   totalLevels,
+  slotCapacity,
   locations: initialLocations,
 }: Props) {
   // Local mutable copy of locations — optimistic mutations land here.
@@ -317,6 +319,7 @@ export function SectionDetail({
                             level={lvl}
                             locations={locs}
                             color={sectionColor}
+                            capacity={slotCapacity}
                             selected={isSelected}
                             onSelect={() => {
                               setSelected((cur) => (cur === k ? null : k));
@@ -470,6 +473,7 @@ function SlotCell({
   level,
   locations,
   color,
+  capacity,
   selected,
   onSelect,
 }: {
@@ -477,13 +481,21 @@ function SlotCell({
   level: number;
   locations: LocationRow[] | undefined;
   color: string;
+  capacity: number | null;
   selected: boolean;
   onSelect: () => void;
 }) {
   const count = locations?.length ?? 0;
   const empty = count === 0;
   const totalQty = (locations ?? []).reduce((a, l) => a + (l.quantity ?? 0), 0);
-  const fill = Math.min(1, totalQty / 50);
+  // With a known capacity the fill bar is meaningful; otherwise fall back to
+  // the old soft scale (50 units ≈ "busy") just to show relative load.
+  const fill =
+    capacity && capacity > 0
+      ? Math.min(1, totalQty / capacity)
+      : Math.min(1, totalQty / 50);
+  const isFull = capacity != null && totalQty >= capacity;
+  const isOver = capacity != null && totalQty > capacity;
 
   return (
     <button
@@ -492,6 +504,8 @@ function SlotCell({
       className={`relative w-full hairline-subtle transition-colors text-left ${
         selected
           ? "border-[var(--accent)] bg-[var(--accent-dim)]"
+          : isOver
+          ? "border-[var(--danger)]"
           : empty
           ? "hover:border-[var(--border-hover)] bg-[var(--surface)]"
           : "hover:border-[var(--accent)]"
@@ -502,7 +516,11 @@ function SlotCell({
         background: selected ? undefined : empty ? undefined : color + "1f",
       }}
       aria-label={`Bay ${bay} level ${level}, ${
-        empty ? "empty" : `${count} locations, ${totalQty} units`
+        empty
+          ? "empty"
+          : `${count} locations, ${totalQty}${
+              capacity != null ? ` of ${capacity}` : ""
+            } units${isFull ? ", full" : ""}`
       }`}
     >
       {!empty && (
@@ -513,11 +531,26 @@ function SlotCell({
             left: 0,
             height: 3,
             width: `${fill * 100}%`,
-            background: color,
+            background: isOver ? "var(--danger)" : color,
             opacity: 0.85,
           }}
           aria-hidden
         />
+      )}
+      {isFull && (
+        <span
+          className="absolute top-4 right-4"
+          style={{
+            fontFamily: "var(--mono)",
+            fontSize: 7,
+            letterSpacing: "0.5px",
+            textTransform: "uppercase",
+            color: isOver ? "var(--danger)" : "var(--text-muted)",
+          }}
+          aria-hidden
+        >
+          {isOver ? "Over" : "Full"}
+        </span>
       )}
       <div className="flex flex-col gap-4 min-w-0">
         <span
@@ -554,7 +587,8 @@ function SlotCell({
               className="text-text-muted truncate"
               style={{ fontFamily: "var(--mono)", fontSize: 9 }}
             >
-              {totalQty} units
+              {capacity != null ? `${totalQty} / ${capacity}` : `${totalQty}`}{" "}
+              units
             </span>
           </>
         )}
