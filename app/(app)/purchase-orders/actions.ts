@@ -271,10 +271,12 @@ export async function receiveLineItem(
   const poId = String(formData.get("po_id") ?? "");
   const qtyRaw = String(formData.get("quantity_received") ?? "").trim();
   const landedRaw = String(formData.get("landed_unit_cost") ?? "").trim();
+  const lotNumber = String(formData.get("lot_number") ?? "").trim();
+  const lotExpiry = String(formData.get("lot_expiry") ?? "").trim();
 
   const { data: line } = await ctx.supabase
     .from("po_line_items")
-    .select("quantity_expected, quantity_received")
+    .select("quantity_expected, quantity_received, product_id")
     .eq("id", lineId)
     .maybeSingle();
   if (!line) return { error: "Line not found" };
@@ -319,6 +321,63 @@ export async function receiveLineItem(
   };
   if (landedCost !== null) {
     lineUpdate.landed_unit_cost = landedCost;
+  }
+
+  // Lot capture: when a lot number is entered, find-or-create the lot for this
+  // product and attach it to the line. Also flips the product to lot-tracked
+  // and stamps the lot's expiry (so it surfaces in the Lots registry + alerts).
+  const productId = (line as { product_id: string | null }).product_id;
+  if (lotNumber && productId) {
+    const { data: po } = await ctx.supabase
+      .from("purchase_orders")
+      .select("supplier_id")
+      .eq("id", poId)
+      .maybeSingle();
+    const supplierId =
+      (po as { supplier_id: string | null } | null)?.supplier_id ?? null;
+
+    const { data: existingLot } = await ctx.supabase
+      .from("lots")
+      .select("id")
+      .eq("org_id", ctx.orgId)
+      .eq("product_id", productId)
+      .eq("lot_number", lotNumber)
+      .maybeSingle();
+
+    let lotId = (existingLot as { id: string } | null)?.id ?? null;
+    if (!lotId) {
+      const { data: newLot } = await ctx.supabase
+        .from("lots")
+        .insert({
+          org_id: ctx.orgId,
+          product_id: productId,
+          lot_number: lotNumber,
+          expires_at: lotExpiry || null,
+          supplier_id: supplierId,
+          received_at: new Date().toISOString(),
+          created_by: ctx.user.id,
+        })
+        .select("id")
+        .single();
+      lotId = (newLot as { id: string } | null)?.id ?? null;
+    } else if (lotExpiry) {
+      // Backfill expiry onto an existing lot if it was registered without one.
+      await ctx.supabase
+        .from("lots")
+        .update({ expires_at: lotExpiry })
+        .eq("id", lotId)
+        .eq("org_id", ctx.orgId);
+    }
+
+    lineUpdate.lot_number = lotNumber;
+    if (lotId) lineUpdate.lot_id = lotId;
+
+    // Receiving into a lot means this product is lot-tracked.
+    await ctx.supabase
+      .from("products")
+      .update({ track_lots: true })
+      .eq("id", productId)
+      .eq("org_id", ctx.orgId);
   }
 
   await ctx.supabase.from("po_line_items").update(lineUpdate).eq("id", lineId);
