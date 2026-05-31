@@ -22,9 +22,10 @@ import { Logo } from "@/components/ui/Logo";
 import { LogoWordmark } from "@/components/ui/LogoWordmark";
 import {
   ALL_NAV_ITEMS,
-  resolveNav,
+  resolveUserNav,
   findActiveHref,
   type NavItem,
+  type NavPrefs,
 } from "@/lib/navData";
 import { WorkspaceSwitcher, type WorkspaceOption } from "./WorkspaceSwitcher";
 import type { NotificationItem } from "./NotificationsDropdown";
@@ -52,6 +53,8 @@ interface Props {
   currentFacilityId: string | null;
   /** Workspace industry slug — drives which items show by default. */
   industry: string | null;
+  /** Per-user nav customization (overrides industry defaults when set). */
+  navPrefs: NavPrefs | null;
 }
 
 /**
@@ -77,6 +80,7 @@ export function SideRail({
   facilities,
   currentFacilityId,
   industry,
+  navPrefs,
 }: Props) {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(initialCollapsed);
@@ -118,11 +122,12 @@ export function SideRail({
     [pathname]
   );
 
-  // Industry-driven nav: primary items stay grouped; the rest collapse into
-  // "More" so nothing's unreachable (and ⌘K finds everything regardless).
+  // Per-user nav (falls back to industry defaults): primary items render
+  // grouped (industry) or as one flat list (customized); the rest collapse
+  // into "More" so nothing's unreachable (⌘K finds everything regardless).
   const { groups: navGroups, more: moreItems } = useMemo(
-    () => resolveNav(industry),
-    [industry]
+    () => resolveUserNav(industry, navPrefs),
+    [industry, navPrefs]
   );
 
   const width = collapsed ? COLLAPSED_WIDTH : EXPANDED_WIDTH;
@@ -190,9 +195,9 @@ export function SideRail({
           collapsed ? "px-6 py-10 gap-10" : "px-10 py-14 gap-18"
         }`}
       >
-        {navGroups.map((group) => (
-          <div key={group.label}>
-            {!collapsed && (
+        {navGroups.map((group, gi) => (
+          <div key={group.label ?? `g${gi}`}>
+            {!collapsed && group.label && (
               <div className="px-10 mb-6">
                 <span className="label-text">{group.label}</span>
               </div>

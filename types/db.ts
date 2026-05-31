@@ -49,6 +49,8 @@ export interface ProfileRow {
   is_active: boolean | null;
   created_at: string | null;
   updated_at: string | null;
+  /** Per-user sidenav prefs (keys), or null = use industry defaults. */
+  nav_prefs: { order: string[]; hidden: string[] } | null;
 }
 
 export interface WarehouseRow {
@@ -219,7 +221,16 @@ export type Database = {
       };
       profiles: {
         Row: ProfileRow;
-        Insert: ProfileRow;
+        Insert: WithGenerated<
+          ProfileRow,
+          | "phone"
+          | "avatar_url"
+          | "default_warehouse_id"
+          | "is_active"
+          | "created_at"
+          | "updated_at"
+          | "nav_prefs"
+        >;
         Update: Partial<ProfileRow>;
         Relationships: [];
       };
