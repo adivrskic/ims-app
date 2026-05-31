@@ -9,15 +9,23 @@ import type { SupabaseClient } from "@supabase/supabase-js";
  * holds stock back from being promised twice.
  *
  *   on_hand     = Σ locations.quantity (active) for a product in a facility
- *   allocated   = Σ max(0, quantity_allocated - quantity_picked) over OPEN orders
- *                 (only the *unpicked* part still holds on-hand; picked units have
- *                 already physically left the shelf)
- *   ATP         = on_hand - allocated         (what's free to promise)
+ *   committed   = Σ max(quantity_allocated, quantity_picked) over OPEN orders
+ *                 (units held back from being promised: the reservation, or what
+ *                 has already been picked if that's more — see the picking note)
+ *   ATP         = on_hand - committed         (what's free to promise)
  *   backordered = quantity_requested - quantity_allocated   (per line, ≥ 0)
  *
- * Allocation is per-facility: an order's `warehouse_id` is the source. Picking
- * and the physical on-hand decrement happen on the mobile app; this layer never
- * touches `locations`.
+ * Allocation is per-facility: an order's `warehouse_id` is the source.
+ *
+ * PICKING CONTRACT (verified against the mobile app, repo `hello-world2`,
+ * app/orders/[id].tsx): confirming a pick writes `quantity_picked` + a 'pick'
+ * scan_history row but does NOT decrement `locations.quantity` — and no order
+ * transition (ship/complete) decrements it either. So on-hand is "nominal until
+ * shipped": picked units are still counted in `on_hand`. We therefore hold back
+ * `max(allocated, picked)` rather than the unpicked remainder `allocated - picked`
+ * — otherwise picking an order would progressively raise its ATP and oversell the
+ * picked-but-unshipped units. (Physically depleting on-hand at ship is a separate,
+ * larger change — see docs/audit-followups.md.)
  */
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -35,9 +43,9 @@ export const OPEN_ORDER_STATUSES = [
 
 export interface StockAvailability {
   onHand: number;
-  /** Unpicked reserved units across open orders (holds on-hand back). */
+  /** Committed units across open orders = Σ max(allocated, picked) (holds on-hand back). */
   allocated: number;
-  /** on_hand − allocated. Can go negative if over-allocated; callers clamp. */
+  /** on_hand − committed. Can go negative if over-committed; callers clamp. */
   atp: number;
   /** Open backordered demand for this product in this facility. */
   backordered: number;
@@ -112,7 +120,7 @@ export async function getStockAvailability(
       const allocated = it.quantity_allocated ?? 0;
       const picked = it.quantity_picked ?? 0;
       const requested = it.quantity_requested ?? 0;
-      cur.allocated += Math.max(0, allocated - picked);
+      cur.allocated += Math.max(allocated, picked);
       cur.backordered += Math.max(0, requested - allocated);
       out.set(it.product_id, cur);
     }
@@ -156,7 +164,7 @@ export async function getProductAllocationOrgWide(
     quantity_allocated: number | null;
     quantity_picked: number | null;
   }>) {
-    allocated += Math.max(0, (it.quantity_allocated ?? 0) - (it.quantity_picked ?? 0));
+    allocated += Math.max(it.quantity_allocated ?? 0, it.quantity_picked ?? 0);
     backordered += Math.max(0, (it.quantity_requested ?? 0) - (it.quantity_allocated ?? 0));
   }
   return { allocated, backordered };
@@ -194,9 +202,10 @@ export interface PlannedLine {
  * Greedy allocation for a set of lines against a per-product free pool.
  *
  * `freePool` is the stock available to THIS order per product — i.e. on-hand
- * minus everyone else's unpicked reservations (the caller computes it by
- * excluding this order). Allocation never drops below already-picked units and
- * never exceeds requested. Lines sharing a product draw the pool in order.
+ * minus everyone else's committed units (Σ max(allocated, picked); the caller
+ * computes it by excluding this order). Allocation never drops below already-
+ * picked units and never exceeds requested. Lines sharing a product draw the
+ * pool in order.
  */
 export function planAllocation(
   lines: AllocLine[],
