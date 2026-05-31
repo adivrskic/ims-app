@@ -107,6 +107,19 @@ export function ReceiveLineForm({
         </span>
       </label>
 
+      {/* Lot expiry (optional — only meaningful with a lot #) */}
+      <label className="flex flex-col items-end">
+        <input
+          name="lot_expiry"
+          type="date"
+          className="hairline-subtle bg-[var(--surface-2)] mono-sm text-text px-8 py-4 text-right w-[126px] focus:border-[var(--accent)] outline-none"
+          aria-label="Lot expiry date (optional)"
+        />
+        <span className="label-text text-text-dim mt-1" style={{ fontSize: 9 }}>
+          expiry
+        </span>
+      </label>
+
       <button
         type="submit"
         disabled={pending}

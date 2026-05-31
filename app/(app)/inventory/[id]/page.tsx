@@ -11,6 +11,7 @@ import { ProductDetailRealtime } from "@/components/realtime/PageRealtime";
 import { formatCurrency } from "@/lib/dashboard";
 import { productVelocity } from "@/lib/data/velocity";
 import { daysToStockout } from "@/lib/replenishment";
+import { expiryStatus, expiryLabel } from "@/lib/lots";
 import type { ScanAction } from "@/types/db";
 import { PrintLabelButton } from "@/components/print/PrintLabelButton";
 import { productLabel } from "@/lib/print/zplTemplates";
@@ -173,6 +174,24 @@ export default async function ProductDetailPage({
       | null;
   };
   const lotRows = (lots ?? []) as LotRow[];
+
+  // FEFO ordering: earliest expiry first (lots with no expiry sort last). The
+  // first non-expired lot that still has received stock is the suggested pick.
+  const fefoLots = [...lotRows].sort((a, b) => {
+    if (a.expires_at && b.expires_at) {
+      return a.expires_at < b.expires_at ? -1 : a.expires_at > b.expires_at ? 1 : 0;
+    }
+    if (a.expires_at) return -1;
+    if (b.expires_at) return 1;
+    return 0;
+  });
+  const fefoPickId =
+    fefoLots.find(
+      (l) =>
+        l.expires_at &&
+        (receivedByLot.get(l.id) ?? 0) > 0 &&
+        expiryStatus(l.expires_at) !== "expired"
+    )?.id ?? null;
 
   type CycleCountRow = {
     id: string;
@@ -401,13 +420,12 @@ export default async function ProductDetailPage({
       {/* P4: Lots received */}
       <section aria-labelledby="lots-heading">
         <SectionTitle
-          eyebrow="Provenance"
+          eyebrow="Provenance · FEFO"
           title="Lots received"
           action={
             lotRows.length > 0 ? (
               <span className="label-text text-text-muted">
-                {lotRows.length} {lotRows.length === 1 ? "lot" : "lots"} on
-                record
+                Earliest expiry first
               </span>
             ) : undefined
           }
@@ -431,20 +449,38 @@ export default async function ProductDetailPage({
                 </tr>
               </thead>
               <tbody>
-                {lotRows.map((lot) => {
+                {fefoLots.map((lot) => {
                   const sup = Array.isArray(lot.supplier)
                     ? lot.supplier[0]
                     : lot.supplier;
                   const received = receivedByLot.get(lot.id) ?? 0;
+                  const status = expiryStatus(lot.expires_at);
+                  const isFefo = lot.id === fefoPickId;
                   return (
                     <tr key={lot.id} className="hairline-b last:border-b-0">
                       <Td>
-                        <code
-                          className="mono-body text-text"
-                          style={{ fontSize: 12 }}
-                        >
-                          {lot.lot_number}
-                        </code>
+                        <div className="flex items-center gap-8">
+                          <code
+                            className="mono-body text-text"
+                            style={{ fontSize: 12 }}
+                          >
+                            {lot.lot_number}
+                          </code>
+                          {isFefo && (
+                            <span
+                              className="bg-[var(--accent-dim)] text-[var(--accent)] px-6 py-1 shrink-0"
+                              style={{
+                                fontFamily: "var(--mono)",
+                                fontSize: 8,
+                                letterSpacing: "0.5px",
+                                textTransform: "uppercase",
+                              }}
+                              title="First-expiring lot with stock — pick this first (FEFO)"
+                            >
+                              Pick first
+                            </span>
+                          )}
+                        </div>
                       </Td>
                       <Td>
                         {sup ? (
@@ -473,7 +509,18 @@ export default async function ProductDetailPage({
                         </span>
                       </Td>
                       <Td>
-                        <span className="mono-sm text-text-secondary">
+                        <span
+                          className="mono-sm"
+                          style={{
+                            color:
+                              status === "expired"
+                                ? "var(--danger)"
+                                : status === "soon"
+                                ? "var(--warning)"
+                                : "var(--text-secondary)",
+                          }}
+                          title={lot.expires_at ? expiryLabel(lot.expires_at) : undefined}
+                        >
                           {lot.expires_at
                             ? new Date(
                                 lot.expires_at + "T00:00:00"
