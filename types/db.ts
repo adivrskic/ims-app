@@ -106,8 +106,23 @@ export interface ProductRow {
   notes: string | null;
   photo_url: string | null;
   reorder_point: number | null;
+  /** Opt-in: this product is lot/batch + expiry tracked. */
+  track_lots: boolean;
   created_at: string | null;
   updated_at: string | null;
+}
+
+export interface LotRow {
+  id: string;
+  org_id: string;
+  product_id: string;
+  lot_number: string;
+  supplier_id: string | null;
+  received_at: string | null;
+  expires_at: string | null;
+  notes: string | null;
+  created_by: string | null;
+  created_at: string;
 }
 
 export interface LocationRow {
@@ -257,8 +272,20 @@ export type Database = {
       };
       products: {
         Row: ProductRow;
-        Insert: WithGenerated<ProductRow, "id" | "created_at" | "updated_at">;
+        Insert: WithGenerated<
+          ProductRow,
+          "id" | "created_at" | "updated_at" | "track_lots"
+        >;
         Update: Partial<ProductRow>;
+        Relationships: [];
+      };
+      lots: {
+        Row: LotRow;
+        Insert: WithGenerated<
+          LotRow,
+          "id" | "created_at" | "received_at" | "supplier_id" | "notes" | "created_by"
+        >;
+        Update: Partial<LotRow>;
         Relationships: [];
       };
       locations: {
