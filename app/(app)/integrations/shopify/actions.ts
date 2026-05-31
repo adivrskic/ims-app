@@ -15,7 +15,7 @@ export async function startShopifyOauth(
 ): Promise<{ error?: string }> {
   const ctx = await getCurrentOrgContext();
   if (!ctx) return { error: "Not signed in" };
-  if (!["owner", "admin"].includes(ctx.role)) {
+  if (!ctx.can("integrations.manage")) {
     return { error: "Only admins can connect integrations" };
   }
 
@@ -33,7 +33,7 @@ export async function updateDefaultFacility(
 ): Promise<{ error?: string; success?: string }> {
   const ctx = await getCurrentOrgContext();
   if (!ctx) return { error: "Not signed in" };
-  if (!["owner", "admin"].includes(ctx.role)) {
+  if (!ctx.can("integrations.manage")) {
     return { error: "Only admins can edit integration config" };
   }
 
@@ -110,7 +110,7 @@ export async function testShopify(): Promise<{
 export async function disconnectShopify(): Promise<void> {
   const ctx = await getCurrentOrgContext();
   if (!ctx) return;
-  if (!["owner", "admin"].includes(ctx.role)) return;
+  if (!ctx.can("integrations.manage")) return;
 
   const admin = createAdminClient();
   const { data: row } = await admin

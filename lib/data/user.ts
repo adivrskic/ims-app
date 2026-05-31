@@ -3,6 +3,7 @@ import { cache } from "react";
 import { cookies } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
 import { CURRENT_WORKSPACE_COOKIE } from "@/lib/currentWorkspace";
+import { effectivePermissions, type Permission } from "@/lib/permissions";
 
 /**
  * Request-cached fetchers for user / profile / membership.
@@ -40,6 +41,7 @@ export interface Membership {
   org_id: string;
   role: "owner" | "admin" | "member";
   joined_at: string | null;
+  permissions: string[] | null;
   org: {
     id: string;
     name: string;
@@ -54,7 +56,9 @@ export const getMemberships = cache(async (): Promise<Membership[]> => {
   const supabase = await createClient();
   const { data } = await supabase
     .from("org_members")
-    .select("org_id, role, joined_at, org:orgs ( id, name, slug, industry )")
+    .select(
+      "org_id, role, joined_at, permissions, org:orgs ( id, name, slug, industry )"
+    )
     .eq("user_id", user.id);
   return (data ?? []).map((m) => {
     const org = Array.isArray(m.org) ? m.org[0] : m.org;
@@ -62,6 +66,7 @@ export const getMemberships = cache(async (): Promise<Membership[]> => {
       org_id: m.org_id as string,
       role: m.role as "owner" | "admin" | "member",
       joined_at: m.joined_at as string | null,
+      permissions: (m.permissions as string[] | null) ?? null,
       org: org as Membership["org"],
     };
   });
@@ -112,10 +117,13 @@ export const getCurrentOrgContext = cache(async () => {
   if (!active) return null;
   const user = await getCurrentUser();
   if (!user) return null;
+  const permissions = effectivePermissions(active.role, active.permissions);
   return {
     user,
     orgId: active.org_id,
     role: active.role,
+    permissions,
+    can: (p: Permission) => permissions.has(p),
   };
 });
 

@@ -175,7 +175,7 @@ export async function recordCycleCount(
 export async function voidCycleCount(formData: FormData): Promise<void> {
   const ctx = await getActionContext();
   if ("error" in ctx) return;
-  if (!["owner", "admin"].includes(ctx.role)) return;
+  if (!ctx.can("cycle_counts.void")) return;
   const id = String(formData.get("id") ?? "");
   await ctx.supabase
     .from("cycle_counts")

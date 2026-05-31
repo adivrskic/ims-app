@@ -59,7 +59,7 @@ export async function resetNavPrefs(): Promise<{ error?: string }> {
 export async function updateIndustry(formData: FormData): Promise<void> {
   const ctx = await getActionContext();
   if ("error" in ctx) return;
-  if (!["owner", "admin"].includes(ctx.role)) return;
+  if (!ctx.can("settings.manage")) return;
 
   const raw = String(formData.get("industry") ?? "").trim();
   const industry = isIndustrySlug(raw) ? raw : null;

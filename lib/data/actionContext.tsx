@@ -1,6 +1,7 @@
 import "server-only";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentOrgContext } from "@/lib/data/user";
+import type { Permission } from "@/lib/permissions";
 
 /**
  * The single context helper every server action should use to resolve "which
@@ -25,11 +26,20 @@ export async function getActionContext(): Promise<
       >["user"];
       orgId: string;
       role: "owner" | "admin" | "member";
+      permissions: Set<Permission>;
+      can: (p: Permission) => boolean;
     }
   | { error: "Not signed in" | "No workspace" }
 > {
   const ctx = await getCurrentOrgContext();
   if (!ctx) return { error: "No workspace" };
   const supabase = await createClient();
-  return { supabase, user: ctx.user, orgId: ctx.orgId, role: ctx.role };
+  return {
+    supabase,
+    user: ctx.user,
+    orgId: ctx.orgId,
+    role: ctx.role,
+    permissions: ctx.permissions,
+    can: ctx.can,
+  };
 }

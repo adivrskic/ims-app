@@ -3,6 +3,7 @@
 import { revalidatePath, revalidateTag } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { tags } from "@/lib/cache-tags";
+import { effectivePermissions, type Permission } from "@/lib/permissions";
 async function getOrgContext() {
   const supabase = await createClient();
   const {
@@ -12,17 +13,22 @@ async function getOrgContext() {
 
   const { data: membership } = await supabase
     .from("org_members")
-    .select("org_id, role")
+    .select("org_id, role, permissions")
     .eq("user_id", user.id)
     .limit(1)
     .maybeSingle();
 
   if (!membership) return { error: "No workspace" as const };
+  const perms = effectivePermissions(
+    membership.role,
+    (membership.permissions as string[] | null) ?? null
+  );
   return {
     supabase,
     user,
     orgId: membership.org_id as string,
     role: membership.role,
+    can: (p: Permission) => perms.has(p),
   };
 }
 
@@ -32,7 +38,7 @@ export async function createWarehouse(
 ): Promise<{ error?: string; success?: string }> {
   const ctx = await getOrgContext();
   if ("error" in ctx) return { error: ctx.error };
-  if (!["owner", "admin"].includes(ctx.role)) {
+  if (!ctx.can("facilities.manage")) {
     return { error: "Only admins can add facilities" };
   }
 
@@ -96,7 +102,7 @@ export async function createWarehouse(
 export async function archiveWarehouse(formData: FormData): Promise<void> {
   const ctx = await getOrgContext();
   if ("error" in ctx) return;
-  if (!["owner", "admin"].includes(ctx.role)) return;
+  if (!ctx.can("facilities.manage")) return;
   const id = String(formData.get("id") ?? "");
   await ctx.supabase
     .from("warehouses")
@@ -110,7 +116,7 @@ export async function archiveWarehouse(formData: FormData): Promise<void> {
 export async function restoreWarehouse(formData: FormData): Promise<void> {
   const ctx = await getOrgContext();
   if ("error" in ctx) return;
-  if (!["owner", "admin"].includes(ctx.role)) return;
+  if (!ctx.can("facilities.manage")) return;
   const id = String(formData.get("id") ?? "");
   await ctx.supabase
     .from("warehouses")
@@ -127,7 +133,7 @@ export async function createSection(
 ): Promise<{ error?: string; success?: string }> {
   const ctx = await getOrgContext();
   if ("error" in ctx) return { error: ctx.error };
-  if (!["owner", "admin"].includes(ctx.role)) {
+  if (!ctx.can("facilities.manage")) {
     return { error: "Only admins can add sections" };
   }
 
@@ -188,7 +194,7 @@ export async function createSection(
 export async function deleteSection(formData: FormData): Promise<void> {
   const ctx = await getOrgContext();
   if ("error" in ctx) return;
-  if (!["owner", "admin"].includes(ctx.role)) return;
+  if (!ctx.can("facilities.manage")) return;
   const id = String(formData.get("id") ?? "");
   // Only delete if no locations reference it
   const { count } = await ctx.supabase

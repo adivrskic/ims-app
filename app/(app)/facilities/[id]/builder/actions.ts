@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { effectivePermissions, type Permission } from "@/lib/permissions";
 import type { SectionDraft, LayoutElementDraft, ElementKind } from "./types";
 
 async function getOrgContext() {
@@ -12,12 +13,22 @@ async function getOrgContext() {
   if (!user) return { error: "Not signed in" as const };
   const { data: m } = await supabase
     .from("org_members")
-    .select("org_id, role")
+    .select("org_id, role, permissions")
     .eq("user_id", user.id)
     .limit(1)
     .maybeSingle();
   if (!m) return { error: "No workspace" as const };
-  return { supabase, user, orgId: m.org_id as string, role: m.role as string };
+  const perms = effectivePermissions(
+    m.role as string,
+    (m.permissions as string[] | null) ?? null
+  );
+  return {
+    supabase,
+    user,
+    orgId: m.org_id as string,
+    role: m.role as string,
+    can: (p: Permission) => perms.has(p),
+  };
 }
 
 const UUID_RE =
@@ -52,7 +63,7 @@ export async function saveLayout({
 }: SaveLayoutArgs): Promise<{ error?: string; success?: string }> {
   const ctx = await getOrgContext();
   if ("error" in ctx) return { error: ctx.error };
-  if (!["owner", "admin"].includes(ctx.role)) {
+  if (!ctx.can("facilities.manage")) {
     return { error: "Only admins can edit facility layouts" };
   }
 
@@ -182,7 +193,7 @@ export async function setFloorUnit(
 ): Promise<{ error?: string; unit?: FloorUnit }> {
   const ctx = await getOrgContext();
   if ("error" in ctx) return { error: ctx.error };
-  if (!["owner", "admin"].includes(ctx.role)) {
+  if (!ctx.can("facilities.manage")) {
     return { error: "Only admins can change the floor unit" };
   }
   if (!VALID_FLOOR_UNITS.includes(unit)) {
@@ -260,7 +271,7 @@ export async function createSnapshot({
 }> {
   const ctx = await getOrgContext();
   if ("error" in ctx) return { error: ctx.error };
-  if (!["owner", "admin"].includes(ctx.role)) {
+  if (!ctx.can("facilities.manage")) {
     return { error: "Only admins can manage snapshots" };
   }
 
@@ -306,7 +317,7 @@ export async function deleteSnapshot(snapshotId: string): Promise<{
 }> {
   const ctx = await getOrgContext();
   if ("error" in ctx) return { error: ctx.error };
-  if (!["owner", "admin"].includes(ctx.role)) {
+  if (!ctx.can("facilities.manage")) {
     return { error: "Only admins can manage snapshots" };
   }
   const { error } = await ctx.supabase
@@ -337,7 +348,7 @@ export async function restoreSnapshot(
 }> {
   const ctx = await getOrgContext();
   if ("error" in ctx) return { error: ctx.error };
-  if (!["owner", "admin"].includes(ctx.role)) {
+  if (!ctx.can("facilities.manage")) {
     return { error: "Only admins can restore snapshots" };
   }
 

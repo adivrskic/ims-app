@@ -5,6 +5,11 @@ import { randomBytes, createHash } from "crypto";
 import { createClient } from "@/lib/supabase/server";
 import { sendInviteEmail } from "@/lib/email/invite";
 import { createAdminClient } from "@/lib/supabase/admin";
+import {
+  effectivePermissions,
+  ALL_PERMISSIONS,
+  type Permission,
+} from "@/lib/permissions";
 
 async function getOrgContext() {
   const supabase = await createClient();
@@ -15,17 +20,22 @@ async function getOrgContext() {
 
   const { data: membership } = await supabase
     .from("org_members")
-    .select("org_id, role")
+    .select("org_id, role, permissions")
     .eq("user_id", user.id)
     .limit(1)
     .maybeSingle();
 
   if (!membership) return { error: "No workspace membership" as const };
+  const perms = effectivePermissions(
+    membership.role as string,
+    (membership.permissions as string[] | null) ?? null
+  );
   return {
     supabase,
     user,
     orgId: membership.org_id as string,
     role: membership.role as string,
+    can: (p: Permission) => perms.has(p),
   };
 }
 
@@ -46,7 +56,7 @@ export async function inviteMember(_prev: unknown, formData: FormData) {
   if (!["admin", "member"].includes(role)) {
     return { error: "Invalid role" };
   }
-  if (!["owner", "admin"].includes(ctx.role)) {
+  if (!ctx.can("members.manage")) {
     return { error: "Only admins can invite" };
   }
 
@@ -121,9 +131,16 @@ export async function revokeInvite(formData: FormData) {
 export async function removeMember(formData: FormData) {
   const ctx = await getOrgContext();
   if ("error" in ctx) return;
-  if (!["owner", "admin"].includes(ctx.role)) return;
+  if (!ctx.can("members.manage")) return;
   const userId = String(formData.get("user_id") ?? "");
   if (userId === ctx.user.id) return; // can't remove self
+  return removeMemberInner(ctx, userId);
+}
+
+async function removeMemberInner(
+  ctx: { supabase: Awaited<ReturnType<typeof createClient>>; orgId: string },
+  userId: string
+): Promise<void> {
   await ctx.supabase
     .from("org_members")
     .delete()
@@ -132,12 +149,49 @@ export async function removeMember(formData: FormData) {
   revalidatePath("/settings/members");
 }
 
+/** Set (or reset) a member's explicit permission overrides. */
+export async function setMemberPermissions(formData: FormData): Promise<void> {
+  const ctx = await getOrgContext();
+  if ("error" in ctx) return;
+  if (!ctx.can("members.manage")) return;
+  const userId = String(formData.get("user_id") ?? "");
+  if (!userId || userId === ctx.user.id) return; // can't edit own permissions
+
+  // Never override an owner — they always have everything.
+  const { data: target } = await ctx.supabase
+    .from("org_members")
+    .select("role")
+    .eq("user_id", userId)
+    .eq("org_id", ctx.orgId)
+    .maybeSingle();
+  if (!target || (target.role as string) === "owner") return;
+
+  const reset = String(formData.get("reset") ?? "") === "1";
+  const valid = new Set(ALL_PERMISSIONS as readonly string[]);
+  const permissions = reset
+    ? null
+    : formData
+        .getAll("perm")
+        .map(String)
+        .filter((p) => valid.has(p));
+
+  await ctx.supabase
+    .from("org_members")
+    .update({ permissions })
+    .eq("user_id", userId)
+    .eq("org_id", ctx.orgId);
+
+  revalidatePath("/settings/members");
+  // Their effective access changed — bust their cached layout/nav on next load.
+  revalidatePath("/", "layout");
+}
+
 // ─── API KEYS ──────────────────────────────────────────────────
 
 export async function createApiKey(_prev: unknown, formData: FormData) {
   const ctx = await getOrgContext();
   if ("error" in ctx) return { error: ctx.error };
-  if (!["owner", "admin"].includes(ctx.role)) {
+  if (!ctx.can("settings.manage")) {
     return { error: "Only admins can create keys" };
   }
 
@@ -170,7 +224,7 @@ export async function createApiKey(_prev: unknown, formData: FormData) {
 export async function revokeApiKey(formData: FormData) {
   const ctx = await getOrgContext();
   if ("error" in ctx) return;
-  if (!["owner", "admin"].includes(ctx.role)) return;
+  if (!ctx.can("settings.manage")) return;
   const id = String(formData.get("id") ?? "");
   await ctx.supabase
     .from("api_keys")
