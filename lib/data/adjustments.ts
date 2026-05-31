@@ -159,28 +159,31 @@ interface AdjustArgs {
   notes?: string | null;
 }
 
-/** Commit a stock adjustment: write the new qty + an audited scan_history row. */
+/**
+ * Commit a stock adjustment to an absolute target qty + an audited scan_history
+ * row, guarded against lost updates. The `app.commit_stock_adjustment` RPC only
+ * writes if on-hand still matches the qty the requester saw; if it drifted
+ * (concurrent pick/adjust), it applies nothing and reports the live qty so the
+ * caller can ask the user to refresh.
+ */
 async function commitAdjustment(
   supabase: Client,
   ctx: { orgId: string; userId: string },
   a: AdjustArgs
-): Promise<void> {
-  const delta = a.requestedQty - a.currentQty;
-  await supabase
-    .from("locations")
-    .update({ quantity: a.requestedQty })
-    .eq("id", a.locationId)
-    .eq("org_id", ctx.orgId);
-  await supabase.from("scan_history").insert({
-    org_id: ctx.orgId,
-    product_id: a.productId,
-    warehouse_id: a.warehouseId,
-    scanned_by: ctx.userId,
-    action: "adjust",
-    quantity: delta,
-    reason_code: a.reasonCode,
-    notes: a.notes ?? null,
+): Promise<{ applied: boolean; currentQty?: number }> {
+  const { data, error } = await supabase.rpc("commit_stock_adjustment", {
+    p_org_id: ctx.orgId,
+    p_location_id: a.locationId,
+    p_warehouse_id: a.warehouseId,
+    p_product_id: a.productId,
+    p_current_qty: a.currentQty,
+    p_requested_qty: a.requestedQty,
+    p_reason_code: a.reasonCode,
+    p_notes: a.notes ?? null,
   });
+  if (error) return { applied: false };
+  const r = (data ?? {}) as { applied?: boolean; currentQty?: number };
+  return { applied: Boolean(r.applied), currentQty: r.currentQty };
 }
 
 /**
@@ -239,7 +242,12 @@ export async function applyOrQueueAdjustment(
     return { queued: true };
   }
 
-  await commitAdjustment(supabase, ctx, a);
+  const { applied, currentQty } = await commitAdjustment(supabase, ctx, a);
+  if (!applied) {
+    return {
+      error: `Stock changed to ${currentQty ?? "?"} since you loaded this — refresh and retry.`,
+    };
+  }
   return { committed: true };
 }
 
@@ -262,9 +270,11 @@ export async function approveAdjustmentInternal(
   if (r.status !== "pending") return { error: "Already reviewed" };
   if (!r.location_id) return { error: "Location no longer exists" };
 
-  // Re-read the live qty so an approval applies the intended FINAL qty even if
-  // on-hand drifted since the request (the request captured a target qty).
-  await commitAdjustment(supabase, ctx, {
+  // Apply the requested final qty, guarded against drift since the request was
+  // submitted. If on-hand no longer matches what the requester saw, the commit
+  // is a no-op and we reject the approval rather than clobber the newer value —
+  // the admin can re-submit against current stock.
+  const { applied, currentQty } = await commitAdjustment(supabase, ctx, {
     locationId: r.location_id as string,
     warehouseId: (r.warehouse_id as string | null) ?? null,
     productId: (r.product_id as string | null) ?? null,
@@ -273,6 +283,11 @@ export async function approveAdjustmentInternal(
     reasonCode: (r.reason_code as string | null) ?? null,
     notes: (r.notes as string | null) ?? null,
   });
+  if (!applied) {
+    return {
+      error: `Stock changed to ${currentQty ?? "?"} since this was requested — reject and re-submit against current on-hand.`,
+    };
+  }
 
   await supabase
     .from("stock_adjustment_requests")

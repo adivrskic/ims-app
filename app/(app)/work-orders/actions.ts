@@ -3,8 +3,8 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { getActionContext } from "@/lib/data/actionContext";
-import { assembleKit } from "@/lib/data/assemble";
-import { WO_OPEN_STATUSES, WORK_ORDER_STATUSES } from "@/lib/data/workOrders";
+import { parseAssembleResult } from "@/lib/data/assemble";
+import { WORK_ORDER_STATUSES } from "@/lib/data/workOrders";
 
 async function nextWoCode(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -132,61 +132,26 @@ export async function completeWorkOrder(
   const id = String(formData.get("id") ?? "");
   if (!id) return { error: "Missing work order" };
 
-  const { data: wo } = await ctx.supabase
-    .from("work_orders")
-    .select("id, product_id, warehouse_id, quantity, status")
-    .eq("id", id)
-    .eq("org_id", ctx.orgId)
-    .maybeSingle();
-  if (!wo) return { error: "Work order not found" };
-  const w = wo as {
-    product_id: string;
-    warehouse_id: string | null;
-    quantity: number;
-    status: string;
-  };
-  if (!WO_OPEN_STATUSES.includes(w.status as never)) {
-    return { error: "This work order is already closed" };
-  }
-  if (!w.warehouse_id) return { error: "Work order has no facility" };
+  // Claim + assemble + record consumed atomically. The RPC wins the status race
+  // (only one completer transitions an open WO) and rolls back the claim if the
+  // build is short on stock.
+  const { data, error } = await ctx.supabase.rpc("complete_work_order", {
+    p_org_id: ctx.orgId,
+    p_work_order_id: id,
+  });
+  if (error) return { error: error.message };
 
-  const result = await assembleKit(
-    ctx.supabase,
-    { orgId: ctx.orgId, userId: ctx.user.id },
-    {
-      kitId: w.product_id,
-      warehouseId: w.warehouse_id,
-      qty: w.quantity,
-      reason: "Work order",
-    }
-  );
-  if (result.error) return { error: result.error };
-
-  // Record consumed quantities on the snapshot lines.
-  if (result.consumed) {
-    for (const [componentId, qty] of result.consumed) {
-      await ctx.supabase
-        .from("work_order_lines")
-        .update({ quantity_consumed: qty })
-        .eq("work_order_id", id)
-        .eq("component_product_id", componentId)
-        .eq("org_id", ctx.orgId);
-    }
-  }
-
-  await ctx.supabase
-    .from("work_orders")
-    .update({ status: "complete", completed_at: new Date().toISOString() })
-    .eq("id", id)
-    .eq("org_id", ctx.orgId);
+  const { consumed } = parseAssembleResult(data);
+  const d = (data ?? {}) as { quantity?: number; product_id?: string };
+  const quantity = d.quantity ?? 0;
 
   revalidatePath(`/work-orders/${id}`);
   revalidatePath("/work-orders");
-  revalidatePath(`/inventory/${w.product_id}`);
-  for (const componentId of result.consumed?.keys() ?? []) {
+  if (d.product_id) revalidatePath(`/inventory/${d.product_id}`);
+  for (const componentId of consumed?.keys() ?? []) {
     revalidatePath(`/inventory/${componentId}`);
   }
-  return { success: `Built ${w.quantity} unit${w.quantity === 1 ? "" : "s"}` };
+  return { success: `Built ${quantity} unit${quantity === 1 ? "" : "s"}` };
 }
 
 export async function claimWorkOrder(formData: FormData): Promise<void> {
