@@ -3,6 +3,8 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft, FileText, Send, X as XIcon } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
+import { getCurrentOrgContext } from "@/lib/data/user";
+import { getSlottingSuggestions } from "@/lib/data/slotting";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { SectionTitle } from "@/components/ui/SectionTitle";
 import { CornerButton } from "@/components/ui/CornerButton";
@@ -139,6 +141,37 @@ export default async function PurchaseOrderDetailPage({
   const canEdit = status !== "fully_received" && status !== "cancelled";
   const canSend = status === "draft";
   const canReceive = status === "sent" || status === "partially_received";
+
+  // Slotting hints (#8 / §6b): for a receivable PO, suggest the best slot for
+  // each still-open line so the receiver knows where to put stock away. Skipped
+  // entirely unless we're in a receivable state with a destination facility.
+  const slotHints = new Map<string, { label: string; reasons: string[] }>();
+  if (canReceive && warehouse?.id) {
+    const ctx = await getCurrentOrgContext();
+    if (ctx) {
+      const openLines = lines.filter(
+        (l) => l.product_id && (l.quantity_received ?? 0) < l.quantity_expected
+      );
+      const results = await Promise.all(
+        openLines.map((l) =>
+          getSlottingSuggestions(
+            supabase,
+            ctx.orgId,
+            warehouse.id,
+            l.product_id as string,
+            {
+              limit: 1,
+              quantity:
+                l.quantity_expected - (l.quantity_received ?? 0) || 1,
+            }
+          ).then((r) => ({ lineId: l.id, top: r.suggestions[0] ?? null }))
+        )
+      );
+      for (const { lineId, top } of results) {
+        if (top) slotHints.set(lineId, { label: top.label, reasons: top.reasons });
+      }
+    }
+  }
 
   // PO title falls back to a truncated UUID if no po_number is set (e.g.
   // a draft that hadn't been numbered yet — shouldn't happen in practice
@@ -283,6 +316,9 @@ export default async function PurchaseOrderDetailPage({
                     const received = line.quantity_received ?? 0;
                     const fullyReceived = received >= line.quantity_expected;
                     const partiallyReceived = received > 0 && !fullyReceived;
+                    const slotHint = fullyReceived
+                      ? undefined
+                      : slotHints.get(line.id);
 
                     // Display cost prefers landed (actual paid) over unit
                     // (quoted). Falls back to "—" when neither known.
@@ -352,6 +388,25 @@ export default async function PurchaseOrderDetailPage({
                                   </span>
                                 )}
                               </div>
+                              {slotHint && (
+                                <span
+                                  className="mono-sm text-[var(--accent)]"
+                                  style={{ fontSize: 10 }}
+                                  title={
+                                    slotHint.reasons.length
+                                      ? slotHint.reasons.join(" · ")
+                                      : undefined
+                                  }
+                                >
+                                  Suggested slot {slotHint.label}
+                                  {slotHint.reasons.length > 0 && (
+                                    <span className="text-text-dim">
+                                      {" · "}
+                                      {slotHint.reasons.slice(0, 2).join(" · ")}
+                                    </span>
+                                  )}
+                                </span>
+                              )}
                             </div>
                           </Td>
                           <Td align="right">
