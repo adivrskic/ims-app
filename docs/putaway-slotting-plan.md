@@ -170,7 +170,12 @@ Return top N (e.g., 5) suggestions, each with human reasons for trust.
 >   category factor); persisted via saveLayout/restoreSnapshot.
 > - §6b inline hints: "Suggested slot" per open line on receivable POs +
 >   "Recommended slot" card on product detail.
-> - **Remaining: 6c** (write-side "apply / re-slot" relocate) — not started.
+> - **6c DONE** (`feat/slotting-apply-move`): desk "Apply move" on the health
+>   report — `applySlottingMove` does a cross-section relocate of the `locations`
+>   row (same-product merge + `relocate` scan_history audit), refreshing the
+>   report on success. Consistent with the existing desk relocate/place mutations.
+>
+> Roadmap #8 (Phases 1 + 2) is now functionally complete.
 
 
 - **6a** — engine (`lib/data/slotting.ts`) + the **health report** page (read-only; highest
