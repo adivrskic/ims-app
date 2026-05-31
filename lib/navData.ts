@@ -18,6 +18,7 @@ import {
   Waypoints,
   Hammer,
   ShieldCheck,
+  Table2,
 } from "lucide-react";
 import type { ComponentType } from "react";
 import { primaryNavKeys } from "@/lib/industries";
@@ -52,6 +53,7 @@ export const NAV_GROUPS: NavGroup[] = [
       },
       { key: "serials", href: "/serials", label: "Serials", icon: ScanBarcode },
       { key: "analytics", href: "/analytics", label: "Analytics", icon: BarChart3 },
+      { key: "reports", href: "/reports", label: "Reports", icon: Table2 },
       {
         key: "cycle-counts",
         href: "/cycle-counts",
