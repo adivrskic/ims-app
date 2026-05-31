@@ -28,6 +28,13 @@ export interface OrgRow {
   updated_at: string;
   /** Opt-in for the scheduled auto-draft-PO cron. Defaults false. */
   auto_draft_pos_enabled: boolean;
+  /** Plan tier (starter | pro | enterprise). Defaults 'starter'. */
+  tier: string;
+  /** Staff user who provisioned via /admin/onboard (null for self-signup). */
+  onboarded_by: string | null;
+  onboarded_at: string | null;
+  /** Internal staff notes captured at onboarding. */
+  notes: string | null;
 }
 
 export interface OrgMemberRow {
@@ -204,6 +211,10 @@ export type Database = {
           | "deleted_at"
           | "logo_url"
           | "auto_draft_pos_enabled"
+          | "tier"
+          | "onboarded_by"
+          | "onboarded_at"
+          | "notes"
         >;
         Update: Partial<OrgRow>;
         Relationships: [];
