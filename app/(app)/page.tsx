@@ -35,6 +35,8 @@ const SCAN_LABEL: Record<ScanAction, string> = {
   return: "RET",
   cycle_count: "CNT",
   adjust: "ADJ",
+  putaway: "PUT",
+  transfer: "XFER",
 };
 
 const SCAN_TONE: Record<ScanAction, string> = {
@@ -46,6 +48,8 @@ const SCAN_TONE: Record<ScanAction, string> = {
   return: "text-[var(--danger)]",
   cycle_count: "text-text-muted",
   adjust: "text-text-muted",
+  putaway: "text-[var(--success)]",
+  transfer: "text-[var(--warning)]",
 };
 
 const ORDER_STATUS_LABEL: Record<string, string> = {

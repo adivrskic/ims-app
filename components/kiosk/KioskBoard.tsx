@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { Shell, ArrowUp, ArrowDown, X } from "lucide-react";
 import type { KioskData, KioskLowStock, KioskOrder } from "@/lib/data/kiosk";
+import type { ScanAction } from "@/types/db";
 
 type ScreenKey = "ops" | "inventory" | "orders";
 
@@ -26,7 +27,10 @@ const STATUS_LABEL: Record<string, string> = {
   partially_received: "Partial",
 };
 
-const ACTION_TONE: Record<string, string> = {
+// Typed as Record<ScanAction, string> (not Record<string, string>) so the
+// compiler enforces a tone for every scan action — adding a new action to the
+// enum without a tone here is now a build error, not a silent missing color.
+const ACTION_TONE: Record<ScanAction, string> = {
   receive: "var(--success)",
   pick: "var(--info)",
   locate: "var(--accent)",
@@ -35,6 +39,8 @@ const ACTION_TONE: Record<string, string> = {
   register: "var(--text-secondary)",
   adjust: "var(--text-secondary)",
   return: "var(--danger)",
+  putaway: "var(--success)", // first placement → success, mirrors receive
+  transfer: "var(--warning)", // cross-facility move → warning, mirrors relocate
 };
 
 export function KioskBoard({
@@ -431,7 +437,12 @@ function scanRows(items: KioskData["recentScans"]) {
       key={i}
       left={
         <span
-          style={{ color: ACTION_TONE[s.action] ?? "var(--text-secondary)" }}
+          style={{
+            // Cast guards the lookup in case KioskData types `action` as a
+            // plain string; the map itself is exhaustively typed above.
+            color:
+              ACTION_TONE[s.action as ScanAction] ?? "var(--text-secondary)",
+          }}
         >
           {s.action.replace("_", " ").toUpperCase()}
         </span>

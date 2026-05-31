@@ -3,12 +3,13 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { Badge } from "@/components/ui/Badge";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { CornerButton, CornerLink } from "@/components/ui/CornerButton";
-import { ChevronRight, Truck, Sparkles, Plus } from "lucide-react";
-import { draftReorderPO } from "./actions";
+import { ChevronRight, Truck, Sparkles, Plus, Clock } from "lucide-react";
+import { draftReorderPO, setAutoDraftEnabled } from "./actions";
 import { PurchaseOrdersRealtime } from "@/components/realtime/PageRealtime";
 import { getActiveScope, scopeDescription } from "@/lib/facilityScope";
 import { getCurrentOrgContext } from "@/lib/data/user";
 import { getPurchaseOrdersList } from "@/lib/data/purchaseOrders";
+import { createClient } from "@/lib/supabase/server";
 
 export const metadata = { title: "Purchase Orders" };
 
@@ -100,6 +101,18 @@ export default async function PurchaseOrdersPage({
     ? await getPurchaseOrdersList(ctx.orgId, facilityId, activeFilter.statuses)
     : null;
 
+  // Workspace opt-in for the scheduled auto-draft-PO cron.
+  let autoDraftEnabled = false;
+  if (ctx) {
+    const supabase = await createClient();
+    const { data: org } = await supabase
+      .from("orgs")
+      .select("auto_draft_pos_enabled")
+      .eq("id", ctx.orgId)
+      .maybeSingle();
+    autoDraftEnabled = org?.auto_draft_pos_enabled ?? false;
+  }
+
   const pos = (data?.pos ?? []) as PoRow[];
   const total = data?.total ?? 0;
   // Rebuild the Map the chip rendering expects. The fetcher returns a plain
@@ -132,6 +145,31 @@ export default async function PurchaseOrdersPage({
         ]}
         actions={
           <div className="flex items-center gap-10">
+            <form action={setAutoDraftEnabled}>
+              <input
+                type="hidden"
+                name="enabled"
+                value={(!autoDraftEnabled).toString()}
+              />
+              <CornerButton
+                type="submit"
+                variant="ghost"
+                size="sm"
+                aria-pressed={autoDraftEnabled}
+                title={
+                  autoDraftEnabled
+                    ? "Scheduled auto-drafting is on — turn off"
+                    : "Turn on scheduled auto-drafting of reorder POs"
+                }
+              >
+                <span
+                  className={autoDraftEnabled ? "dot dot-live" : "dot dot-offline"}
+                  aria-hidden
+                />
+                <Clock size={11} strokeWidth={1.5} />
+                Auto-draft · {autoDraftEnabled ? "On" : "Off"}
+              </CornerButton>
+            </form>
             <form action={draftReorderPO}>
               <CornerButton type="submit" variant="ghost" size="sm">
                 <Sparkles size={11} strokeWidth={1.5} />

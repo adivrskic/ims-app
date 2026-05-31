@@ -1,32 +1,9 @@
 "use server";
 
 import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
 import { revalidatePath, revalidateTag } from "next/cache";
+import { getActionContext } from "@/lib/data/actionContext";
 import { tags } from "@/lib/cache-tags";
-
-async function getOrgContext() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return { error: "Not signed in" as const };
-
-  const { data: membership } = await supabase
-    .from("org_members")
-    .select("org_id, role")
-    .eq("user_id", user.id)
-    .limit(1)
-    .maybeSingle();
-
-  if (!membership) return { error: "No workspace" as const };
-  return {
-    supabase,
-    user,
-    orgId: membership.org_id as string,
-    role: membership.role,
-  };
-}
 
 type OrderStatus =
   | "created"
@@ -56,7 +33,7 @@ export async function createOrder(
   _prev: unknown,
   formData: FormData
 ): Promise<{ error?: string; success?: string; id?: string }> {
-  const ctx = await getOrgContext();
+  const ctx = await getActionContext();
   if ("error" in ctx) return { error: ctx.error };
 
   const orderType = String(formData.get("order_type") ?? "installer_job");
@@ -165,7 +142,7 @@ export async function createOrder(
 }
 
 export async function advanceOrderStatus(formData: FormData): Promise<void> {
-  const ctx = await getOrgContext();
+  const ctx = await getActionContext();
   if ("error" in ctx) return;
 
   const id = String(formData.get("id") ?? "");
@@ -193,7 +170,7 @@ export async function advanceOrderStatus(formData: FormData): Promise<void> {
 }
 
 export async function cancelOrder(formData: FormData): Promise<void> {
-  const ctx = await getOrgContext();
+  const ctx = await getActionContext();
   if ("error" in ctx) return;
   const id = String(formData.get("id") ?? "");
   await ctx.supabase

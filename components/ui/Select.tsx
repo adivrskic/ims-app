@@ -20,10 +20,17 @@ export interface SelectOption {
 }
 
 interface Props {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
+  /** Floating field label. Optional — some form usages render their own. */
+  label?: string;
+  /** Controlled value. Omit and use `defaultValue` for uncontrolled usage. */
+  value?: string;
+  /** Initial value for uncontrolled usage (when `value` is not provided). */
+  defaultValue?: string;
+  /** Selection change handler, called with the newly-selected value. */
+  onChange?: (value: string) => void;
   options: SelectOption[];
+  /** Tighter padding/sizing for inline form rows. */
+  compact?: boolean;
   placeholder?: string;
   disabled?: boolean;
   required?: boolean;
@@ -65,9 +72,11 @@ interface Props {
  */
 export function Select({
   label,
-  value,
+  value: controlledValue,
+  defaultValue,
   onChange,
   options,
+  compact = false,
   placeholder = "— Select —",
   disabled = false,
   required = false,
@@ -80,6 +89,20 @@ export function Select({
   const generatedId = useId();
   const buttonId = id ?? generatedId;
   const listboxId = `${buttonId}-listbox`;
+
+  // Support both controlled (value + onChange) and uncontrolled (defaultValue)
+  // usage. When uncontrolled, we track the selection internally.
+  const isControlled = controlledValue !== undefined;
+  const [internalValue, setInternalValue] = useState(defaultValue ?? "");
+  const value = isControlled ? controlledValue : internalValue;
+
+  const emitChange = useCallback(
+    (v: string) => {
+      if (!isControlled) setInternalValue(v);
+      onChange?.(v);
+    },
+    [isControlled, onChange]
+  );
 
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -140,10 +163,10 @@ export function Select({
 
   const select = useCallback(
     (v: string) => {
-      onChange(v);
+      emitChange(v);
       closeAndFocusButton();
     },
-    [onChange, closeAndFocusButton]
+    [emitChange, closeAndFocusButton]
   );
 
   // Keyboard handling on the button + within the popover
@@ -223,11 +246,13 @@ export function Select({
         aria-expanded={open}
         aria-controls={open ? listboxId : undefined}
         aria-label={ariaLabel ?? label}
-        className="field-shell block w-full text-left"
+        className={`field-shell block w-full text-left ${
+          compact ? "field-shell--compact" : ""
+        }`}
         data-filled={filled || open ? "true" : "false"}
         data-error={undefined}
       >
-        <span className="field-label">{label}</span>
+        {label && <span className="field-label">{label}</span>}
         <span
           className={`field-input flex items-center justify-between gap-8 cursor-pointer ${
             disabled ? "opacity-50 cursor-not-allowed" : ""

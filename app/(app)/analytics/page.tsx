@@ -20,6 +20,8 @@ const SCAN_LABEL: Record<ScanAction, string> = {
   return: "Returned",
   cycle_count: "Counted",
   adjust: "Adjusted",
+  putaway: "Put away",
+  transfer: "Transferred",
 };
 
 function bucketByDay(scans: { scanned_at: string | null }[]): number[] {

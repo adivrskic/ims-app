@@ -1,48 +1,37 @@
-import Link from "next/link";
-import { createClient } from "@/lib/supabase/server";
-import { PageHeader } from "@/components/ui/PageHeader";
-import { CreateOrderForm } from "./CreateOrderForm";
-import { ArrowLeft } from "lucide-react";
+"use client";
 
-export const metadata = { title: "New order" };
+// TODO(stub): build the real create-order form. This should let the user pick
+// an order type, a source warehouse, a customer (where applicable), and add
+// product line items with quantities, then submit to a createOrder server
+// action. For now it renders a placeholder shell so the page compiles.
 
-export default async function NewOrderPage() {
-  const supabase = await createClient();
+interface ProductOption {
+  id: string;
+  name: string;
+  barcode: string;
+}
 
-  const [{ data: products }, { data: warehouses }] = await Promise.all([
-    supabase
-      .from("products")
-      .select("id, name, barcode")
-      .order("name", { ascending: true }),
-    supabase
-      .from("warehouses")
-      .select("id, name")
-      .eq("is_active", true)
-      .order("created_at", { ascending: true }),
-  ]);
+interface WarehouseOption {
+  id: string;
+  name: string;
+}
 
+interface Props {
+  products: ProductOption[];
+  warehouses: WarehouseOption[];
+}
+
+export function CreateOrderForm({ products, warehouses }: Props) {
   return (
-    <div className="flex flex-col gap-32">
-      <div className="flex flex-col gap-12">
-        <Link
-          href="/orders"
-          className="inline-flex items-center gap-6 text-text-muted hover:text-text transition-colors w-fit"
-        >
-          <ArrowLeft size={11} strokeWidth={1.5} />
-          <span className="label-text">All orders</span>
-        </Link>
-
-        <PageHeader
-          eyebrow="Flow"
-          title="New order"
-          description="Create a pick list for an installer, customer pickup, transfer, or restock."
-        />
-      </div>
-
-      <CreateOrderForm
-        products={products ?? []}
-        warehouses={warehouses ?? []}
-      />
+    <div className="hairline bg-[var(--surface)] p-24 flex flex-col gap-12">
+      <p className="label-text--lg">Create order</p>
+      <p className="mono-sm text-text-muted">
+        The create-order form is not yet implemented.
+      </p>
+      <p className="mono-sm text-text-dim">
+        {products.length} product(s) and {warehouses.length} warehouse(s)
+        available.
+      </p>
     </div>
   );
 }

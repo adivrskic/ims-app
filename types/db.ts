@@ -26,6 +26,8 @@ export interface OrgRow {
   deleted_at: string | null;
   created_at: string;
   updated_at: string;
+  /** Opt-in for the scheduled auto-draft-PO cron. Defaults false. */
+  auto_draft_pos_enabled: boolean;
 }
 
 export interface OrgMemberRow {
@@ -143,7 +145,9 @@ export type ScanAction =
   | "receive"
   | "return"
   | "cycle_count"
-  | "adjust";
+  | "adjust"
+  | "putaway"
+  | "transfer";
 
 export type OrderStatus =
   | "created"
@@ -194,7 +198,12 @@ export type Database = {
         Row: OrgRow;
         Insert: WithGenerated<
           OrgRow,
-          "id" | "created_at" | "updated_at" | "deleted_at" | "logo_url"
+          | "id"
+          | "created_at"
+          | "updated_at"
+          | "deleted_at"
+          | "logo_url"
+          | "auto_draft_pos_enabled"
         >;
         Update: Partial<OrgRow>;
         Relationships: [];

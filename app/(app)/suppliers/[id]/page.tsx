@@ -15,7 +15,7 @@ import {
   FileText,
 } from "lucide-react";
 import { CornerLink } from "@/components/ui/CornerButton";
-import { paymentTermsLabel } from "../customers/types";
+import { paymentTermsLabel } from "../../customers/types";
 import { getSupplier } from "../actions";
 import { SupplierActiveToggle } from "./SupplierActiveToggle";
 
@@ -285,7 +285,7 @@ function Field({
         </span>
         {value ? (
           href ? (
-            
+            <a
               href={href.startsWith("http") ? href : `https://${href}`}
               target="_blank"
               rel="noreferrer"

@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/Badge";
 import { CornerButton, CornerLink } from "@/components/ui/CornerButton";
 import { useGlowCards } from "@/lib/useGlowCards";
 import { ProviderLogo } from "@/components/integrations/ProviderLogo";
-import type { ProviderInfo } from "./providers";
+import type { ProviderInfo } from "@/app/(app)/integrations/providers";
 
 interface IntegrationRow {
   id: string;

@@ -1,25 +1,9 @@
 "use server";
 
 import { revalidatePath, revalidateTag } from "next/cache";
-import { createClient } from "@/lib/supabase/server";
+import { getActionContext } from "@/lib/data/actionContext";
 import { tags } from "@/lib/cache-tags";
 import type { Customer, CustomerInput, PaymentTerms } from "./types";
-
-async function getOrgContext() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return { error: "Not signed in" as const };
-  const { data: m } = await supabase
-    .from("org_members")
-    .select("org_id, role")
-    .eq("user_id", user.id)
-    .limit(1)
-    .maybeSingle();
-  if (!m) return { error: "No workspace" as const };
-  return { supabase, user, orgId: m.org_id as string, role: m.role as string };
-}
 
 const VALID_PAYMENT_TERMS: PaymentTerms[] = [
   "cod",
@@ -58,7 +42,7 @@ function validateCustomerInput(input: CustomerInput): string | null {
 export async function listCustomers(
   opts: { search?: string; includeInactive?: boolean } = {}
 ): Promise<{ error?: string; customers?: Customer[] }> {
-  const ctx = await getOrgContext();
+  const ctx = await getActionContext();
   if ("error" in ctx) return { error: ctx.error };
 
   let q = ctx.supabase
@@ -91,7 +75,7 @@ export async function getCustomer(id: string): Promise<{
   recentOrders?: RecentOrder[];
   stats?: { orderCount: number };
 }> {
-  const ctx = await getOrgContext();
+  const ctx = await getActionContext();
   if ("error" in ctx) return { error: ctx.error };
 
   const { data: customer, error } = await ctx.supabase
@@ -130,7 +114,7 @@ export async function getCustomer(id: string): Promise<{
 export async function createCustomer(
   input: CustomerInput
 ): Promise<{ error?: string; id?: string }> {
-  const ctx = await getOrgContext();
+  const ctx = await getActionContext();
   if ("error" in ctx) return { error: ctx.error };
 
   const validation = validateCustomerInput(input);
@@ -174,7 +158,7 @@ export async function updateCustomer(
   id: string,
   input: CustomerInput
 ): Promise<{ error?: string }> {
-  const ctx = await getOrgContext();
+  const ctx = await getActionContext();
   if ("error" in ctx) return { error: ctx.error };
 
   const validation = validateCustomerInput(input);
@@ -218,7 +202,7 @@ export async function setCustomerActive(
   id: string,
   active: boolean
 ): Promise<{ error?: string }> {
-  const ctx = await getOrgContext();
+  const ctx = await getActionContext();
   if ("error" in ctx) return { error: ctx.error };
 
   const { error } = await ctx.supabase
@@ -244,7 +228,7 @@ export async function searchCustomers({ query }: { query: string }): Promise<{
     "id" | "name" | "company_name" | "customer_type" | "email" | "phone"
   >[];
 }> {
-  const ctx = await getOrgContext();
+  const ctx = await getActionContext();
   if ("error" in ctx) return { error: ctx.error };
 
   const q = query.replace(/[,()]/g, " ").trim();

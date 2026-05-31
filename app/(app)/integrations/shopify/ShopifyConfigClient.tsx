@@ -116,8 +116,7 @@ export function ShopifyConfigClient({
     });
   };
 
-  const handleFacilityChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const facilityId = e.target.value;
+  const handleFacilityChange = (facilityId: string) => {
     setFacilityResult(null);
     startFacility(async () => {
       setFacilityResult(await updateDefaultFacility(facilityId));

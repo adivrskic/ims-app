@@ -85,7 +85,7 @@ export default async function BuilderPage({
       floor_width: Number(e.floor_width),
       floor_height: Number(e.floor_height),
       rotation: Number(e.rotation),
-      color: e.color ?? ELEMENT_PRESETS[e.kind].defaultColor,
+      color: e.color ?? ELEMENT_PRESETS[e.kind as ElementKind].defaultColor,
       label: e.label ?? "",
       data: (e.data as Record<string, unknown>) ?? {},
       sort_order: e.sort_order ?? 0,

@@ -240,7 +240,7 @@ export default async function ReturnsPage({
                         {cfg.label}
                       </Badge>
                       {!reviewed && (
-                        <Badge tone="warning" variant="ghost">
+                        <Badge tone="warning" variant="outline">
                           Pending review
                         </Badge>
                       )}

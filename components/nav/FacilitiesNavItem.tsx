@@ -1,15 +1,16 @@
 "use client";
 
 import Link from "next/link";
+import type { ComponentType } from "react";
 import { useEffect, useRef, useState, useTransition } from "react";
 import { Building2, Check, ChevronRight, Layers, Settings } from "lucide-react";
 import { setCurrentFacility } from "@/app/(app)/actions";
 import type { FacilityOption } from "@/lib/currentFacility";
-import type { LucideIcon } from "lucide-react";
 
 interface Props {
   label: string;
-  icon: LucideIcon;
+  // Matches the nav-data icon type in SideRail (lucide icons are assignable).
+  icon: ComponentType<{ size?: number; strokeWidth?: number }>;
   manageHref: string;
   active: boolean;
   collapsed: boolean;

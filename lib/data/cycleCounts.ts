@@ -2,13 +2,16 @@ import "server-only";
 import { unstable_cache } from "next/cache";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { tags } from "@/lib/cache-tags";
+import { productVelocities } from "@/lib/data/velocity";
+import { cycleRiskScore, type CountRecord } from "@/lib/cycle-risk";
 
 /**
  * Cross-request cached fetcher for the Cycle Counts page.
  *
- * Bundles the page's four parallel queries (form products, form locations,
- * filtered history, org-wide summary) plus the location rollup + summary
- * math, so navigations serve from cache.
+ * Bundles the page's parallel queries (form products, form locations,
+ * filtered history, org-wide summary, plus a ranking history pull) and the
+ * location rollup + summary math + discrepancy-risk prioritization, so
+ * navigations serve from cache.
  *
  * Admin (service-role) client → BYPASSES RLS, so every query filters org_id
  * explicitly; the cache key includes org_id (plus the product/variance
@@ -39,6 +42,17 @@ export interface CycleCountLocationOption {
   warehouse_name: string | null;
 }
 
+/** A product surfaced in the "count next" list, ranked by discrepancy risk. */
+export interface PrioritizedCount {
+  product_id: string;
+  product_name: string;
+  barcode: string;
+  score: number;
+  reason: string;
+  on_hand: number | null;
+  days_since_last_count: number | null;
+}
+
 export interface CycleCountsPageData {
   products: CycleCountProductOption[];
   locations: CycleCountLocationOption[];
@@ -48,7 +62,14 @@ export interface CycleCountsPageData {
   totalAdjustments: number;
   accuracyPct: number | null;
   netUnits: number;
+  /** Discrepancy-risk-ranked "count next" list (highest risk first). */
+  prioritized: PrioritizedCount[];
 }
+
+// How far back to look when scoring discrepancy risk, and how many SKUs to
+// surface in the "count next" list.
+const RANKING_LOOKBACK_DAYS = 365;
+const PRIORITIZED_LIMIT = 8;
 
 export function getCycleCountsPageData(
   orgId: string,
@@ -61,11 +82,16 @@ export function getCycleCountsPageData(
     async (): Promise<CycleCountsPageData> => {
       const admin = createAdminClient();
 
+      const rankingSince = new Date();
+      rankingSince.setDate(rankingSince.getDate() - RANKING_LOOKBACK_DAYS);
+      rankingSince.setHours(0, 0, 0, 0);
+
       const [
         { data: productsData },
         { data: locationsData },
         { data: counts },
         { data: totalCountsRow, count: totalCounts },
+        { data: rankingData },
       ] = await Promise.all([
         admin
           .from("products")
@@ -105,6 +131,16 @@ export function getCycleCountsPageData(
           .from("cycle_counts")
           .select("id, variance", { count: "exact" })
           .eq("org_id", orgId),
+        // Unfiltered history across the org for risk scoring — independent of
+        // the page's product/variance filters above.
+        admin
+          .from("cycle_counts")
+          .select("product_id, variance, expected_qty, counted_at")
+          .eq("org_id", orgId)
+          .not("product_id", "is", null)
+          .gte("counted_at", rankingSince.toISOString())
+          .order("counted_at", { ascending: false })
+          .limit(2000),
       ]);
 
       const products = (productsData ?? []) as CycleCountProductOption[];
@@ -145,6 +181,69 @@ export function getCycleCountsPageData(
           : null;
       const netUnits = allCounts.reduce((s, c) => s + c.variance, 0);
 
+      // ── Discrepancy-risk prioritization (§2c) ──────────────────────────
+      // Group the unfiltered history by product, score each via cycle-risk
+      // (weighted by the shared 60-day velocity), and rank highest-risk first.
+      type RankRow = {
+        product_id: string | null;
+        variance: number | null;
+        expected_qty: number | null;
+        counted_at: string | null;
+      };
+      const historyByProduct = new Map<string, CountRecord[]>();
+      const lastCountByProduct = new Map<string, string>();
+      for (const r of (rankingData ?? []) as RankRow[]) {
+        if (!r.product_id || !r.counted_at) continue;
+        const rec: CountRecord = {
+          variance: r.variance ?? 0,
+          expectedQty: r.expected_qty ?? 0,
+          countedAt: r.counted_at,
+        };
+        const arr = historyByProduct.get(r.product_id);
+        if (arr) arr.push(rec);
+        else historyByProduct.set(r.product_id, [rec]);
+        // rankingData is ordered counted_at desc, so the first seen is latest.
+        if (!lastCountByProduct.has(r.product_id)) {
+          lastCountByProduct.set(r.product_id, r.counted_at);
+        }
+      }
+
+      const productIdsWithHistory = [...historyByProduct.keys()];
+      const velocities = await productVelocities(admin, {
+        productIds: productIdsWithHistory,
+      });
+
+      const onHandByProduct = new Map<string, number>();
+      for (const l of locations) {
+        onHandByProduct.set(
+          l.product_id,
+          (onHandByProduct.get(l.product_id) ?? 0) + (l.quantity ?? 0)
+        );
+      }
+
+      const productById = new Map(products.map((p) => [p.id, p]));
+
+      const prioritized: PrioritizedCount[] = productIdsWithHistory
+        .map((pid) => {
+          const risk = cycleRiskScore({
+            history: historyByProduct.get(pid)!,
+            velocity: velocities.get(pid) ?? 0,
+          });
+          const p = productById.get(pid);
+          return {
+            product_id: pid,
+            product_name: p?.name ?? "Unknown product",
+            barcode: p?.barcode ?? "",
+            score: risk.score,
+            reason: risk.reason,
+            on_hand: onHandByProduct.get(pid) ?? null,
+            days_since_last_count: risk.daysSinceLastCount,
+          };
+        })
+        .filter((x) => x.score > 0)
+        .sort((a, b) => b.score - a.score)
+        .slice(0, PRIORITIZED_LIMIT);
+
       return {
         products,
         locations,
@@ -153,6 +252,7 @@ export function getCycleCountsPageData(
         totalAdjustments,
         accuracyPct,
         netUnits,
+        prioritized,
       };
     },
     ["cycle-counts-page", orgId, productKey, varKey],

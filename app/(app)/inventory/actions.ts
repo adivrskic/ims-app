@@ -1,31 +1,8 @@
 "use server";
 
 import { revalidatePath, revalidateTag } from "next/cache";
-import { createClient } from "@/lib/supabase/server";
+import { getActionContext } from "@/lib/data/actionContext";
 import { tags } from "@/lib/cache-tags";
-
-async function getOrgContext() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return { error: "Not signed in" as const };
-
-  const { data: membership } = await supabase
-    .from("org_members")
-    .select("org_id, role")
-    .eq("user_id", user.id)
-    .limit(1)
-    .maybeSingle();
-
-  if (!membership) return { error: "No workspace" as const };
-  return {
-    supabase,
-    user,
-    orgId: membership.org_id as string,
-    role: membership.role,
-  };
-}
 
 /**
  * Helper: parse an optional non-negative integer form field. Returns null
@@ -60,7 +37,7 @@ export async function createProduct(
   _prev: unknown,
   formData: FormData
 ): Promise<{ error?: string; success?: string; id?: string }> {
-  const ctx = await getOrgContext();
+  const ctx = await getActionContext();
   if ("error" in ctx) return { error: ctx.error };
 
   const barcode = String(formData.get("barcode") ?? "").trim();

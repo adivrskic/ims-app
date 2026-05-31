@@ -27,8 +27,10 @@ interface Props {
 }
 
 export function ResendConfigForm({ existing }: Props) {
-  const [state, formAction, pending] = useActionState;
-  ConnectResendResult | undefined, FormData > (connectResend, undefined);
+  const [state, formAction, pending] = useActionState<
+    ConnectResendResult | undefined,
+    FormData
+  >(connectResend, undefined);
 
   const [enabled, setEnabled] = useState<string[]>(
     existing?.events_enabled ?? []

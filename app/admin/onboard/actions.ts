@@ -190,9 +190,10 @@ export async function createWorkspace(
   return {
     workspace_name: org.name,
     owner_email: ownerEmail,
-    // The action_link from inviteUserByEmail is what the invite email
-    // contains — useful as a copy/paste fallback.
-    magic_link_url: inviteData.properties?.action_link ?? undefined,
+    // TODO(stub): inviteUserByEmail returns only { user }, not an action_link.
+    // To surface a copy/paste magic link, call admin.auth.admin.generateLink({
+    // type: "invite", email: ownerEmail, options: { redirectTo } }) and read
+    // data.properties.action_link from that response.
+    magic_link_url: undefined as string | undefined,
   };
 }
-g;

@@ -597,9 +597,10 @@ export function BuilderShell({
       // Resize/rotate handles only appear when a single item is selected,
       // so we don't touch selection — just open the drag transaction.
       if (mode !== "move") {
+        // Any non-"move" handle (the n/e/s/w + corner handles) is a resize.
         dispatch({
           type: "begin_drag",
-          mode: mode === "move" ? "move" : "resize",
+          mode: "resize",
         });
         return true;
       }

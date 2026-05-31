@@ -94,8 +94,18 @@ export function getOverviewData(
       }
 
       // Scope helpers for the warehouse-bearing tables.
-      const scoped = <T extends { eq: (...a: any[]) => T }>(q: T): T =>
-        facilityId ? q.eq("warehouse_id", facilityId) : q;
+      // Conditionally apply a warehouse_id filter, preserving the concrete
+      // query-builder type. The previous self-referential constraint
+      // (`T extends { eq: (...) => T }`) trips "excessively deep" inference
+      // because PostgrestFilterBuilder.eq returns a fresh generic instance,
+      // not `this`. Type the param as a minimal structural shape and cast back.
+      const scoped = <T>(q: T): T => {
+        if (!facilityId) return q;
+        return (q as { eq: (col: string, val: string) => T }).eq(
+          "warehouse_id",
+          facilityId
+        );
+      };
 
       const [
         { count: productCount },

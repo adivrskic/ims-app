@@ -1,26 +1,10 @@
 "use server";
 
 import { revalidatePath, revalidateTag } from "next/cache";
-import { createClient } from "@/lib/supabase/server";
+import { getActionContext } from "@/lib/data/actionContext";
 import { tags } from "@/lib/cache-tags";
 import type { PaymentTerms } from "../customers/types";
 import type { Supplier, SupplierInput } from "./types";
-
-async function getOrgContext() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return { error: "Not signed in" as const };
-  const { data: m } = await supabase
-    .from("org_members")
-    .select("org_id, role")
-    .eq("user_id", user.id)
-    .limit(1)
-    .maybeSingle();
-  if (!m) return { error: "No workspace" as const };
-  return { supabase, user, orgId: m.org_id as string, role: m.role as string };
-}
 
 const VALID_PAYMENT_TERMS: PaymentTerms[] = [
   "cod",
@@ -53,7 +37,7 @@ function validateSupplierInput(input: SupplierInput): string | null {
 export async function listSuppliers(
   opts: { includeInactive?: boolean } = {}
 ): Promise<{ error?: string; suppliers?: Supplier[] }> {
-  const ctx = await getOrgContext();
+  const ctx = await getActionContext();
   if ("error" in ctx) return { error: ctx.error };
 
   let q = ctx.supabase
@@ -85,7 +69,7 @@ export async function getSupplier(id: string): Promise<{
   recentPOs?: RecentPO[];
   stats?: { poCount: number };
 }> {
-  const ctx = await getOrgContext();
+  const ctx = await getActionContext();
   if ("error" in ctx) return { error: ctx.error };
 
   const { data: supplier, error } = await ctx.supabase
@@ -124,7 +108,7 @@ export async function getSupplier(id: string): Promise<{
 export async function createSupplier(
   input: SupplierInput
 ): Promise<{ error?: string; id?: string }> {
-  const ctx = await getOrgContext();
+  const ctx = await getActionContext();
   if ("error" in ctx) return { error: ctx.error };
 
   const v = validateSupplierInput(input);
@@ -168,7 +152,7 @@ export async function updateSupplier(
   id: string,
   input: SupplierInput
 ): Promise<{ error?: string }> {
-  const ctx = await getOrgContext();
+  const ctx = await getActionContext();
   if ("error" in ctx) return { error: ctx.error };
 
   const v = validateSupplierInput(input);
@@ -212,7 +196,7 @@ export async function setSupplierActive(
   id: string,
   active: boolean
 ): Promise<{ error?: string }> {
-  const ctx = await getOrgContext();
+  const ctx = await getActionContext();
   if ("error" in ctx) return { error: ctx.error };
 
   const { error } = await ctx.supabase
@@ -238,7 +222,7 @@ export async function searchSuppliers({ query }: { query: string }): Promise<{
     "id" | "name" | "contact_name" | "email" | "phone"
   >[];
 }> {
-  const ctx = await getOrgContext();
+  const ctx = await getActionContext();
   if ("error" in ctx) return { error: ctx.error };
 
   const q = query.replace(/[,()]/g, " ").trim();

@@ -1,31 +1,8 @@
 "use server";
 
 import { revalidatePath, revalidateTag } from "next/cache";
-import { createClient } from "@/lib/supabase/server";
+import { getActionContext } from "@/lib/data/actionContext";
 import { tags } from "@/lib/cache-tags";
-
-async function getOrgContext() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return { error: "Not signed in" as const };
-
-  const { data: membership } = await supabase
-    .from("org_members")
-    .select("org_id, role")
-    .eq("user_id", user.id)
-    .limit(1)
-    .maybeSingle();
-
-  if (!membership) return { error: "No workspace" as const };
-  return {
-    supabase,
-    user,
-    orgId: membership.org_id as string,
-    role: membership.role as "owner" | "admin" | "member",
-  };
-}
 
 /**
  * Record a cycle count.
@@ -54,7 +31,7 @@ export async function recordCycleCount(
   _prev: unknown,
   formData: FormData
 ): Promise<{ error?: string; success?: string; id?: string }> {
-  const ctx = await getOrgContext();
+  const ctx = await getActionContext();
   if ("error" in ctx) return { error: ctx.error };
 
   const locationId = String(formData.get("location_id") ?? "").trim();
@@ -134,24 +111,40 @@ export async function recordCycleCount(
     }
 
     // Audit trail. quantity is the signed delta so downstream consumers
-    // (mobile app, analytics) can reconstruct what changed.
-    await ctx.supabase.from("scan_history").insert({
-      org_id: ctx.orgId,
-      product_id: productId,
-      warehouse_id: location.warehouse_id,
-      scanned_by: ctx.user.id,
-      action: "adjust",
-      quantity: variance,
-      notes:
-        notes && notes.length > 0
-          ? `Cycle count adjustment: ${notes}`
-          : "Cycle count adjustment",
-    });
+    // (mobile app, analytics) can reconstruct what changed. The adjustment
+    // already applied, so a failed audit insert shouldn't roll anything back —
+    // but log it so a gap in the trail is visible rather than silent.
+    const { error: auditErr } = await ctx.supabase
+      .from("scan_history")
+      .insert({
+        org_id: ctx.orgId,
+        product_id: productId,
+        warehouse_id: location.warehouse_id,
+        scanned_by: ctx.user.id,
+        action: "adjust",
+        quantity: variance,
+        notes:
+          notes && notes.length > 0
+            ? `Cycle count adjustment: ${notes}`
+            : "Cycle count adjustment",
+      });
+    if (auditErr) {
+      console.error(
+        `[recordCycleCount] audit insert failed for count ${count.id}:`,
+        auditErr
+      );
+    }
 
-    await ctx.supabase
+    const { error: statusErr } = await ctx.supabase
       .from("cycle_counts")
       .update({ status: "adjusted" })
       .eq("id", count.id);
+    if (statusErr) {
+      console.error(
+        `[recordCycleCount] status update failed for count ${count.id}:`,
+        statusErr
+      );
+    }
   }
 
   revalidatePath("/cycle-counts");
@@ -178,7 +171,7 @@ export async function recordCycleCount(
  * excluded from accuracy reports.
  */
 export async function voidCycleCount(formData: FormData): Promise<void> {
-  const ctx = await getOrgContext();
+  const ctx = await getActionContext();
   if ("error" in ctx) return;
   if (!["owner", "admin"].includes(ctx.role)) return;
   const id = String(formData.get("id") ?? "");

@@ -2,41 +2,10 @@
 
 import { revalidatePath, revalidateTag } from "next/cache";
 import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
-import {
-  dailyVelocity,
-  economicOrderQty,
-  recommendedOrderQuantity,
-  reorderPoint as ropFormula,
-} from "@/lib/replenishment";
+import { getActionContext } from "@/lib/data/actionContext";
 import { narratePoDraft } from "@/lib/ai/narrate";
-import { PurchaseOrderDetailRealtime } from "@/components/realtime/PageRealtime";
+import { draftReorderPOs } from "@/lib/data/reorderDraft";
 import { tags } from "@/lib/cache-tags";
-
-async function getOrgContext() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return { error: "Not signed in" as const };
-
-  const { data: membership } = await supabase
-    .from("org_members")
-    .select("org_id, role")
-    .eq("user_id", user.id)
-    .limit(1)
-    .maybeSingle();
-
-  if (!membership) return { error: "No workspace" as const };
-  return { supabase, user, orgId: membership.org_id as string };
-}
-
-/**
- * Lookback window (days) used to compute per-product velocity from
- * scan_history. 60 days balances "enough signal to smooth noise" against
- * "recent enough to reflect current demand patterns."
- */
-const VELOCITY_LOOKBACK_DAYS = 60;
 
 /**
  * Draft a reorder PO from products at or below their reorder point.
@@ -45,6 +14,7 @@ const VELOCITY_LOOKBACK_DAYS = 60;
  * proper ROP+EOQ math. For each low-stock product we:
  *
  *   1. Pull the last 60 days of pick/adjust scans to compute daily velocity
+ *      (via the shared productVelocities helper in lib/data/velocity)
  *   2. Compute ROP    = velocity × lead_time + safety_stock
  *   3. Compute EOQ    = √(2 × annualDemand × orderCost / holdingCost)
  *   4. Recommend qty  = max(EOQ, gap-to-ROP-after-lead-time)
@@ -59,260 +29,49 @@ const VELOCITY_LOOKBACK_DAYS = 60;
  * with reasoning=null.
  */
 export async function draftReorderPO(): Promise<void> {
-  const ctx = await getOrgContext();
+  const ctx = await getActionContext();
   if ("error" in ctx) return;
   const { supabase, orgId, user } = ctx;
 
-  const { data: warehouse } = await supabase
-    .from("warehouses")
-    .select("id")
-    .limit(1)
-    .maybeSingle();
+  // Core drafting (math + grouping + persistence) lives in the shared engine
+  // so the scheduled auto-draft cron runs the exact same logic. Pass the real
+  // user + the RLS client; narratePoDraft works here because there's a session.
+  const result = await draftReorderPOs({
+    supabase,
+    orgId,
+    userId: user.id,
+    narrate: narratePoDraft,
+  });
 
-  const { data: products } = await supabase
-    .from("products")
-    .select(
-      `id, name, barcode, reorder_point, safety_stock, lead_time_days,
-       unit_cost, preferred_supplier_id,
-       locations:locations ( quantity ),
-       preferred_supplier:suppliers!products_preferred_supplier_id_fkey (
-         id, name, default_lead_time_days
-       )`
-    )
-    .gt("reorder_point", 0);
-
-  type ProductRow = {
-    id: string;
-    name: string;
-    barcode: string;
-    reorder_point: number;
-    safety_stock: number | null;
-    lead_time_days: number | null;
-    unit_cost: string | null;
-    preferred_supplier_id: string | null;
-    locations: Array<{ quantity: number | null }> | null;
-    preferred_supplier:
-      | {
-          id: string;
-          name: string;
-          default_lead_time_days: number | null;
-        }
-      | {
-          id: string;
-          name: string;
-          default_lead_time_days: number | null;
-        }[]
-      | null;
-  };
-
-  const lowStock = ((products as ProductRow[]) ?? [])
-    .map((p) => {
-      const total = (p.locations ?? []).reduce(
-        (s, l) => s + (l.quantity ?? 0),
-        0
-      );
-      const supplier = Array.isArray(p.preferred_supplier)
-        ? p.preferred_supplier[0]
-        : p.preferred_supplier;
-      return { ...p, total, supplier };
-    })
-    .filter((p) => p.total <= p.reorder_point);
-
-  if (lowStock.length === 0) {
+  if (result.status === "no_low_stock") {
     redirect("/purchase-orders?no_low_stock=1");
-  }
-
-  // ─── Velocity lookup ────────────────────────────────────────────────────
-  // One batched query for all low-stock products. We sum the `quantity` on
-  // pick + adjust scans over the last 60 days, then divide by 60 to get
-  // daily velocity.
-  const lookbackStart = new Date();
-  lookbackStart.setDate(lookbackStart.getDate() - VELOCITY_LOOKBACK_DAYS);
-  lookbackStart.setHours(0, 0, 0, 0);
-
-  const productIds = lowStock.map((p) => p.id);
-  const { data: velocityScans } = await supabase
-    .from("scan_history")
-    .select("product_id, quantity, action")
-    .in("product_id", productIds)
-    .in("action", ["pick", "adjust"])
-    .gte("scanned_at", lookbackStart.toISOString());
-
-  const consumedByProduct = new Map<string, number>();
-  for (const s of (velocityScans ?? []) as Array<{
-    product_id: string | null;
-    quantity: number | null;
-    action: string;
-  }>) {
-    if (!s.product_id) continue;
-    // `pick` reduces stock (positive demand). `adjust` may be either
-    // direction; we treat any magnitude as consumption signal since the
-    // mobile app stores positive numbers for losses.
-    const q = Math.abs(s.quantity ?? 0);
-    consumedByProduct.set(
-      s.product_id,
-      (consumedByProduct.get(s.product_id) ?? 0) + q
-    );
-  }
-
-  // ─── Group by supplier + compute recommendations ────────────────────────
-  type RecommendedLine = {
-    product_id: string;
-    product_name: string;
-    barcode: string;
-    quantity_expected: number;
-    unit_cost: string | null;
-    velocity: number;
-    rop: number;
-    // Additional inputs captured so narratePoDraft has everything it needs
-    // without requiring a second product fetch.
-    on_hand: number;
-    lead_time_days: number;
-    reorder_point: number;
-  };
-  type Group = {
-    supplierId: string | null;
-    supplierName: string;
-    lines: RecommendedLine[];
-  };
-  const groups = new Map<string, Group>();
-
-  for (const item of lowStock) {
-    const velocity = dailyVelocity({
-      totalUnitsConsumed: consumedByProduct.get(item.id) ?? 0,
-      days: VELOCITY_LOOKBACK_DAYS,
-    });
-
-    // Effective lead time: product override > supplier default > 7d fallback
-    const leadTimeDays =
-      item.lead_time_days ?? item.supplier?.default_lead_time_days ?? 7;
-
-    const safetyStock = item.safety_stock ?? 0;
-    const rop = ropFormula({ velocity, leadTimeDays, safetyStock });
-
-    const unitCostNum =
-      item.unit_cost != null ? parseFloat(item.unit_cost) : null;
-    const eoq = economicOrderQty({
-      annualDemand: velocity * 365,
-      unitCost: unitCostNum,
-    });
-
-    const orderQty = recommendedOrderQuantity({
-      onHand: item.total,
-      rop,
-      velocity,
-      leadTimeDays,
-      eoq,
-    });
-
-    const key = item.supplier?.id ?? "__tbd__";
-    const existing = groups.get(key);
-    const line: RecommendedLine = {
-      product_id: item.id,
-      product_name: item.name,
-      barcode: item.barcode,
-      quantity_expected: orderQty,
-      unit_cost: item.unit_cost,
-      velocity,
-      rop,
-      on_hand: item.total,
-      lead_time_days: leadTimeDays,
-      reorder_point: item.reorder_point,
-    };
-    if (existing) {
-      existing.lines.push(line);
-    } else {
-      groups.set(key, {
-        supplierId: item.supplier?.id ?? null,
-        supplierName: item.supplier?.name ?? "Supplier TBD",
-        lines: [line],
-      });
-    }
-  }
-
-  // ─── Persist ────────────────────────────────────────────────────────────
-  const { data: lastPO } = await supabase
-    .from("purchase_orders")
-    .select("po_number")
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  let nextNum =
-    (lastPO?.po_number?.match(/PO-(\d+)/)?.[1]
-      ? parseInt(lastPO.po_number.match(/PO-(\d+)/)![1]!, 10)
-      : 2048) + 1;
-
-  let lastCreatedId: string | null = null;
-
-  for (const group of groups.values()) {
-    // Build a short transparency note so buyers can see the math
-    const ropSummary = group.lines
-      .slice(0, 3)
-      .map(
-        (l) =>
-          `${l.product_name}: ${l.quantity_expected}u (ROP ${
-            l.rop
-          }, v=${l.velocity.toFixed(2)}/d)`
-      )
-      .join("; ");
-    const truncationHint =
-      group.lines.length > 3 ? ` (+${group.lines.length - 3} more)` : "";
-
-    const { data: newPO, error: poErr } = await supabase
-      .from("purchase_orders")
-      .insert({
-        org_id: orgId,
-        warehouse_id: warehouse?.id,
-        po_number: `PO-${nextNum}`,
-        supplier_id: group.supplierId,
-        supplier_name: group.supplierName,
-        status: "draft",
-        notes: `Auto-drafted · ${group.lines.length} SKU${
-          group.lines.length === 1 ? "" : "s"
-        } · ${ropSummary}${truncationHint}`,
-        created_by: user.id,
-      })
-      .select("id")
-      .single();
-
-    if (poErr || !newPO) continue;
-    lastCreatedId = newPO.id;
-    nextNum++;
-
-    // AI narration: one short sentence per line explaining the qty.
-    // Returns null on failure (LLM down / rate limit) — we still ship the
-    // PO with empty reasoning rather than block on it.
-    const narrations = await narratePoDraft({
-      lines: group.lines.map((l) => ({
-        product_name: l.product_name,
-        barcode: l.barcode,
-        velocity: Number(l.velocity.toFixed(2)),
-        on_hand: l.on_hand,
-        reorder_point: l.reorder_point,
-        lead_time_days: l.lead_time_days,
-        recommended_qty: l.quantity_expected,
-      })),
-    });
-
-    const lineRows = group.lines.map((l, i) => ({
-      po_id: newPO.id,
-      product_id: l.product_id,
-      product_name: l.product_name,
-      barcode: l.barcode,
-      quantity_expected: l.quantity_expected,
-      unit_cost: l.unit_cost, // snapshotted for historical cost analysis
-      reasoning: narrations?.[i] || null,
-    }));
-
-    await supabase.from("po_line_items").insert(lineRows);
   }
 
   revalidatePath("/purchase-orders");
   revalidateTag(tags.purchaseOrders(orgId));
-  if (groups.size === 1 && lastCreatedId) {
-    redirect(`/purchase-orders/${lastCreatedId}`);
+  if (result.supplierGroups === 1 && result.createdPoIds[0]) {
+    redirect(`/purchase-orders/${result.createdPoIds[0]}`);
   }
   redirect("/purchase-orders");
+}
+
+/**
+ * Toggle the workspace's auto-draft-PO setting (owner/admin only). Drives the
+ * scheduled cron at /api/cron/auto-draft-pos, which only processes orgs with
+ * this enabled.
+ */
+export async function setAutoDraftEnabled(formData: FormData): Promise<void> {
+  const ctx = await getActionContext();
+  if ("error" in ctx) return;
+  if (!["owner", "admin"].includes(ctx.role)) return;
+
+  const enabled = String(formData.get("enabled") ?? "") === "true";
+  await ctx.supabase
+    .from("orgs")
+    .update({ auto_draft_pos_enabled: enabled })
+    .eq("id", ctx.orgId);
+
+  revalidatePath("/purchase-orders");
 }
 
 // ─── Lifecycle transitions ──────────────────────────────────────────────────
@@ -322,7 +81,7 @@ export async function draftReorderPO(): Promise<void> {
  * times. Idempotent — already-sent POs aren't re-stamped.
  */
 export async function markPoSent(formData: FormData): Promise<void> {
-  const ctx = await getOrgContext();
+  const ctx = await getActionContext();
   if ("error" in ctx) return;
   const id = String(formData.get("id") ?? "");
 
@@ -342,7 +101,7 @@ export async function markPoSent(formData: FormData): Promise<void> {
 }
 
 export async function markPoCancelled(formData: FormData): Promise<void> {
-  const ctx = await getOrgContext();
+  const ctx = await getActionContext();
   if ("error" in ctx) return;
   const id = String(formData.get("id") ?? "");
   await ctx.supabase
@@ -370,7 +129,7 @@ export async function createPurchaseOrder(
   _prev: unknown,
   formData: FormData
 ): Promise<{ error?: string; success?: string; id?: string }> {
-  const ctx = await getOrgContext();
+  const ctx = await getActionContext();
   if ("error" in ctx) return { error: ctx.error };
 
   const supplierId = String(formData.get("supplier_id") ?? "").trim();
@@ -505,7 +264,7 @@ export async function receiveLineItem(
   _prev: unknown,
   formData: FormData
 ): Promise<{ error?: string; success?: string } | void> {
-  const ctx = await getOrgContext();
+  const ctx = await getActionContext();
   if ("error" in ctx) return { error: ctx.error };
 
   const lineId = String(formData.get("line_id") ?? "");
