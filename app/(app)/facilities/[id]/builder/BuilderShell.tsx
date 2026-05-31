@@ -28,6 +28,7 @@ import type {
   DetectedSection,
   SelectionRef,
   ElementKind,
+  CategoryOption,
 } from "./types";
 import type { DragMode } from "./snap";
 import type { RectPatch } from "./useDraggableItem";
@@ -37,6 +38,7 @@ interface Props {
   canvasWidth: number;
   canvasHeight: number;
   floorUnit: string;
+  categories: CategoryOption[];
   initialSections: SectionDraft[];
   initialElements: LayoutElementDraft[];
 }
@@ -178,6 +180,7 @@ function reducer(state: State, action: Action): State {
         color: SECTION_COLORS[state.sections.length % SECTION_COLORS.length],
         sort_order: nextSort,
         slot_capacity: null,
+        default_category: null,
       };
       const next = pushHistory(state);
       return {
@@ -426,6 +429,7 @@ function reducer(state: State, action: Action): State {
         color: SECTION_COLORS[i % SECTION_COLORS.length],
         sort_order: i + 1,
         slot_capacity: null,
+        default_category: null,
       }));
       const newDeleted = [
         ...state.deletedSectionIds,
@@ -516,6 +520,7 @@ export function BuilderShell({
   canvasWidth,
   canvasHeight,
   floorUnit: initialFloorUnit,
+  categories,
   initialSections,
   initialElements,
 }: Props) {
@@ -1045,6 +1050,7 @@ export function BuilderShell({
             sections={state.sections}
             elements={state.elements}
             floorUnit={floorUnit}
+            categories={categories}
             onUpdateSection={(id, patch) =>
               dispatch({ type: "update_section", id, patch })
             }
@@ -1063,6 +1069,7 @@ export function BuilderShell({
           sections={state.sections}
           elements={state.elements}
           floorUnit={floorUnit}
+          categories={categories}
           onUpdateSection={(id, patch) =>
             dispatch({ type: "update_section", id, patch })
           }
