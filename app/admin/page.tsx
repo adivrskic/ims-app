@@ -43,7 +43,7 @@ export default async function AdminDashboard() {
   const admin = createAdminClient();
 
   const { data, error } = await admin
-    .from("organizations")
+    .from("orgs")
     .select(
       "id, name, slug, tier, created_at, onboarded_at, members:org_members ( count )"
     )

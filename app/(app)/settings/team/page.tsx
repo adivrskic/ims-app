@@ -42,7 +42,7 @@ export default async function TeamPage() {
   // Resolve the current user's org + role
   const { data: membership } = await supabase
     .from("org_members")
-    .select("org_id, role, organization:organizations ( name )")
+    .select("org_id, role")
     .eq("user_id", user.id)
     .limit(1)
     .maybeSingle();

@@ -77,7 +77,7 @@ export async function createWorkspace(
   // 3. Check the slug is free. Two clients with the exact same name
   //    would collide; nudge the user to disambiguate before any writes.
   const { data: existingSlug } = await admin
-    .from("organizations")
+    .from("orgs")
     .select("id")
     .eq("slug", slug)
     .maybeSingle();
@@ -132,7 +132,7 @@ export async function createWorkspace(
   // 7. Create the organization. If this fails, the auth user is orphaned
   //    — see note in the file header about cleanup.
   const { data: org, error: orgError } = await admin
-    .from("organizations")
+    .from("orgs")
     .insert({
       name,
       slug,
@@ -162,7 +162,7 @@ export async function createWorkspace(
 
   if (profileError) {
     // Roll back the org so a retry doesn't trip the slug check
-    await admin.from("organizations").delete().eq("id", org.id);
+    await admin.from("orgs").delete().eq("id", org.id);
     return {
       error: `Profile insert failed: ${profileError.message}. Rolled back the workspace; you can retry.`,
     };
@@ -178,7 +178,7 @@ export async function createWorkspace(
   if (memberError) {
     // Partial state — profile + org exist but no membership. Clean up.
     await admin.from("profiles").delete().eq("id", newUser.id);
-    await admin.from("organizations").delete().eq("id", org.id);
+    await admin.from("orgs").delete().eq("id", org.id);
     return {
       error: `Membership insert failed: ${memberError.message}. Rolled back; you can retry.`,
     };
