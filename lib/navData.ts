@@ -9,10 +9,15 @@ import {
   Plug,
   Settings,
   ClipboardCheck,
+  Factory,
+  Contact,
 } from "lucide-react";
 import type { ComponentType } from "react";
+import { primaryNavKeys } from "@/lib/industries";
 
 export interface NavItem {
+  /** Stable id used by industry nav config + (Phase 2) per-user prefs. */
+  key: string;
   href: string;
   label: string;
   icon: ComponentType<{ size?: number; strokeWidth?: number }>;
@@ -28,28 +33,43 @@ export const NAV_GROUPS: NavGroup[] = [
   {
     label: "Operate",
     items: [
-      { href: "/", label: "Overview", icon: Activity },
-      { href: "/inventory", label: "Inventory", icon: Boxes },
-      { href: "/analytics", label: "Analytics", icon: BarChart3 },
-      { href: "/cycle-counts", label: "Cycle counts", icon: ClipboardCheck },
+      { key: "overview", href: "/", label: "Overview", icon: Activity },
+      { key: "inventory", href: "/inventory", label: "Inventory", icon: Boxes },
+      { key: "analytics", href: "/analytics", label: "Analytics", icon: BarChart3 },
+      {
+        key: "cycle-counts",
+        href: "/cycle-counts",
+        label: "Cycle counts",
+        icon: ClipboardCheck,
+      },
     ],
   },
   {
     label: "Flow",
     items: [
-      { href: "/orders", label: "Orders", icon: ClipboardList },
-      { href: "/purchase-orders", label: "Purchase Orders", icon: Truck },
-      { href: "/returns", label: "Returns", icon: RotateCcw },
+      { key: "orders", href: "/orders", label: "Orders", icon: ClipboardList },
+      {
+        key: "purchase-orders",
+        href: "/purchase-orders",
+        label: "Purchase Orders",
+        icon: Truck,
+      },
+      { key: "returns", href: "/returns", label: "Returns", icon: RotateCcw },
+    ],
+  },
+  {
+    label: "Directory",
+    items: [
+      { key: "suppliers", href: "/suppliers", label: "Suppliers", icon: Factory },
+      { key: "customers", href: "/customers", label: "Customers", icon: Contact },
     ],
   },
   {
     label: "Configure",
     items: [
-      // Facilities now lives at /facilities (was /settings/facilities).
-      // Top-level route so it doesn't inherit the Settings layout chrome.
-      { href: "/facilities", label: "Facilities", icon: Building2 },
-      { href: "/integrations", label: "Integrations", icon: Plug },
-      { href: "/settings", label: "Settings", icon: Settings },
+      { key: "facilities", href: "/facilities", label: "Facilities", icon: Building2 },
+      { key: "integrations", href: "/integrations", label: "Integrations", icon: Plug },
+      { key: "settings", href: "/settings", label: "Settings", icon: Settings },
     ],
   },
 ];
@@ -77,4 +97,45 @@ export function findActiveHref(
     .sort((a, b) => b.href.length - a.href.length);
 
   return matches[0]?.href ?? null;
+}
+
+/** All defined nav items, flattened. */
+export const ALL_NAV_ITEMS: NavItem[] = NAV_GROUPS.flatMap((g) => g.items);
+
+export interface ResolvedNav {
+  /** Groups filtered to the industry's primary items (empty groups dropped). */
+  groups: NavGroup[];
+  /** Available items NOT primary for this industry — shown under "More". */
+  more: NavItem[];
+}
+
+/**
+ * Resolve the sidenav for a workspace's industry.
+ *
+ * Keeps the grouped IA (Operate / Flow / Directory / Configure) but shows only
+ * the items the industry flags as primary; everything else collapses into
+ * "More" (nothing becomes unreachable — and the command palette always finds
+ * all of it). With no industry set, every item is primary → unchanged nav.
+ *
+ * Industry keys that don't map to a built page yet (e.g. "lots") are simply
+ * skipped, so roadmap features auto-surface here the moment they ship.
+ *
+ * (Phase 2 will layer per-user show/hide + reorder on top of this.)
+ */
+export function resolveNav(industry: string | null | undefined): ResolvedNav {
+  const primaryKeys = new Set(primaryNavKeys(industry));
+
+  const groups: NavGroup[] = [];
+  const more: NavItem[] = [];
+
+  for (const group of NAV_GROUPS) {
+    const primaryItems = group.items.filter((i) => primaryKeys.has(i.key));
+    const secondaryItems = group.items.filter((i) => !primaryKeys.has(i.key));
+    if (primaryItems.length > 0) {
+      groups.push({ label: group.label, items: primaryItems });
+    }
+    more.push(...secondaryItems);
+  }
+
+  return { groups, more };
 }

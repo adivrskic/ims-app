@@ -40,7 +40,12 @@ export interface Membership {
   org_id: string;
   role: "owner" | "admin" | "member";
   joined_at: string | null;
-  org: { id: string; name: string; slug: string } | null;
+  org: {
+    id: string;
+    name: string;
+    slug: string;
+    industry: string | null;
+  } | null;
 }
 
 export const getMemberships = cache(async (): Promise<Membership[]> => {
@@ -49,7 +54,7 @@ export const getMemberships = cache(async (): Promise<Membership[]> => {
   const supabase = await createClient();
   const { data } = await supabase
     .from("org_members")
-    .select("org_id, role, joined_at, org:orgs ( id, name, slug )")
+    .select("org_id, role, joined_at, org:orgs ( id, name, slug, industry )")
     .eq("user_id", user.id);
   return (data ?? []).map((m) => {
     const org = Array.isArray(m.org) ? m.org[0] : m.org;
@@ -57,7 +62,7 @@ export const getMemberships = cache(async (): Promise<Membership[]> => {
       org_id: m.org_id as string,
       role: m.role as "owner" | "admin" | "member",
       joined_at: m.joined_at as string | null,
-      org: org as { id: string; name: string; slug: string } | null,
+      org: org as Membership["org"],
     };
   });
 });

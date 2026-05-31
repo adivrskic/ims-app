@@ -9,6 +9,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { sendInviteEmail } from "@/lib/email/invite";
 import { CURRENT_WORKSPACE_COOKIE } from "@/lib/currentWorkspace";
 import { CURRENT_FACILITY_COOKIE } from "@/lib/currentFacility";
+import { isIndustrySlug } from "@/lib/industries";
 
 export interface OnboardingState {
   error?: string;
@@ -129,6 +130,8 @@ export async function setUpWorkspace(
 
   // ── 3. Validate inputs ───────────────────────────────────────────
   const workspaceName = String(formData.get("workspace_name") ?? "").trim();
+  const industryRaw = String(formData.get("industry") ?? "").trim();
+  const industry = isIndustrySlug(industryRaw) ? industryRaw : null;
   const facilityName = String(formData.get("facility_name") ?? "").trim();
   const facilityCity = String(formData.get("facility_city") ?? "").trim();
   const facilityState = String(formData.get("facility_state") ?? "").trim();
@@ -162,7 +165,7 @@ export async function setUpWorkspace(
   // 4b. Create org
   const { data: org, error: orgErr } = await admin
     .from("orgs")
-    .insert({ name: workspaceName, slug })
+    .insert({ name: workspaceName, slug, industry })
     .select("id, name")
     .single();
   if (orgErr || !org) {

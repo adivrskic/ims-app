@@ -28,6 +28,8 @@ export interface OrgRow {
   updated_at: string;
   /** Opt-in for the scheduled auto-draft-PO cron. Defaults false. */
   auto_draft_pos_enabled: boolean;
+  /** Industry vertical slug (drives default nav) or null. */
+  industry: string | null;
 }
 
 export interface OrgMemberRow {
@@ -204,6 +206,7 @@ export type Database = {
           | "deleted_at"
           | "logo_url"
           | "auto_draft_pos_enabled"
+          | "industry"
         >;
         Update: Partial<OrgRow>;
         Relationships: [];

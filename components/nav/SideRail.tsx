@@ -6,6 +6,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ChevronsLeft,
   ChevronsRight,
+  ChevronDown,
   Search,
   Bell,
   Command,
@@ -19,7 +20,12 @@ import {
 } from "lucide-react";
 import { Logo } from "@/components/ui/Logo";
 import { LogoWordmark } from "@/components/ui/LogoWordmark";
-import { NAV_GROUPS, findActiveHref, type NavItem } from "@/lib/navData";
+import {
+  ALL_NAV_ITEMS,
+  resolveNav,
+  findActiveHref,
+  type NavItem,
+} from "@/lib/navData";
 import { WorkspaceSwitcher, type WorkspaceOption } from "./WorkspaceSwitcher";
 import type { NotificationItem } from "./NotificationsDropdown";
 import { signOut } from "@/app/(auth)/actions";
@@ -44,6 +50,8 @@ interface Props {
   initialCollapsed: boolean;
   facilities: FacilityOption[];
   currentFacilityId: string | null;
+  /** Workspace industry slug — drives which items show by default. */
+  industry: string | null;
 }
 
 /**
@@ -68,9 +76,11 @@ export function SideRail({
   initialCollapsed,
   facilities,
   currentFacilityId,
+  industry,
 }: Props) {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(initialCollapsed);
+  const [moreOpen, setMoreOpen] = useState(false);
 
   useEffect(() => {
     document.cookie = `${SIDEBAR_COOKIE}=${collapsed}; path=/; max-age=${
@@ -103,10 +113,16 @@ export function SideRail({
     window.dispatchEvent(new Event("open-command-palette"));
   };
 
-  const allItems = useMemo(() => NAV_GROUPS.flatMap((g) => g.items), []);
   const activeHref = useMemo(
-    () => findActiveHref(allItems, pathname),
-    [allItems, pathname]
+    () => findActiveHref(ALL_NAV_ITEMS, pathname),
+    [pathname]
+  );
+
+  // Industry-driven nav: primary items stay grouped; the rest collapse into
+  // "More" so nothing's unreachable (and ⌘K finds everything regardless).
+  const { groups: navGroups, more: moreItems } = useMemo(
+    () => resolveNav(industry),
+    [industry]
   );
 
   const width = collapsed ? COLLAPSED_WIDTH : EXPANDED_WIDTH;
@@ -174,7 +190,7 @@ export function SideRail({
           collapsed ? "px-6 py-10 gap-10" : "px-10 py-14 gap-18"
         }`}
       >
-        {NAV_GROUPS.map((group) => (
+        {navGroups.map((group) => (
           <div key={group.label}>
             {!collapsed && (
               <div className="px-10 mb-6">
@@ -182,35 +198,61 @@ export function SideRail({
               </div>
             )}
             <ul className="flex flex-col gap-1">
-              {group.items.map((item) => {
-                // Facilities gets the special switcher (button + popover).
-                // Every other item renders as a normal Link.
-                if (item.href === "/settings/facilities") {
-                  return (
-                    <FacilitiesNavItem
-                      key={item.href}
-                      label={item.label}
-                      icon={item.icon}
-                      manageHref={item.href}
-                      active={item.href === activeHref}
-                      collapsed={collapsed}
-                      facilities={facilities}
-                      currentFacilityId={currentFacilityId}
-                    />
-                  );
-                }
-                return (
-                  <NavItemLink
-                    key={item.href}
-                    item={item}
-                    active={item.href === activeHref}
-                    collapsed={collapsed}
-                  />
-                );
-              })}
+              {group.items.map((item) =>
+                renderNavItem(item, {
+                  activeHref,
+                  collapsed,
+                  facilities,
+                  currentFacilityId,
+                })
+              )}
             </ul>
           </div>
         ))}
+
+        {/* More — items not primary for this industry. Expanded: a toggle.
+            Collapsed: appended as icons so nothing is unreachable. */}
+        {moreItems.length > 0 &&
+          (collapsed ? (
+            <ul className="flex flex-col gap-1">
+              {moreItems.map((item) =>
+                renderNavItem(item, {
+                  activeHref,
+                  collapsed,
+                  facilities,
+                  currentFacilityId,
+                })
+              )}
+            </ul>
+          ) : (
+            <div>
+              <button
+                type="button"
+                onClick={() => setMoreOpen((o) => !o)}
+                className="w-full flex items-center gap-6 px-10 mb-6 text-text-muted hover:text-text transition-colors"
+                aria-expanded={moreOpen}
+              >
+                <span className="label-text">More</span>
+                <ChevronDown
+                  size={11}
+                  strokeWidth={1.5}
+                  className={`transition-transform ${moreOpen ? "rotate-180" : ""}`}
+                />
+              </button>
+              {moreOpen && (
+                <ul className="flex flex-col gap-1">
+                  {moreItems.map((item) =>
+                    renderNavItem(item, {
+                      activeHref,
+                      collapsed,
+                      facilities,
+                      currentFacilityId,
+                    })
+                  )}
+                </ul>
+              )}
+            </div>
+          ))}
       </nav>
 
       {/* ── Footer ──────────────────────────────────────────────────── */}
@@ -347,6 +389,42 @@ export function SideRail({
         </button>
       </div>
     </aside>
+  );
+}
+
+// ─── Item renderer ──────────────────────────────────────────────────────
+// Facilities gets the special switcher (button + popover); everything else is
+// a plain link. Shared by the primary groups and the "More" section.
+function renderNavItem(
+  item: NavItem,
+  ctx: {
+    activeHref: string | null;
+    collapsed: boolean;
+    facilities: FacilityOption[];
+    currentFacilityId: string | null;
+  }
+) {
+  if (item.key === "facilities") {
+    return (
+      <FacilitiesNavItem
+        key={item.key}
+        label={item.label}
+        icon={item.icon}
+        manageHref={item.href}
+        active={item.href === ctx.activeHref}
+        collapsed={ctx.collapsed}
+        facilities={ctx.facilities}
+        currentFacilityId={ctx.currentFacilityId}
+      />
+    );
+  }
+  return (
+    <NavItemLink
+      key={item.key}
+      item={item}
+      active={item.href === ctx.activeHref}
+      collapsed={ctx.collapsed}
+    />
   );
 }
 
