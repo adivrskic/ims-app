@@ -89,6 +89,7 @@ export default async function ProductDetailPage({
     { data: scans },
     { data: lots },
     { data: poLines },
+    { data: pickedLines },
     { data: cycleCounts },
   ] = await Promise.all([
     supabase
@@ -110,6 +111,12 @@ export default async function ProductDetailPage({
     supabase
       .from("po_line_items")
       .select("lot_id, quantity_received")
+      .eq("product_id", id)
+      .not("lot_id", "is", null),
+    // Aggregate picked quantity per lot via order_items (lot consumption)
+    supabase
+      .from("order_items")
+      .select("lot_id, quantity_picked")
       .eq("product_id", id)
       .not("lot_id", "is", null),
     supabase
@@ -162,6 +169,23 @@ export default async function ProductDetailPage({
     );
   }
 
+  // Picked-per-lot (lot consumption, set by the picker). Lot on-hand is the
+  // received − picked ledger — a derived quantity that never touches the
+  // location-level on-hand store, so peripheral stock paths stay lot-agnostic.
+  const pickedByLot = new Map<string, number>();
+  for (const l of (pickedLines ?? []) as Array<{
+    lot_id: string | null;
+    quantity_picked: number | null;
+  }>) {
+    if (!l.lot_id) continue;
+    pickedByLot.set(
+      l.lot_id,
+      (pickedByLot.get(l.lot_id) ?? 0) + (l.quantity_picked ?? 0)
+    );
+  }
+  const onHandByLot = (lotId: string) =>
+    Math.max(0, (receivedByLot.get(lotId) ?? 0) - (pickedByLot.get(lotId) ?? 0));
+
   type LotRow = {
     id: string;
     lot_number: string;
@@ -189,7 +213,7 @@ export default async function ProductDetailPage({
     fefoLots.find(
       (l) =>
         l.expires_at &&
-        (receivedByLot.get(l.id) ?? 0) > 0 &&
+        onHandByLot(l.id) > 0 &&
         expiryStatus(l.expires_at) !== "expired"
     )?.id ?? null;
 
@@ -445,7 +469,7 @@ export default async function ProductDetailPage({
                   <Th>Supplier</Th>
                   <Th>Received</Th>
                   <Th>Expires</Th>
-                  <Th align="right">Total received</Th>
+                  <Th align="right">On hand</Th>
                 </tr>
               </thead>
               <tbody>
@@ -453,7 +477,7 @@ export default async function ProductDetailPage({
                   const sup = Array.isArray(lot.supplier)
                     ? lot.supplier[0]
                     : lot.supplier;
-                  const received = receivedByLot.get(lot.id) ?? 0;
+                  const onHand = onHandByLot(lot.id);
                   const status = expiryStatus(lot.expires_at);
                   const isFefo = lot.id === fefoPickId;
                   return (
@@ -534,7 +558,7 @@ export default async function ProductDetailPage({
                       </Td>
                       <Td align="right">
                         <span className="mono-body text-text tnum">
-                          {received > 0 ? received.toLocaleString() : "—"}
+                          {onHand > 0 ? onHand.toLocaleString() : "—"}
                         </span>
                       </Td>
                     </tr>

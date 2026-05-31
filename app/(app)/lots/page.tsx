@@ -76,6 +76,44 @@ export default async function LotsPage() {
   const products = (productsData ?? []) as ProductRowView[];
   const suppliers = (suppliersData ?? []) as Array<{ id: string; name: string }>;
 
+  // Lot on-hand ledger: received-per-lot (po_line_items) − picked-per-lot
+  // (order_items), scoped to this org's lots via lot_id. Derived — never
+  // touches the location-level on-hand store.
+  const lotIds = lots.map((l) => l.id);
+  const onHandByLot = new Map<string, number>();
+  if (lotIds.length > 0) {
+    const [{ data: recvLines }, { data: pickLines }] = await Promise.all([
+      supabase
+        .from("po_line_items")
+        .select("lot_id, quantity_received")
+        .in("lot_id", lotIds),
+      supabase
+        .from("order_items")
+        .select("lot_id, quantity_picked")
+        .in("lot_id", lotIds),
+    ]);
+    for (const r of (recvLines ?? []) as Array<{
+      lot_id: string | null;
+      quantity_received: number | null;
+    }>) {
+      if (!r.lot_id) continue;
+      onHandByLot.set(
+        r.lot_id,
+        (onHandByLot.get(r.lot_id) ?? 0) + (r.quantity_received ?? 0)
+      );
+    }
+    for (const p of (pickLines ?? []) as Array<{
+      lot_id: string | null;
+      quantity_picked: number | null;
+    }>) {
+      if (!p.lot_id) continue;
+      onHandByLot.set(
+        p.lot_id,
+        (onHandByLot.get(p.lot_id) ?? 0) - (p.quantity_picked ?? 0)
+      );
+    }
+  }
+
   const now = new Date();
   const expiredCount = lots.filter(
     (l) => expiryStatus(l.expires_at, now) === "expired"
@@ -142,6 +180,7 @@ export default async function LotsPage() {
                     <Th>Product</Th>
                     <Th>Lot / batch</Th>
                     <Th>Supplier</Th>
+                    <Th className="text-right">On hand</Th>
                     <Th>Expiry</Th>
                     <th aria-hidden style={{ width: 44 }} />
                   </tr>
@@ -172,6 +211,11 @@ export default async function LotsPage() {
                         <Td>
                           <span className="mono-sm text-text-muted">
                             {supplier?.name ?? "—"}
+                          </span>
+                        </Td>
+                        <Td className="text-right">
+                          <span className="mono-sm text-text-secondary tnum">
+                            {Math.max(0, onHandByLot.get(l.id) ?? 0).toLocaleString()}
                           </span>
                         </Td>
                         <Td>
