@@ -117,8 +117,27 @@ export interface ProductRow {
   track_lots: boolean;
   /** Opt-in: this product is a kit/assembly defined by kit_components. */
   is_kit: boolean;
+  /** Opt-in: this product is serialized (unit-level tracking). */
+  track_serials: boolean;
   created_at: string | null;
   updated_at: string | null;
+}
+
+export type SerialStatus = "in_stock" | "shipped" | "returned" | "scrapped";
+
+export interface SerialUnitRow {
+  id: string;
+  org_id: string;
+  product_id: string;
+  serial_number: string;
+  status: SerialStatus;
+  warehouse_id: string | null;
+  lot_id: string | null;
+  received_at: string | null;
+  shipped_at: string | null;
+  notes: string | null;
+  created_by: string | null;
+  created_at: string;
 }
 
 export interface KitComponentRow {
@@ -296,9 +315,31 @@ export type Database = {
         Row: ProductRow;
         Insert: WithGenerated<
           ProductRow,
-          "id" | "created_at" | "updated_at" | "track_lots" | "is_kit"
+          | "id"
+          | "created_at"
+          | "updated_at"
+          | "track_lots"
+          | "is_kit"
+          | "track_serials"
         >;
         Update: Partial<ProductRow>;
+        Relationships: [];
+      };
+      serial_units: {
+        Row: SerialUnitRow;
+        Insert: WithGenerated<
+          SerialUnitRow,
+          | "id"
+          | "created_at"
+          | "received_at"
+          | "shipped_at"
+          | "warehouse_id"
+          | "lot_id"
+          | "notes"
+          | "created_by"
+          | "status"
+        >;
+        Update: Partial<SerialUnitRow>;
         Relationships: [];
       };
       kit_components: {

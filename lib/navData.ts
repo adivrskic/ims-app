@@ -14,6 +14,7 @@ import {
   CalendarClock,
   ArrowLeftRight,
   Blocks,
+  ScanBarcode,
 } from "lucide-react";
 import type { ComponentType } from "react";
 import { primaryNavKeys } from "@/lib/industries";
@@ -40,6 +41,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { key: "inventory", href: "/inventory", label: "Inventory", icon: Boxes },
       { key: "lots", href: "/lots", label: "Lots", icon: CalendarClock },
       { key: "kits", href: "/kits", label: "Kits", icon: Blocks },
+      { key: "serials", href: "/serials", label: "Serials", icon: ScanBarcode },
       { key: "analytics", href: "/analytics", label: "Analytics", icon: BarChart3 },
       {
         key: "cycle-counts",
