@@ -6,6 +6,7 @@ import { SectionTitle } from "@/components/ui/SectionTitle";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Blocks, Trash2 } from "lucide-react";
 import { AddKitComponentForm } from "./AddKitComponentForm";
+import { BuildKitForm } from "./BuildKitForm";
 import { setKitFlag, removeKitComponent } from "./actions";
 
 export const metadata = { title: "Kits" };
@@ -18,19 +19,30 @@ export default async function KitsPage() {
   const supabase = await createClient();
   const orgId = ctx.orgId;
 
-  const [{ data: productsData }, { data: componentsData }, { data: locsData }] =
-    await Promise.all([
-      supabase
-        .from("products")
-        .select("id, name, barcode, is_kit")
-        .eq("org_id", orgId)
-        .order("name", { ascending: true }),
-      supabase
-        .from("kit_components")
-        .select("id, kit_product_id, component_product_id, quantity")
-        .eq("org_id", orgId),
-      supabase.from("locations").select("product_id, quantity").eq("org_id", orgId),
-    ]);
+  const [
+    { data: productsData },
+    { data: componentsData },
+    { data: locsData },
+    { data: warehousesData },
+  ] = await Promise.all([
+    supabase
+      .from("products")
+      .select("id, name, barcode, is_kit")
+      .eq("org_id", orgId)
+      .order("name", { ascending: true }),
+    supabase
+      .from("kit_components")
+      .select("id, kit_product_id, component_product_id, quantity")
+      .eq("org_id", orgId),
+    supabase.from("locations").select("product_id, quantity").eq("org_id", orgId),
+    supabase
+      .from("warehouses")
+      .select("id, name")
+      .eq("org_id", orgId)
+      .eq("is_active", true)
+      .order("created_at", { ascending: true }),
+  ]);
+  const warehouses = (warehousesData ?? []) as Array<{ id: string; name: string }>;
 
   type ProductRow = { id: string; name: string; barcode: string; is_kit: boolean };
   type ComponentRow = {
@@ -117,20 +129,25 @@ export default async function KitsPage() {
                       </Link>
                       <span className="mono-sm text-text-dim ml-8">{kit.barcode}</span>
                     </div>
-                    <span
-                      className="shrink-0 px-10 py-4 hairline-subtle"
-                      style={{ fontFamily: "var(--mono)", fontSize: 10 }}
-                    >
-                      <span className="text-text-muted">Buildable now · </span>
+                    <div className="flex items-center gap-10 flex-wrap justify-end shrink-0">
                       <span
-                        className="tnum"
-                        style={{
-                          color: buildable && buildable > 0 ? "var(--accent)" : "var(--text-dim)",
-                        }}
+                        className="px-10 py-4 hairline-subtle"
+                        style={{ fontFamily: "var(--mono)", fontSize: 10 }}
                       >
-                        {buildable == null ? "no recipe" : buildable.toLocaleString()}
+                        <span className="text-text-muted">Buildable now · </span>
+                        <span
+                          className="tnum"
+                          style={{
+                            color: buildable && buildable > 0 ? "var(--accent)" : "var(--text-dim)",
+                          }}
+                        >
+                          {buildable == null ? "no recipe" : buildable.toLocaleString()}
+                        </span>
                       </span>
-                    </span>
+                      {comps.length > 0 && (
+                        <BuildKitForm kitProductId={kit.id} warehouses={warehouses} />
+                      )}
+                    </div>
                   </header>
 
                   {comps.length > 0 ? (

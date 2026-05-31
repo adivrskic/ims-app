@@ -135,10 +135,66 @@ export async function createOrder(
     return { error: orderErr?.message ?? "Failed to create order" };
   }
 
-  const lineRows = items.map((i) => ({
+  // Explode any kit lines into their components so the pick list is
+  // component-level (ordering 2× a kit requests 2× each component). Non-kit
+  // lines pass through unchanged; quantities for the same product are merged.
+  const orderedIds = items.map((i) => i.product_id);
+  const { data: kitProductsData } = await ctx.supabase
+    .from("products")
+    .select("id")
+    .eq("org_id", ctx.orgId)
+    .eq("is_kit", true)
+    .in("id", orderedIds);
+  const kitIds = new Set(
+    ((kitProductsData ?? []) as Array<{ id: string }>).map((k) => k.id)
+  );
+
+  const bomByKit = new Map<
+    string,
+    Array<{ component_product_id: string; quantity: number }>
+  >();
+  if (kitIds.size > 0) {
+    const { data: boms } = await ctx.supabase
+      .from("kit_components")
+      .select("kit_product_id, component_product_id, quantity")
+      .eq("org_id", ctx.orgId)
+      .in("kit_product_id", [...kitIds]);
+    for (const b of (boms ?? []) as Array<{
+      kit_product_id: string;
+      component_product_id: string;
+      quantity: number;
+    }>) {
+      const arr = bomByKit.get(b.kit_product_id) ?? [];
+      arr.push({
+        component_product_id: b.component_product_id,
+        quantity: b.quantity,
+      });
+      bomByKit.set(b.kit_product_id, arr);
+    }
+  }
+
+  const expanded = new Map<string, number>();
+  for (const i of items) {
+    const bom = bomByKit.get(i.product_id);
+    if (kitIds.has(i.product_id) && bom && bom.length > 0) {
+      for (const c of bom) {
+        expanded.set(
+          c.component_product_id,
+          (expanded.get(c.component_product_id) ?? 0) + c.quantity * i.quantity
+        );
+      }
+    } else {
+      expanded.set(
+        i.product_id,
+        (expanded.get(i.product_id) ?? 0) + i.quantity
+      );
+    }
+  }
+
+  const lineRows = [...expanded.entries()].map(([product_id, quantity]) => ({
     order_id: newOrder.id,
-    product_id: i.product_id,
-    quantity_requested: i.quantity,
+    product_id,
+    quantity_requested: quantity,
   }));
 
   const { error: itemsErr } = await ctx.supabase
