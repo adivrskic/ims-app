@@ -10,13 +10,16 @@
     "types:gen": "supabase gen types typescript --project-id seypbrzjjiuibrwyxewj --schema app > types/supabase.ts"
   },
   "dependencies": {
+    "@react-three/drei": "^10.7.7",
+    "@react-three/fiber": "^9.6.1",
     "@supabase/ssr": "^0.5.2",
     "@supabase/supabase-js": "^2.45.4",
     "gsap": "^3.15.0",
     "lucide-react": "^0.454.0",
     "next": "^15.5.0",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "three": "^0.184.0"
   },
   "devDependencies": {
     "@types/node": "^22.9.0",

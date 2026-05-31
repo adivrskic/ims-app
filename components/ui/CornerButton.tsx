@@ -5,7 +5,7 @@ import Link from "next/link";
 import styles from "./CornerButton.module.css";
 
 type Variant = "primary" | "ghost" | "accent" | "danger";
-type Size = "default" | "sm";
+type Size = "default" | "sm" | "md";
 
 interface BaseProps {
   variant?: Variant;

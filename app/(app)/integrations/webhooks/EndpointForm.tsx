@@ -14,18 +14,17 @@ interface Props {
 }
 
 export function EndpointForm({ onCancel, onCreated }: Props) {
-  const [state, formAction, pending] = useActionState;
-  CreateEndpointResult | undefined,
-    FormData >
-      (async (prev, formData) => {
-        const result = await createWebhookEndpoint(prev, formData);
-        if (result.secret && !result.error) {
-          const name = String(formData.get("name") ?? "Endpoint");
-          onCreated(result.secret, name);
-        }
-        return result;
-      },
-      undefined);
+  const [state, formAction, pending] = useActionState<
+    CreateEndpointResult | undefined,
+    FormData
+  >(async (prev, formData) => {
+    const result = await createWebhookEndpoint(prev, formData);
+    if (result.secret && !result.error) {
+      const name = String(formData.get("name") ?? "Endpoint");
+      onCreated(result.secret, name);
+    }
+    return result;
+  }, undefined);
 
   const [enabled, setEnabled] = useState<string[]>([]);
 

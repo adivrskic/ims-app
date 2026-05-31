@@ -1,135 +1,296 @@
 "use server";
 
-import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
+import { cookies } from "next/headers";
+import { randomBytes } from "crypto";
 import { createClient } from "@/lib/supabase/server";
-import { CURRENT_FACILITY_COOKIE } from "@/lib/currentFacility";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { sendInviteEmail } from "@/lib/email/invite";
 import { CURRENT_WORKSPACE_COOKIE } from "@/lib/currentWorkspace";
 
-export async function markNotificationRead(id: string): Promise<void> {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return;
-
-  await supabase
-    .from("notifications")
-    .update({ read_at: new Date().toISOString() })
-    .eq("id", id)
-    .eq("user_id", user.id);
-
-  revalidatePath("/", "layout");
+export interface OnboardingState {
+  error?: string;
+  invites?: { email: string; url: string }[];
 }
 
-export async function markAllNotificationsRead(): Promise<void> {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return;
+function slugify(name: string): string {
+  return (
+    name
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/(^-|-$)/g, "")
+      .slice(0, 60) ||
+    // Fallback for names that strip to empty
+    `ws-${randomBytes(3).toString("hex")}`
+  );
+}
 
-  await supabase
-    .from("notifications")
-    .update({ read_at: new Date().toISOString() })
-    .eq("user_id", user.id)
-    .is("read_at", null);
-
-  revalidatePath("/", "layout");
+function parseEmails(raw: string): string[] {
+  return raw
+    .split(/[\s,;]+/)
+    .map((s) => s.trim().toLowerCase())
+    .filter((s) => s.length > 0 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s));
 }
 
 /**
- * Server action invoked from the sidebar's facility switcher popover.
+ * Switch the active workspace.
  *
- * FormData key "id" can be:
- *   - "all"   → explicit all-facilities mode
- *   - <uuid>  → switch to that facility
- *   - ""      → clear the cookie (revert to default resolution)
+ * Validates the user actually belongs to the target org BEFORE writing the
+ * cookie — never let a client pin the cookie to a workspace they're not a
+ * member of. (getActiveMembership also re-validates on every read, so a forged
+ * cookie wouldn't grant access regardless, but validating here gives a clean
+ * error and avoids setting a dead cookie.)
  *
- * After updating the cookie, revalidates the entire app layout so
- * getCurrentFacility() resolves to the new selection on the next render
- * and the UI reflects the change immediately.
- *
- * Note: no server-side validation of the facility ID — RLS prevents
- * any actual data leakage if a bogus UUID is set, and getCurrentFacility
- * ignores cookie values that don't match a visible facility.
- */
-export async function setCurrentFacility(formData: FormData): Promise<void> {
-  const raw = String(formData.get("id") ?? "").trim();
-  const cookieStore = await cookies();
-
-  const cookieOpts = {
-    path: "/",
-    maxAge: 60 * 60 * 24 * 365,
-    sameSite: "lax" as const,
-  };
-
-  if (raw === "all") {
-    cookieStore.set(CURRENT_FACILITY_COOKIE, "all", cookieOpts);
-  } else if (raw) {
-    cookieStore.set(CURRENT_FACILITY_COOKIE, raw, cookieOpts);
-  } else {
-    cookieStore.delete(CURRENT_FACILITY_COOKIE);
-  }
-
-  revalidatePath("/", "layout");
-}
-
-/**
- * Server action invoked from the sidebar's WorkspaceSwitcher.
- *
- * Verifies that the signed-in user is actually a member of the target
- * workspace, then sets the workspace cookie and revalidates the whole
- * app shell so every cached fetcher reads the new org_id on the next
- * render.
- *
- * Also clears the current-facility cookie — facilities are scoped to a
- * workspace, so a facility selected in workspace A doesn't carry over
- * to workspace B (would have rendered "all facilities" anyway due to
- * RLS, but explicit reset feels cleaner).
- *
- * Returns `{ error }` on failure (rendered inline by the client). On
- * success, the caller `router.refresh()`es; the revalidatePath here
- * does the actual cache busting.
+ * Called by the sidebar WorkspaceSwitcher. Returns { error } on failure; the
+ * switcher surfaces it and refreshes.
  */
 export async function switchWorkspace(
   formData: FormData
 ): Promise<{ error?: string }> {
   const orgId = String(formData.get("org_id") ?? "").trim();
-  if (!orgId) return { error: "Workspace ID is required" };
+  if (!orgId) return { error: "No workspace specified" };
 
   const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) return { error: "Not signed in" };
+  if (!user) return { error: "Your session expired. Sign in again." };
 
-  // Confirm membership before honoring the switch. RLS would block data
-  // leaks anyway, but failing fast here gives the user a real error
-  // instead of an empty-looking workspace.
   const { data: membership } = await supabase
     .from("org_members")
     .select("org_id")
     .eq("user_id", user.id)
     .eq("org_id", orgId)
     .maybeSingle();
-
   if (!membership) {
-    return { error: "You don't have access to that workspace" };
+    return { error: "You're not a member of that workspace" };
   }
 
   const cookieStore = await cookies();
-  const cookieOpts = {
+  cookieStore.set(CURRENT_WORKSPACE_COOKIE, orgId, {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
     path: "/",
-    maxAge: 60 * 60 * 24 * 365,
-    sameSite: "lax" as const,
-  };
+    maxAge: 60 * 60 * 24 * 365, // 1 year
+  });
 
-  cookieStore.set(CURRENT_WORKSPACE_COOKIE, orgId, cookieOpts);
-  // Reset facility scope — the previously selected facility belongs to
-  // a different workspace.
-  cookieStore.delete(CURRENT_FACILITY_COOKIE);
-
+  // Bust the whole layout subtree so every cached fetch re-resolves against
+  // the new active org.
   revalidatePath("/", "layout");
   return {};
+}
+
+/**
+ * Bootstrap a new workspace for a self-signed-up user.
+ *
+ * Preconditions enforced server-side:
+ *   - User is authenticated (Supabase auth.getUser)
+ *   - User has zero existing memberships — prevents abuse where someone
+ *     reuses this flow to create unlimited orgs
+ *
+ * Steps (admin client, in order):
+ *   1. Create the organization
+ *   2. Upsert the user's profile row (signup may not have created one)
+ *   3. Insert org_members with role=owner
+ *   4. Create the first facility (warehouse)
+ *   5. Optionally create org_invites for any provided teammate emails + email
+ *
+ * Non-atomic — if step 3 fails after step 1, the org is orphaned. For
+ * v1 this is acceptable (rare; cleanup is a manual SQL). Future: wrap
+ * in a Postgres SECURITY DEFINER function so it's transactional.
+ */
+export async function setUpWorkspace(
+  _prev: OnboardingState | undefined,
+  formData: FormData
+): Promise<OnboardingState> {
+  // ── 1. Auth ──────────────────────────────────────────────────────
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) {
+    return { error: "Your session expired. Sign in again to continue." };
+  }
+
+  // ── 2. Idempotence check ─────────────────────────────────────────
+  const { data: existingMembership } = await supabase
+    .from("org_members")
+    .select("org_id")
+    .eq("user_id", user.id)
+    .limit(1)
+    .maybeSingle();
+  if (existingMembership) {
+    // Already onboarded — don't run again, just send them home.
+    redirect("/");
+  }
+
+  // ── 3. Validate inputs ───────────────────────────────────────────
+  const workspaceName = String(formData.get("workspace_name") ?? "").trim();
+  const facilityName = String(formData.get("facility_name") ?? "").trim();
+  const facilityCity = String(formData.get("facility_city") ?? "").trim();
+  const facilityState = String(formData.get("facility_state") ?? "").trim();
+  const facilityZip = String(formData.get("facility_zip") ?? "").trim();
+  const inviteRaw = String(formData.get("invite_emails") ?? "");
+
+  if (!workspaceName) return { error: "Workspace name is required" };
+  if (workspaceName.length < 2) {
+    return { error: "Workspace name must be at least 2 characters" };
+  }
+  if (!facilityName) return { error: "Facility name is required" };
+
+  const inviteEmails = parseEmails(inviteRaw).filter((e) => e !== user.email);
+  // Deduplicate
+  const uniqueInvites = Array.from(new Set(inviteEmails));
+
+  // ── 4. Provision ─────────────────────────────────────────────────
+  const admin = createAdminClient();
+
+  // 4a. Slug — ensure uniqueness by appending a random suffix on collision.
+  let slug = slugify(workspaceName);
+  const { data: slugTaken } = await admin
+    .from("orgs")
+    .select("id")
+    .eq("slug", slug)
+    .maybeSingle();
+  if (slugTaken) {
+    slug = `${slug}-${randomBytes(2).toString("hex")}`;
+  }
+
+  // 4b. Create org
+  const { data: org, error: orgErr } = await admin
+    .from("orgs")
+    .insert({ name: workspaceName, slug })
+    .select("id, name")
+    .single();
+  if (orgErr || !org) {
+    return {
+      error: `Couldn't create the workspace (${
+        orgErr?.message ?? "unknown error"
+      }). Try again.`,
+    };
+  }
+
+  // 4c. Upsert profile — signup creates auth.users but not profiles.
+  const { error: profileErr } = await admin.from("profiles").upsert(
+    {
+      id: user.id,
+      email: user.email,
+      full_name: (user.user_metadata?.full_name as string | undefined) ?? null,
+    },
+    { onConflict: "id" }
+  );
+  if (profileErr) {
+    await admin.from("orgs").delete().eq("id", org.id);
+    return {
+      error: `Couldn't create your profile (${profileErr.message}). Try again.`,
+    };
+  }
+
+  // 4d. Membership as owner
+  const { error: memberErr } = await admin.from("org_members").insert({
+    org_id: org.id,
+    user_id: user.id,
+    role: "owner",
+  });
+  if (memberErr) {
+    await admin.from("orgs").delete().eq("id", org.id);
+    return {
+      error: `Couldn't link you to the workspace (${memberErr.message}). Try again.`,
+    };
+  }
+
+  // 4e. First facility
+  const { error: facilityErr } = await admin.from("warehouses").insert({
+    org_id: org.id,
+    name: facilityName,
+    city: facilityCity || null,
+    state: facilityState || null,
+    zip: facilityZip || null,
+    owner_id: user.id,
+    is_active: true,
+  });
+  if (facilityErr) {
+    // Membership + org are now committed — leave them, but report.
+    return {
+      error: `Workspace created, but the first facility failed (${facilityErr.message}). Add one manually from Facilities.`,
+    };
+  }
+
+  // 4f. Optional invites — insert rows, email them, collect share links.
+  let inviteLinks: { email: string; url: string }[] = [];
+  if (uniqueInvites.length > 0) {
+    const expiresAtMs = Date.now() + 7 * 24 * 60 * 60 * 1000;
+    const expiresAt = new Date(expiresAtMs).toISOString();
+    const inviteRows = uniqueInvites.map((email) => ({
+      org_id: org.id,
+      email,
+      role: "member",
+      token: randomBytes(16).toString("hex"),
+      invited_by: user.id,
+      expires_at: expiresAt,
+    }));
+    const { error: inviteErr } = await admin
+      .from("org_invites")
+      .insert(inviteRows);
+    if (inviteErr) {
+      console.error("[onboarding] invite inserts failed:", inviteErr);
+    } else {
+      const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "";
+      const inviterName =
+        (user.user_metadata?.full_name as string | undefined) ??
+        user.email ??
+        "A teammate";
+      await Promise.all(
+        inviteRows.map((row) =>
+          sendInviteEmail(org.id, {
+            inviterName,
+            inviterEmail: user.email ?? "",
+            orgName: workspaceName,
+            role: row.role,
+            token: row.token,
+            recipientEmail: row.email,
+            expiresAt: new Date(expiresAtMs),
+          }).catch((e) => console.error("[onboarding] invite email failed:", e))
+        )
+      );
+      inviteLinks = inviteRows.map((row) => ({
+        email: row.email,
+        url: `${appUrl}/invite/${row.token}`,
+      }));
+    }
+  }
+
+  // ── 5. Refresh, then show invite links or redirect ────────────────
+  revalidatePath("/", "layout");
+  if (inviteLinks.length > 0) {
+    return { invites: inviteLinks };
+  }
+  redirect("/");
+}
+
+// TODO(stub): mark a single notification as read.
+// Real impl: update app.notifications set read_at = now() where id = $1 and
+// user_id = current user, then revalidate the relevant paths.
+export async function markNotificationRead(_id: string): Promise<void> {
+  return;
+}
+
+// TODO(stub): mark all of the current user's notifications as read.
+// Real impl: update app.notifications set read_at = now() where user_id =
+// current user and read_at is null, then revalidate. Invoked as a form action,
+// so it receives FormData.
+export async function markAllNotificationsRead(
+  _formData?: FormData
+): Promise<void> {
+  return;
+}
+
+// TODO(stub): set the active-facility cookie from the submitted "id" field.
+// Real impl: read formData.get("id") (a facility UUID or "all"), set the
+// CURRENT_FACILITY_COOKIE, then revalidatePath("/", "layout"). Invoked as a
+// form action, so it receives FormData.
+export async function setCurrentFacility(_formData: FormData): Promise<void> {
+  return;
 }

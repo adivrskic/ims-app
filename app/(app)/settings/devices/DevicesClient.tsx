@@ -175,8 +175,9 @@ function PrinterSection() {
     print,
   } = usePrinter();
 
-  const [testStatus, setTestStatus] = useState;
-  "idle" | "printing" | "ok" | ("err" > "idle");
+  const [testStatus, setTestStatus] = useState<
+    "idle" | "printing" | "ok" | "err"
+  >("idle");
   const [testErr, setTestErr] = useState<string | null>(null);
 
   const handleTestPrint = async () => {

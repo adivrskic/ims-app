@@ -3,7 +3,7 @@
  *
  * Pure functions — no DB access, no side effects. Lives in lib/ so it can be
  * called from server actions (draftReorderPO) and surfaced in the UI
- * (product detail "recommended order qty" hint).
+ * (product detail "recommended order qty" hint, days-to-stockout readout).
  *
  * Industry defaults baked in:
  *   - DEFAULT_ORDER_COST       = $25   (typical cost-per-PO for SMB ops:
@@ -39,6 +39,32 @@ export function dailyVelocity({
 }): number {
   if (days <= 0) return 0;
   return Math.max(0, totalUnitsConsumed) / days;
+}
+
+// ─── Days to stockout ─────────────────────────────────────────────────────
+
+/**
+ * Projected days until a product reaches zero on-hand at current velocity.
+ *
+ *   days = floor(onHand / velocity)
+ *
+ * Powers depletion forecasting (product detail + Analytics) and the
+ * "~3 days before stockout" alert.
+ *
+ * Returns null when velocity is 0 — there's no demand signal to project
+ * from, so the honest answer is "unknown", not "infinite". Callers should
+ * render a "no demand signal yet" state rather than ∞ (mirrors dailyVelocity
+ * returning 0 and economicOrderQty returning null on missing data).
+ */
+export function daysToStockout({
+  onHand,
+  velocity,
+}: {
+  onHand: number;
+  velocity: number;
+}): number | null {
+  if (velocity <= 0) return null;
+  return Math.floor(Math.max(0, onHand) / velocity);
 }
 
 // ─── Reorder Point ──────────────────────────────────────────────────────────

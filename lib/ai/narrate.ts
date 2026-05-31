@@ -24,11 +24,6 @@ interface ForecastInput {
   };
 }
 
-interface AnomalyInput {
-  kind: "stock_alert" | "velocity_spike" | "scan_summary" | "variance";
-  context: Record<string, unknown>;
-}
-
 interface PoDraftInput {
   lines: Array<{
     product_name: string;
@@ -65,24 +60,6 @@ export async function narrateForecast(
   input: ForecastInput
 ): Promise<NarrationResponse | null> {
   return invoke({ type: "forecast", ...input });
-}
-
-/**
- * Two-line notification copy (title + body). Caller splits on '\n'.
- * Returns null on failure — caller should fall back to a deterministic
- * default title/body so notifications still ship if the LLM is down.
- */
-export async function narrateAnomaly(
-  input: AnomalyInput
-): Promise<{ title: string; body: string } | null> {
-  const result = await invoke({ type: "anomaly", ...input });
-  if (!result) return null;
-  const lines = result.narration
-    .split("\n")
-    .map((l) => l.trim())
-    .filter(Boolean);
-  if (lines.length < 2) return null;
-  return { title: lines[0], body: lines.slice(1).join(" ") };
 }
 
 /**

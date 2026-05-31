@@ -9,7 +9,7 @@ import { Layers, X, ChevronRight } from "lucide-react";
 import { CycleCountsRealtime } from "@/components/realtime/PageRealtime";
 import { getCurrentOrgContext } from "@/lib/data/user";
 import { getCycleCountsPageData } from "@/lib/data/cycleCounts";
-
+import { CycleCountPriorityList } from "@/components/cycle-counts/CycleCountPriorityList";
 export const metadata = { title: "Cycle counts" };
 
 interface SearchParams {
@@ -191,6 +191,8 @@ export default async function CycleCountsPage({
           />
         </div>
       </section>
+
+      <CycleCountPriorityList items={data?.prioritized ?? []} />
 
       <section aria-labelledby="history">
         <SectionTitle

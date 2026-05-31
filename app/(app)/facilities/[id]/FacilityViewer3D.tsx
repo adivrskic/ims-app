@@ -243,7 +243,6 @@ function FootprintOutline({
 
   return (
     <line>
-      {/* @ts-expect-error — drei/r3f primitive: attaching prebuilt geometry */}
       <primitive object={geom} attach="geometry" />
       <lineBasicMaterial color="#3a3a3a" />
     </line>

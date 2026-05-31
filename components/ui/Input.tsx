@@ -4,7 +4,8 @@ import { forwardRef, useId, useState } from "react";
 import type { InputHTMLAttributes, ReactNode } from "react";
 
 interface Props extends Omit<InputHTMLAttributes<HTMLInputElement>, "size"> {
-  label: string;
+  /** Floating field label. Optional — some inline usages omit it. */
+  label?: string;
   error?: string;
   hint?: string;
   /**
@@ -57,9 +58,11 @@ export const Input = forwardRef<HTMLInputElement, Props>(function Input(
             {icon}
           </span>
         )}
-        <span className="field-label" id={`${inputId}-label`}>
-          {label}
-        </span>
+        {label && (
+          <span className="field-label" id={`${inputId}-label`}>
+            {label}
+          </span>
+        )}
         <input
           ref={ref}
           id={inputId}

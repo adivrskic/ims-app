@@ -27,8 +27,10 @@ interface Props {
 }
 
 export function SlackConfigForm({ existing }: Props) {
-  const [state, formAction, pending] = useActionState;
-  ConnectResult | undefined, FormData > (connectSlack, undefined);
+  const [state, formAction, pending] = useActionState<
+    ConnectResult | undefined,
+    FormData
+  >(connectSlack, undefined);
 
   const [enabled, setEnabled] = useState<string[]>(
     existing?.events_enabled ?? []

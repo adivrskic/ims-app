@@ -94,7 +94,6 @@ export function useRealtimeRefresh({
 
     for (const sub of subscriptions) {
       channel.on(
-        // @ts-expect-error - supabase-js types for postgres_changes are loose
         "postgres_changes",
         {
           event: sub.event ?? "*",

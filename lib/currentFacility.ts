@@ -16,6 +16,54 @@ import { getCurrentUser } from "@/lib/data/user";
 export const CURRENT_FACILITY_COOKIE = "Nautilus-current-facility";
 
 /**
+ * A selectable facility shown in the sidebar facility switcher.
+ * Used by SideRail and FacilitiesNavItem.
+ */
+export interface FacilityOption {
+  id: string;
+  name: string;
+}
+
+/**
+ * Combined facility navigation state for the app layout: the list of
+ * facilities the user can switch between, plus the currently-resolved
+ * facility id ("all" or a UUID resolves to a string; null means none).
+ */
+export interface FacilityNavState {
+  facilities: FacilityOption[];
+  currentId: string | null;
+}
+
+/**
+ * Resolves the facility switcher state for the current request: the list of
+ * active facilities plus the resolved current selection.
+ *
+ * The current selection reuses `getCurrentFacility()` (request-cached). The
+ * facility list is a lightweight active-warehouses query.
+ */
+export const getCurrentFacilityState = cache(
+  async (): Promise<FacilityNavState> => {
+    const currentRaw = await getCurrentFacility();
+    // "all" is a view mode, not a concrete facility id for the switcher.
+    const currentId = currentRaw === "all" ? null : currentRaw;
+
+    const supabase = await createClient();
+    const { data } = await supabase
+      .from("warehouses")
+      .select("id, name")
+      .eq("is_active", true)
+      .order("created_at", { ascending: true });
+
+    const facilities: FacilityOption[] = (data ?? []).map((w) => ({
+      id: w.id,
+      name: w.name,
+    }));
+
+    return { facilities, currentId };
+  }
+);
+
+/**
  * Resolves the active facility for the current request.
  *
  * Order:

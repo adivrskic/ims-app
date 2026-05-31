@@ -75,7 +75,7 @@ export default async function SuppliersPage() {
       poCount: card.totalPos,
       productCount: productCountMap.get(s.id) ?? 0,
       onTimePct: card.onTimePct,
-      avgLeadDays: card.avgLeadDays,
+      avgLeadDays: card.avgLeadTimeDays,
     };
   }
 

@@ -95,9 +95,18 @@ export function getKioskData(
   return unstable_cache(
     async (): Promise<KioskData> => {
       const admin = createAdminClient();
-      const scopeWarehouse = <T extends { eq: (...a: unknown[]) => T }>(
-        q: T
-      ): T => (facilityId ? q.eq("warehouse_id", facilityId) : q);
+      // Conditionally apply a warehouse_id filter, preserving the concrete
+      // query-builder type. We type the parameter as a minimal structural
+      // shape that exposes `.eq` and cast its result back to the input type:
+      // PostgrestFilterBuilder.eq returns a fresh generic instance (not `this`),
+      // which otherwise breaks inference and trips "excessively deep" errors.
+      const scopeWarehouse = <T>(q: T): T => {
+        if (!facilityId) return q;
+        return (q as { eq: (col: string, val: string) => T }).eq(
+          "warehouse_id",
+          facilityId
+        );
+      };
 
       const now = new Date();
       const startToday = new Date(now);

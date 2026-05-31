@@ -1,36 +1,35 @@
 "use client";
 
-import { useState } from "react";
+import { useActionState, useState } from "react";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { CornerButton } from "@/components/ui/CornerButton";
 import { recordCycleCount } from "./actions";
 
-interface ProductLocation {
-  id: string;
-  bay: number;
-  level: number;
-  quantity: number | null;
-  section:
-    | { code: string; name: string }
-    | { code: string; name: string }[]
-    | null;
-}
-
-interface Product {
+interface ProductOption {
   id: string;
   name: string;
   barcode: string;
-  locations: ProductLocation[];
+}
+
+interface LocationOption {
+  id: string;
+  product_id: string;
+  bay: number | null;
+  level: number | null;
+  quantity: number | null;
+  section_code: string | null;
+  warehouse_name: string | null;
 }
 
 interface Props {
-  products: Product[];
+  products: ProductOption[];
+  locations: LocationOption[];
+  initialProductId?: string | null;
 }
 
-function sectionCode(loc: ProductLocation): string {
-  const sec = Array.isArray(loc.section) ? loc.section[0] : loc.section;
-  return sec?.code ?? "Unassigned";
+function sectionCode(loc: LocationOption): string {
+  return loc.section_code ?? "Unassigned";
 }
 
 /**
@@ -54,13 +53,17 @@ function sectionCode(loc: ProductLocation): string {
  * submission — same shape recordCycleCount expects, no server changes
  * needed.
  */
-export function NewCountForm({ products }: Props) {
-  const [productId, setProductId] = useState("");
+export function NewCountForm({
+  products,
+  locations,
+  initialProductId,
+}: Props) {
+  const [, formAction] = useActionState(recordCycleCount, undefined);
+  const [productId, setProductId] = useState(initialProductId ?? "");
   const [locationId, setLocationId] = useState("");
   const [countedQty, setCountedQty] = useState("");
 
-  const selectedProduct = products.find((p) => p.id === productId) ?? null;
-  const locations = selectedProduct?.locations ?? [];
+  const productLocations = locations.filter((l) => l.product_id === productId);
 
   const canRecord =
     Boolean(productId) && Boolean(locationId) && countedQty.trim() !== "";
@@ -71,15 +74,15 @@ export function NewCountForm({ products }: Props) {
     hint: p.barcode,
   }));
 
-  const locationOptions = locations.map((l) => ({
+  const locationOptions = productLocations.map((l) => ({
     value: l.id,
-    label: `${sectionCode(l)} · Bay ${l.bay} · L${l.level}`,
+    label: `${sectionCode(l)} · Bay ${l.bay ?? "?"} · L${l.level ?? "?"}`,
     hint: l.quantity != null ? `on hand: ${l.quantity}` : undefined,
   }));
 
   return (
     <form
-      action={recordCycleCount}
+      action={formAction}
       className="hairline bg-[var(--surface)] p-20 flex flex-col gap-16"
     >
       {/*

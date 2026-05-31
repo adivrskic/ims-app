@@ -6,7 +6,7 @@ import { MobileTopBar } from "@/components/nav/MobileTopBar";
 import { CommandPalette } from "@/components/nav/CommandPalette";
 import { KeyboardShortcuts } from "@/components/nav/KeyboardShortcuts";
 import { createClient } from "@/lib/supabase/server";
-import { getCurrentFacility } from "@/lib/currentFacility";
+import { getCurrentFacilityState } from "@/lib/currentFacility";
 import {
   getCurrentUser,
   getProfile,
@@ -60,7 +60,7 @@ export default async function AppLayout({
       .select("id", { count: "exact", head: true })
       .eq("user_id", user.id)
       .is("read_at", null),
-    getCurrentFacility(),
+    getCurrentFacilityState(),
   ]);
 
   // Onboarding guard — also covers the activeMembership null case.

@@ -9,6 +9,8 @@ import { SectionTitle } from "@/components/ui/SectionTitle";
 import { CornerLink } from "@/components/ui/CornerButton";
 import { ProductDetailRealtime } from "@/components/realtime/PageRealtime";
 import { formatCurrency } from "@/lib/dashboard";
+import { productVelocity } from "@/lib/data/velocity";
+import { daysToStockout } from "@/lib/replenishment";
 import type { ScanAction } from "@/types/db";
 import { PrintLabelButton } from "@/components/print/PrintLabelButton";
 import { productLabel } from "@/lib/print/zplTemplates";
@@ -30,6 +32,8 @@ const SCAN_LABEL: Record<ScanAction, string> = {
   return: "Returned",
   cycle_count: "Counted",
   adjust: "Adjusted",
+  putaway: "Put away",
+  transfer: "Transferred",
 };
 
 const SCAN_TONE: Record<
@@ -44,6 +48,8 @@ const SCAN_TONE: Record<
   return: "danger",
   cycle_count: "neutral",
   adjust: "neutral",
+  putaway: "success", // first placement → success, mirrors receive
+  transfer: "warning", // cross-facility move → warning, mirrors relocate
 };
 
 export default async function ProductDetailPage({
@@ -127,6 +133,14 @@ export default async function ProductDetailPage({
     0
   );
 
+  // Depletion forecast (§2a). Velocity comes from the shared helper — the
+  // same 60-day pick+adjust window draftReorderPO uses — so on-hand and
+  // velocity are scoped identically (both org-wide here) and the math lines
+  // up with the reorder logic. daysToStockout returns null when there's no
+  // demand signal, which we render as a plain-language state rather than ∞.
+  const velocity = await productVelocity(supabase, id);
+  const daysLeft = daysToStockout({ onHand: totalStock, velocity });
+
   const unitCostNum =
     product.unit_cost == null ? null : parseFloat(String(product.unit_cost));
   const inventoryValue = unitCostNum != null ? unitCostNum * totalStock : null;
@@ -191,12 +205,21 @@ export default async function ProductDetailPage({
                 productName: product.name,
                 barcode: product.barcode,
                 sku: product.internal_sku,
-                category: product.category?.name ?? null,
+                category:
+                  (Array.isArray(product.category)
+                    ? product.category[0]
+                    : product.category
+                  )?.name ?? null,
                 location:
                   product.locations && product.locations[0]
-                    ? `${product.locations[0].section?.code ?? "?"}-${
-                        product.locations[0].bay
-                      }-${product.locations[0].level}`
+                    ? `${
+                        (Array.isArray(product.locations[0].section)
+                          ? product.locations[0].section[0]
+                          : product.locations[0].section
+                        )?.code ?? "?"
+                      }-${product.locations[0].bay}-${
+                        product.locations[0].level
+                      }`
                     : null,
               })}
               label="Print shelf label"
@@ -293,6 +316,20 @@ export default async function ProductDetailPage({
               mono
             />
             <Detail label="Preferred supplier" value={supplier?.name ?? null} />
+            <Detail
+              label="Demand velocity"
+              value={velocity > 0 ? `${velocity.toFixed(2)} / day` : null}
+              mono
+            />
+            <Detail
+              label="Days to stockout"
+              value={
+                daysLeft != null
+                  ? `~${daysLeft} ${daysLeft === 1 ? "day" : "days"}`
+                  : "no demand signal yet"
+              }
+              mono
+            />
           </dl>
 
           {product.notes && (

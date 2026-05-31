@@ -23,7 +23,11 @@ import {
   Keyboard,
   Bell,
   ArrowRight,
+  Sparkles,
+  Loader2,
 } from "lucide-react";
+import { nlSearch } from "@/lib/ai/nlSearch";
+import type { NlResult } from "@/lib/ai/nl-types";
 
 interface Action {
   id: string;
@@ -206,6 +210,10 @@ export function CommandPalette() {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
+  // NL search tier — only engages when command matching finds nothing.
+  const [nlResults, setNlResults] = useState<NlResult[] | null>(null);
+  const [nlLoading, setNlLoading] = useState(false);
+  const [nlInterpreted, setNlInterpreted] = useState("");
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -232,6 +240,8 @@ export function CommandPalette() {
     if (open) {
       setQuery("");
       setActive(0);
+      setNlResults(null);
+      setNlInterpreted("");
       setTimeout(() => inputRef.current?.focus(), 20);
     }
   }, [open]);
@@ -252,6 +262,40 @@ export function CommandPalette() {
     setActive(0);
   }, [query]);
 
+  // NL fallback: debounced, fires only when the fast command tier matched
+  // nothing and the query looks like a real search. Fail-open — on any error
+  // we leave nlResults empty and the normal "no matches" copy shows.
+  useEffect(() => {
+    const q = query.trim();
+    if (filtered.length > 0 || q.length < 3) {
+      setNlResults(null);
+      setNlLoading(false);
+      setNlInterpreted("");
+      return;
+    }
+    let cancelled = false;
+    setNlLoading(true);
+    const t = setTimeout(async () => {
+      try {
+        const res = await nlSearch(q);
+        if (cancelled) return;
+        setNlResults(res?.results ?? []);
+        setNlInterpreted(res?.interpreted ?? "");
+      } catch {
+        if (!cancelled) {
+          setNlResults([]);
+          setNlInterpreted("");
+        }
+      } finally {
+        if (!cancelled) setNlLoading(false);
+      }
+    }, 350);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
+  }, [query, filtered.length]);
+
   const groups = useMemo(() => {
     const out: Array<{ name: string; items: Action[] }> = [];
     const seen = new Map<string, Action[]>();
@@ -266,6 +310,19 @@ export function CommandPalette() {
     return out;
   }, [filtered]);
 
+  const nlActions = useMemo<Action[]>(
+    () =>
+      (nlResults ?? []).map((r) => ({
+        id: `nl-${r.id}`,
+        group: "Results",
+        label: r.label,
+        description: r.sublabel,
+        icon: Boxes,
+        href: r.href,
+      })),
+    [nlResults]
+  );
+
   const handleSelect = (a: Action) => {
     setOpen(false);
     if (a.onSelect) {
@@ -275,16 +332,30 @@ export function CommandPalette() {
     }
   };
 
+  const commandMode = filtered.length > 0;
+  const navList: Action[] = commandMode ? filtered : nlActions;
+  const displayGroups = commandMode
+    ? groups
+    : nlActions.length > 0
+    ? [{ name: "Results", items: nlActions }]
+    : [];
+
+  const q = query.trim();
+  const nlActive = !commandMode && q.length >= 3;
+  const nlPending = nlActive && (nlLoading || nlResults === null);
+  const nlEmpty =
+    nlActive && !nlLoading && nlResults !== null && nlActions.length === 0;
+
   const onInputKey = (e: React.KeyboardEvent) => {
     if (e.key === "ArrowDown") {
       e.preventDefault();
-      setActive((a) => Math.min(filtered.length - 1, a + 1));
+      setActive((a) => Math.min(navList.length - 1, a + 1));
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
       setActive((a) => Math.max(0, a - 1));
     } else if (e.key === "Enter") {
       e.preventDefault();
-      const a = filtered[active];
+      const a = navList[active];
       if (a) handleSelect(a);
     }
   };
@@ -323,7 +394,7 @@ export function CommandPalette() {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={onInputKey}
-            placeholder="Search pages, settings, actions…"
+            placeholder="Search pages, settings, or ask in plain English…"
             className="flex-1 bg-transparent border-0 outline-none text-text placeholder:text-text-dim"
             style={{ fontFamily: "var(--mono)", fontSize: 13 }}
             aria-label="Search commands"
@@ -344,68 +415,94 @@ export function CommandPalette() {
           className="overflow-y-auto"
           style={{ maxHeight: "min(60vh, 480px)" }}
         >
-          {filtered.length === 0 ? (
+          {commandMode || nlActions.length > 0 ? (
+            <>
+              {nlActive && nlInterpreted && (
+                <p className="px-14 pt-12 pb-6 label-text text-text-muted flex items-center gap-6">
+                  <Sparkles
+                    size={10}
+                    strokeWidth={1.5}
+                    className="text-[var(--accent)]"
+                    aria-hidden
+                  />
+                  Interpreted · {nlInterpreted}
+                </p>
+              )}
+              {displayGroups.map((g) => (
+                <div key={g.name}>
+                  <p className="px-14 pt-12 pb-6 label-text text-text-muted">
+                    {g.name}
+                  </p>
+                  <ul>
+                    {g.items.map((a) => {
+                      flatIndex++;
+                      const isActive = flatIndex === active;
+                      const Icon = a.icon;
+                      return (
+                        <li key={a.id}>
+                          <button
+                            type="button"
+                            onMouseEnter={() => setActive(flatIndex)}
+                            onClick={() => handleSelect(a)}
+                            className={`w-full flex items-center gap-12 px-14 py-10 text-left transition-colors ${
+                              isActive
+                                ? "bg-[var(--accent-dim)] text-[var(--accent)]"
+                                : "hover:bg-[var(--surface-2)] text-text-secondary"
+                            }`}
+                          >
+                            <Icon size={14} strokeWidth={1.5} />
+                            <div className="flex-1 min-w-0">
+                              <p
+                                className={
+                                  isActive
+                                    ? "text-[var(--accent)]"
+                                    : "text-text"
+                                }
+                                style={{
+                                  fontFamily: "var(--display)",
+                                  fontSize: 13,
+                                  fontWeight: 500,
+                                }}
+                              >
+                                {a.label}
+                              </p>
+                              {a.description && (
+                                <p
+                                  className="mono-sm text-text-muted truncate"
+                                  style={{ fontSize: 11 }}
+                                >
+                                  {a.description}
+                                </p>
+                              )}
+                            </div>
+                            {isActive && (
+                              <ArrowRight size={12} strokeWidth={1.5} />
+                            )}
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
+              ))}
+            </>
+          ) : nlPending ? (
+            <div className="px-14 py-32 flex items-center justify-center gap-10 text-text-muted">
+              <Loader2 size={14} strokeWidth={1.5} className="animate-spin" />
+              <p className="mono-sm">Searching…</p>
+            </div>
+          ) : nlEmpty ? (
+            <div className="px-14 py-32 text-center">
+              <p className="mono-sm text-text-muted">
+                No results for &ldquo;{query}&rdquo;
+              </p>
+            </div>
+          ) : (
             <div className="px-14 py-32 text-center">
               <p className="mono-sm text-text-muted">
                 No matches for &ldquo;{query}&rdquo;
               </p>
             </div>
-          ) : (
-            groups.map((g) => (
-              <div key={g.name}>
-                <p className="px-14 pt-12 pb-6 label-text text-text-muted">
-                  {g.name}
-                </p>
-                <ul>
-                  {g.items.map((a) => {
-                    flatIndex++;
-                    const isActive = flatIndex === active;
-                    const Icon = a.icon;
-                    return (
-                      <li key={a.id}>
-                        <button
-                          type="button"
-                          onMouseEnter={() => setActive(flatIndex)}
-                          onClick={() => handleSelect(a)}
-                          className={`w-full flex items-center gap-12 px-14 py-10 text-left transition-colors ${
-                            isActive
-                              ? "bg-[var(--accent-dim)] text-[var(--accent)]"
-                              : "hover:bg-[var(--surface-2)] text-text-secondary"
-                          }`}
-                        >
-                          <Icon size={14} strokeWidth={1.5} />
-                          <div className="flex-1 min-w-0">
-                            <p
-                              className={
-                                isActive ? "text-[var(--accent)]" : "text-text"
-                              }
-                              style={{
-                                fontFamily: "var(--display)",
-                                fontSize: 13,
-                                fontWeight: 500,
-                              }}
-                            >
-                              {a.label}
-                            </p>
-                            {a.description && (
-                              <p
-                                className="mono-sm text-text-muted truncate"
-                                style={{ fontSize: 11 }}
-                              >
-                                {a.description}
-                              </p>
-                            )}
-                          </div>
-                          {isActive && (
-                            <ArrowRight size={12} strokeWidth={1.5} />
-                          )}
-                        </button>
-                      </li>
-                    );
-                  })}
-                </ul>
-              </div>
-            ))
           )}
         </div>
 
@@ -417,7 +514,7 @@ export function CommandPalette() {
             select
           </p>
           <p className="label-text text-text-dim">
-            {filtered.length} result{filtered.length === 1 ? "" : "s"}
+            {navList.length} result{navList.length === 1 ? "" : "s"}
           </p>
         </footer>
       </div>

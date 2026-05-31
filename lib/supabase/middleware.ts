@@ -56,6 +56,20 @@ export async function updateSession(request: NextRequest) {
   } = await supabase.auth.getUser();
 
   const path = request.nextUrl.pathname;
+
+  // Self-authenticating API routes carry no user session and must NOT be
+  // redirected to /login: cron routes authenticate via the CRON_SECRET bearer
+  // token, webhooks via HMAC signature, and OAuth callbacks via state. They do
+  // their own auth in the route handler. (These live under app/api/*, distinct
+  // from the session-scoped user APIs under app/(app)/api/*.)
+  const isSelfAuthApi =
+    path.startsWith("/api/cron") ||
+    path.startsWith("/api/webhooks") ||
+    path.startsWith("/api/integrations");
+  if (isSelfAuthApi) {
+    return response;
+  }
+
   const isAuthPath =
     path.startsWith("/login") ||
     path.startsWith("/signup") ||
