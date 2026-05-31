@@ -16,6 +16,7 @@ interface Tab {
 
 const TABS: Tab[] = [
   { href: "/settings", label: "Account", exact: true },
+  { href: "/settings/navigation", label: "Navigation" },
   { href: "/settings/security", label: "Security" },
   { href: "/settings/members", label: "Members" },
   { href: "/settings/devices", label: "Devices" },

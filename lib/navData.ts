@@ -102,15 +102,29 @@ export function findActiveHref(
 /** All defined nav items, flattened. */
 export const ALL_NAV_ITEMS: NavItem[] = NAV_GROUPS.flatMap((g) => g.items);
 
+/** Per-user sidenav customization (Phase 2). Keys reference NavItem.key. */
+export interface NavPrefs {
+  /** Full ordered list of item keys (the user's preferred order). */
+  order: string[];
+  /** Keys the user has hidden (moved to "More"). */
+  hidden: string[];
+}
+
+/** A rendered nav group. `label` is omitted for a user's custom flat list. */
+export interface ResolvedGroup {
+  label?: string;
+  items: NavItem[];
+}
+
 export interface ResolvedNav {
-  /** Groups filtered to the industry's primary items (empty groups dropped). */
-  groups: NavGroup[];
-  /** Available items NOT primary for this industry — shown under "More". */
+  /** Groups to render (industry: labeled; custom prefs: one unlabeled group). */
+  groups: ResolvedGroup[];
+  /** Available items NOT primary — shown under "More". */
   more: NavItem[];
 }
 
 /**
- * Resolve the sidenav for a workspace's industry.
+ * Resolve the sidenav for a workspace's industry (no per-user prefs).
  *
  * Keeps the grouped IA (Operate / Flow / Directory / Configure) but shows only
  * the items the industry flags as primary; everything else collapses into
@@ -119,13 +133,11 @@ export interface ResolvedNav {
  *
  * Industry keys that don't map to a built page yet (e.g. "lots") are simply
  * skipped, so roadmap features auto-surface here the moment they ship.
- *
- * (Phase 2 will layer per-user show/hide + reorder on top of this.)
  */
 export function resolveNav(industry: string | null | undefined): ResolvedNav {
   const primaryKeys = new Set(primaryNavKeys(industry));
 
-  const groups: NavGroup[] = [];
+  const groups: ResolvedGroup[] = [];
   const more: NavItem[] = [];
 
   for (const group of NAV_GROUPS) {
@@ -138,4 +150,63 @@ export function resolveNav(industry: string | null | undefined): ResolvedNav {
   }
 
   return { groups, more };
+}
+
+/**
+ * The default per-user prefs for an industry — visible = the industry's primary
+ * items (in order), everything else hidden. Used to seed the Settings UI when a
+ * user hasn't customized yet. Filters out not-yet-built keys.
+ */
+export function defaultNavPrefs(industry: string | null | undefined): NavPrefs {
+  const existing = new Set(ALL_NAV_ITEMS.map((i) => i.key));
+  const primary = primaryNavKeys(industry).filter((k) => existing.has(k));
+  const primarySet = new Set(primary);
+  const rest = ALL_NAV_ITEMS.map((i) => i.key).filter((k) => !primarySet.has(k));
+  return { order: [...primary, ...rest], hidden: rest };
+}
+
+/**
+ * Resolve the sidenav honoring per-user prefs, falling back to industry
+ * defaults when the user hasn't customized. Custom prefs render as a single
+ * flat (unlabeled) list in the user's chosen order; hidden items go to "More".
+ * New items not yet in the saved order are appended visible so they're never
+ * silently lost.
+ */
+export function resolveUserNav(
+  industry: string | null | undefined,
+  prefs: NavPrefs | null | undefined
+): ResolvedNav {
+  if (!prefs || !Array.isArray(prefs.order) || prefs.order.length === 0) {
+    return resolveNav(industry);
+  }
+  const byKey = new Map(ALL_NAV_ITEMS.map((i) => [i.key, i]));
+  const hidden = new Set(prefs.hidden ?? []);
+
+  const primary: NavItem[] = [];
+  const seen = new Set<string>();
+  for (const key of prefs.order) {
+    const item = byKey.get(key);
+    if (item && !hidden.has(key) && !seen.has(key)) {
+      primary.push(item);
+      seen.add(key);
+    }
+  }
+  // Items missing from saved order (e.g. added in a later release) → append.
+  for (const item of ALL_NAV_ITEMS) {
+    if (!seen.has(item.key) && !hidden.has(item.key)) {
+      primary.push(item);
+      seen.add(item.key);
+    }
+  }
+
+  const more: NavItem[] = [];
+  const moreSeen = new Set<string>();
+  for (const item of ALL_NAV_ITEMS) {
+    if (hidden.has(item.key) && !moreSeen.has(item.key)) {
+      more.push(item);
+      moreSeen.add(item.key);
+    }
+  }
+
+  return { groups: [{ items: primary }], more };
 }

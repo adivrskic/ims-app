@@ -113,6 +113,7 @@ export default async function AppLayout({
             facilities={facilityState.facilities}
             currentFacilityId={facilityState.currentId}
             industry={activeMembership.org?.industry ?? null}
+            navPrefs={profile?.nav_prefs ?? null}
           />
 
           <div className="flex-1 min-w-0 flex flex-col min-h-screen">
