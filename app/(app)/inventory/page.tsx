@@ -4,6 +4,7 @@ import { InventoryTable } from "@/components/inventory/InventoryTable";
 import { InventoryToolbar } from "@/components/inventory/InventoryToolbar";
 import { InventoryPagination } from "@/components/inventory/InventoryPagination";
 import { CornerLink as ButtonLink } from "@/components/ui/CornerButton";
+import { BulkProductLabelButton } from "@/components/print/BulkProductLabelButton";
 import { RegisterProductButton } from "./RegisterProductButton";
 import { Boxes, Download } from "lucide-react";
 import { getActiveScope, scopeDescription } from "@/lib/facilityScope";
@@ -137,7 +138,18 @@ export default async function InventoryPage({
             : []),
         ]}
         actions={
-          <div className="flex items-center gap-10">
+          <div className="flex items-center gap-10 flex-wrap justify-end">
+            {products.length > 0 && (
+              <BulkProductLabelButton
+                products={products.map((p) => ({
+                  id: p.id,
+                  name: p.name,
+                  barcode: p.barcode,
+                  sku: p.internal_sku,
+                  category: p.category_name,
+                }))}
+              />
+            )}
             <ButtonLink href={exportHref} variant="ghost" size="sm">
               <Download size={11} strokeWidth={1.5} />
               Export CSV
