@@ -4,7 +4,7 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { Badge } from "@/components/ui/Badge";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { CornerButton, CornerLink } from "@/components/ui/CornerButton";
-import { ChevronRight, ClipboardList, Plus } from "lucide-react";
+import { ChevronRight, ClipboardList, Plus, PackageX } from "lucide-react";
 import { getActiveScope, scopeDescription } from "@/lib/facilityScope";
 import { OrdersRealtime } from "@/components/realtime/PageRealtime";
 import { getCurrentOrgContext } from "@/lib/data/user";
@@ -159,10 +159,16 @@ export default async function OrdersPage({
           },
         ]}
         actions={
-          <CornerLink href="/orders/new" variant="primary" size="sm">
-            <Plus size={11} strokeWidth={1.5} />
-            New order
-          </CornerLink>
+          <div className="flex items-center gap-10">
+            <CornerLink href="/orders/backorders" variant="ghost" size="sm">
+              <PackageX size={11} strokeWidth={1.5} />
+              Backorders
+            </CornerLink>
+            <CornerLink href="/orders/new" variant="primary" size="sm">
+              <Plus size={11} strokeWidth={1.5} />
+              New order
+            </CornerLink>
+          </div>
         }
       />
 

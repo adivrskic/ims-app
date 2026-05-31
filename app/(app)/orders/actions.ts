@@ -4,6 +4,11 @@ import { redirect } from "next/navigation";
 import { revalidatePath, revalidateTag } from "next/cache";
 import { getActionContext } from "@/lib/data/actionContext";
 import { tags } from "@/lib/cache-tags";
+import {
+  allocateOrderInternal,
+  releaseOrderAllocationInternal,
+  fillBackordersInternal,
+} from "@/lib/data/allocation";
 
 type OrderStatus =
   | "created"
@@ -207,8 +212,17 @@ export async function createOrder(
     return { error: `Failed to create line items: ${itemsErr.message}` };
   }
 
+  // Auto-allocate available stock to the new order (best-effort — a failure
+  // here must not block order creation; the desk can re-allocate manually).
+  try {
+    await allocateOrderInternal(ctx.supabase, ctx.orgId, newOrder.id);
+  } catch (e) {
+    console.error("auto-allocate on create failed:", e);
+  }
+
   revalidatePath("/orders");
   revalidateTag(tags.orders(ctx.orgId));
+  revalidateTag(tags.inventory(ctx.orgId));
   redirect(`/orders/${newOrder.id}`);
 }
 
@@ -249,6 +263,38 @@ export async function cancelOrder(formData: FormData): Promise<void> {
     .update({ status: "cancelled" as OrderStatus })
     .eq("id", id)
     .eq("org_id", ctx.orgId);
+  // Release the reservation so the stock returns to ATP for other orders.
+  await releaseOrderAllocationInternal(ctx.supabase, id);
   revalidatePath(`/orders/${id}`);
   revalidatePath("/orders");
+  revalidateTag(tags.orders(ctx.orgId));
+  revalidateTag(tags.inventory(ctx.orgId));
+}
+
+/** Manual re-allocate from the order detail page. */
+export async function allocateOrder(formData: FormData): Promise<void> {
+  const ctx = await getActionContext();
+  if ("error" in ctx) return;
+  const id = String(formData.get("id") ?? "");
+  if (!id) return;
+  await allocateOrderInternal(ctx.supabase, ctx.orgId, id);
+  revalidatePath(`/orders/${id}`);
+  revalidatePath("/orders");
+  revalidateTag(tags.orders(ctx.orgId));
+  revalidateTag(tags.inventory(ctx.orgId));
+}
+
+/** Fill the oldest backorders for a product from newly-available stock. */
+export async function fillBackorders(formData: FormData): Promise<void> {
+  const ctx = await getActionContext();
+  if ("error" in ctx) return;
+  const warehouseId = String(formData.get("warehouse_id") ?? "");
+  const productId = String(formData.get("product_id") ?? "");
+  const poId = String(formData.get("po_id") ?? "");
+  if (!warehouseId || !productId) return;
+  await fillBackordersInternal(ctx.supabase, ctx.orgId, warehouseId, productId);
+  if (poId) revalidatePath(`/purchase-orders/${poId}`);
+  revalidatePath("/orders");
+  revalidateTag(tags.orders(ctx.orgId));
+  revalidateTag(tags.inventory(ctx.orgId));
 }
