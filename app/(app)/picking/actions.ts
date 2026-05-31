@@ -62,6 +62,7 @@ async function createWave(
 export async function buildWave(formData: FormData): Promise<void> {
   const ctx = await getActionContext();
   if ("error" in ctx) return;
+  if (!ctx.can("picking.manage")) return;
   const warehouseId = String(formData.get("warehouse_id") ?? "");
   const orderIds = formData
     .getAll("order_id")
@@ -84,6 +85,7 @@ export async function buildWave(formData: FormData): Promise<void> {
 export async function autoBuildWave(formData: FormData): Promise<void> {
   const ctx = await getActionContext();
   if ("error" in ctx) return;
+  if (!ctx.can("picking.manage")) return;
   const warehouseId = String(formData.get("warehouse_id") ?? "");
   if (!warehouseId) return;
 
@@ -107,6 +109,7 @@ export async function autoBuildWave(formData: FormData): Promise<void> {
 export async function setWaveStatus(formData: FormData): Promise<void> {
   const ctx = await getActionContext();
   if ("error" in ctx) return;
+  if (!ctx.can("picking.manage")) return;
   const waveId = String(formData.get("wave_id") ?? "");
   const status = String(formData.get("status") ?? "");
   if (!waveId || !(WAVE_STATUSES as readonly string[]).includes(status)) return;
@@ -135,6 +138,7 @@ export async function setWaveStatus(formData: FormData): Promise<void> {
 export async function claimWave(formData: FormData): Promise<void> {
   const ctx = await getActionContext();
   if ("error" in ctx) return;
+  if (!ctx.can("picking.manage")) return;
   const waveId = String(formData.get("wave_id") ?? "");
   const release = String(formData.get("release") ?? "") === "1";
   if (!waveId) return;
@@ -149,6 +153,7 @@ export async function claimWave(formData: FormData): Promise<void> {
 export async function removeOrderFromWave(formData: FormData): Promise<void> {
   const ctx = await getActionContext();
   if ("error" in ctx) return;
+  if (!ctx.can("picking.manage")) return;
   const waveId = String(formData.get("wave_id") ?? "");
   const orderId = String(formData.get("order_id") ?? "");
   if (!orderId) return;

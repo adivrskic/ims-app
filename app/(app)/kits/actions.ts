@@ -85,6 +85,9 @@ export async function buildKit(
 ): Promise<{ error?: string; success?: string }> {
   const ctx = await getActionContext();
   if ("error" in ctx) return { error: ctx.error };
+  if (!ctx.can("work_orders.manage")) {
+    return { error: "You don't have permission to build kits" };
+  }
 
   const kitId = String(formData.get("kit_product_id") ?? "").trim();
   const warehouseId = String(formData.get("warehouse_id") ?? "").trim();

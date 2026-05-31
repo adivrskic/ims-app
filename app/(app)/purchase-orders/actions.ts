@@ -31,6 +31,7 @@ import { tags } from "@/lib/cache-tags";
 export async function draftReorderPO(): Promise<void> {
   const ctx = await getActionContext();
   if ("error" in ctx) return;
+  if (!ctx.can("purchasing.manage")) return;
   const { supabase, orgId, user } = ctx;
 
   // Core drafting (math + grouping + persistence) lives in the shared engine
@@ -83,6 +84,7 @@ export async function setAutoDraftEnabled(formData: FormData): Promise<void> {
 export async function markPoSent(formData: FormData): Promise<void> {
   const ctx = await getActionContext();
   if ("error" in ctx) return;
+  if (!ctx.can("purchasing.manage")) return;
   const id = String(formData.get("id") ?? "");
 
   await ctx.supabase
@@ -103,6 +105,7 @@ export async function markPoSent(formData: FormData): Promise<void> {
 export async function markPoCancelled(formData: FormData): Promise<void> {
   const ctx = await getActionContext();
   if ("error" in ctx) return;
+  if (!ctx.can("purchasing.manage")) return;
   const id = String(formData.get("id") ?? "");
   await ctx.supabase
     .from("purchase_orders")
@@ -131,6 +134,9 @@ export async function createPurchaseOrder(
 ): Promise<{ error?: string; success?: string; id?: string }> {
   const ctx = await getActionContext();
   if ("error" in ctx) return { error: ctx.error };
+  if (!ctx.can("purchasing.manage")) {
+    return { error: "You don't have permission to manage purchase orders" };
+  }
 
   const supplierId = String(formData.get("supplier_id") ?? "").trim();
   const warehouseId = String(formData.get("warehouse_id") ?? "").trim();
@@ -266,6 +272,9 @@ export async function receiveLineItem(
 ): Promise<{ error?: string; success?: string } | void> {
   const ctx = await getActionContext();
   if ("error" in ctx) return { error: ctx.error };
+  if (!ctx.can("purchasing.receive")) {
+    return { error: "You don't have permission to receive shipments" };
+  }
 
   const lineId = String(formData.get("line_id") ?? "");
   const poId = String(formData.get("po_id") ?? "");

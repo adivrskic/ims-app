@@ -11,6 +11,7 @@ import { getActionContext } from "@/lib/data/actionContext";
 export async function reviewQcLine(formData: FormData): Promise<void> {
   const ctx = await getActionContext();
   if ("error" in ctx) return;
+  if (!ctx.can("qc.review")) return;
 
   const lineId = String(formData.get("line_id") ?? "");
   const poId = String(formData.get("po_id") ?? "");

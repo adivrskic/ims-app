@@ -1,25 +1,9 @@
 "use server";
 
 import { revalidatePath, revalidateTag } from "next/cache";
-import { createClient } from "@/lib/supabase/server";
 import { tags } from "@/lib/cache-tags";
+import { getActionContext } from "@/lib/data/actionContext";
 import { applyOrQueueAdjustment } from "@/lib/data/adjustments";
-
-async function getOrgContext() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return { error: "Not signed in" as const };
-  const { data: m } = await supabase
-    .from("org_members")
-    .select("org_id, role")
-    .eq("user_id", user.id)
-    .limit(1)
-    .maybeSingle();
-  if (!m) return { error: "No workspace" as const };
-  return { supabase, user, orgId: m.org_id as string, role: m.role as string };
-}
 
 export interface PickedProduct {
   id: string;
@@ -109,7 +93,7 @@ export async function searchProducts({ query }: { query: string }): Promise<{
   error?: string;
   products?: PickedProduct[];
 }> {
-  const ctx = await getOrgContext();
+  const ctx = await getActionContext();
   if ("error" in ctx) return { error: ctx.error };
 
   const q = sanitizeForFilterString(query);
@@ -153,8 +137,11 @@ export async function placeLocation(args: PlaceArgs): Promise<{
   error?: string;
   location?: LocationRow;
 }> {
-  const ctx = await getOrgContext();
+  const ctx = await getActionContext();
   if ("error" in ctx) return { error: ctx.error };
+  if (!ctx.can("inventory.adjust")) {
+    return { error: "You don't have permission to adjust inventory" };
+  }
   if (args.quantity < 0) return { error: "Quantity must be 0 or greater" };
   if (args.bay < 1) return { error: "Bay must be 1 or greater" };
   if (args.level < 1) return { error: "Level must be 1 or greater" };
@@ -249,8 +236,11 @@ export async function updateLocationQuantity({
   quantity: number;
   reasonCode?: string | null;
 }): Promise<{ error?: string; location?: LocationRow; queued?: boolean }> {
-  const ctx = await getOrgContext();
+  const ctx = await getActionContext();
   if ("error" in ctx) return { error: ctx.error };
+  if (!ctx.can("inventory.adjust")) {
+    return { error: "You don't have permission to adjust inventory" };
+  }
   if (quantity < 0) return { error: "Quantity must be 0 or greater" };
 
   // Read current qty so the adjustment governance layer can compute the delta
@@ -310,8 +300,11 @@ export async function removeLocation({
   sectionId: string;
   locationId: string;
 }): Promise<{ error?: string }> {
-  const ctx = await getOrgContext();
+  const ctx = await getActionContext();
   if ("error" in ctx) return { error: ctx.error };
+  if (!ctx.can("inventory.adjust")) {
+    return { error: "You don't have permission to adjust inventory" };
+  }
 
   // Update + select returns the row so we can write a meaningful audit
   // entry without a separate query.
@@ -363,8 +356,11 @@ export async function relocateLocation({
   source?: LocationRow | null; // null when source was deactivated due to merge
   mergedInto?: LocationRow;
 }> {
-  const ctx = await getOrgContext();
+  const ctx = await getActionContext();
   if ("error" in ctx) return { error: ctx.error };
+  if (!ctx.can("inventory.adjust")) {
+    return { error: "You don't have permission to adjust inventory" };
+  }
   if (toBay < 1) return { error: "Bay must be 1 or greater" };
   if (toLevel < 1) return { error: "Level must be 1 or greater" };
 

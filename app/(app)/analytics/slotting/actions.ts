@@ -1,8 +1,8 @@
 "use server";
 
 import { revalidatePath, revalidateTag } from "next/cache";
-import { createClient } from "@/lib/supabase/server";
 import { tags } from "@/lib/cache-tags";
+import { getActionContext } from "@/lib/data/actionContext";
 
 /**
  * §6c — apply a slotting suggestion from the health report.
@@ -14,22 +14,6 @@ import { tags } from "@/lib/cache-tags";
  * updateLocationQuantity), which already adjust stock from the dashboard. The
  * physical floor is expected to follow the recorded move.
  */
-
-async function getOrgContext() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return { error: "Not signed in" as const };
-  const { data: m } = await supabase
-    .from("org_members")
-    .select("org_id, role")
-    .eq("user_id", user.id)
-    .limit(1)
-    .maybeSingle();
-  if (!m) return { error: "No workspace" as const };
-  return { supabase, user, orgId: m.org_id as string, role: m.role as string };
-}
 
 interface SlotCoord {
   section_id: string;
@@ -76,8 +60,11 @@ export interface ApplyMoveArgs {
 export async function applySlottingMove(
   args: ApplyMoveArgs
 ): Promise<{ error?: string; success?: boolean }> {
-  const ctx = await getOrgContext();
+  const ctx = await getActionContext();
   if ("error" in ctx) return { error: ctx.error };
+  if (!ctx.can("inventory.adjust")) {
+    return { error: "You don't have permission to adjust inventory" };
+  }
 
   if (
     args.fromSectionId === args.toSectionId &&

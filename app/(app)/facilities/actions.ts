@@ -1,42 +1,14 @@
 "use server";
 
 import { revalidatePath, revalidateTag } from "next/cache";
-import { createClient } from "@/lib/supabase/server";
+import { getActionContext } from "@/lib/data/actionContext";
 import { tags } from "@/lib/cache-tags";
-import { effectivePermissions, type Permission } from "@/lib/permissions";
-async function getOrgContext() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return { error: "Not signed in" as const };
-
-  const { data: membership } = await supabase
-    .from("org_members")
-    .select("org_id, role, permissions")
-    .eq("user_id", user.id)
-    .limit(1)
-    .maybeSingle();
-
-  if (!membership) return { error: "No workspace" as const };
-  const perms = effectivePermissions(
-    membership.role,
-    (membership.permissions as string[] | null) ?? null
-  );
-  return {
-    supabase,
-    user,
-    orgId: membership.org_id as string,
-    role: membership.role,
-    can: (p: Permission) => perms.has(p),
-  };
-}
 
 export async function createWarehouse(
   _prev: unknown,
   formData: FormData
 ): Promise<{ error?: string; success?: string }> {
-  const ctx = await getOrgContext();
+  const ctx = await getActionContext();
   if ("error" in ctx) return { error: ctx.error };
   if (!ctx.can("facilities.manage")) {
     return { error: "Only admins can add facilities" };
@@ -100,7 +72,7 @@ export async function createWarehouse(
 }
 
 export async function archiveWarehouse(formData: FormData): Promise<void> {
-  const ctx = await getOrgContext();
+  const ctx = await getActionContext();
   if ("error" in ctx) return;
   if (!ctx.can("facilities.manage")) return;
   const id = String(formData.get("id") ?? "");
@@ -114,7 +86,7 @@ export async function archiveWarehouse(formData: FormData): Promise<void> {
 }
 
 export async function restoreWarehouse(formData: FormData): Promise<void> {
-  const ctx = await getOrgContext();
+  const ctx = await getActionContext();
   if ("error" in ctx) return;
   if (!ctx.can("facilities.manage")) return;
   const id = String(formData.get("id") ?? "");
@@ -131,7 +103,7 @@ export async function createSection(
   _prev: unknown,
   formData: FormData
 ): Promise<{ error?: string; success?: string }> {
-  const ctx = await getOrgContext();
+  const ctx = await getActionContext();
   if ("error" in ctx) return { error: ctx.error };
   if (!ctx.can("facilities.manage")) {
     return { error: "Only admins can add sections" };
@@ -192,7 +164,7 @@ export async function createSection(
 }
 
 export async function deleteSection(formData: FormData): Promise<void> {
-  const ctx = await getOrgContext();
+  const ctx = await getActionContext();
   if ("error" in ctx) return;
   if (!ctx.can("facilities.manage")) return;
   const id = String(formData.get("id") ?? "");
