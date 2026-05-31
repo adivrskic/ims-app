@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Logo } from "@/components/ui/Logo";
+import { LogoWordmark } from "@/components/ui/LogoWordmark";
 import { ThemeToggle } from "@/components/nav/ThemeToggle";
 import { UnderwaterAtmosphere } from "@/components/effects/UnderwaterAtmosphere";
 import type { CSSProperties } from "react";
@@ -40,14 +40,11 @@ export default function AuthLayout({
       >
         <Link
           href="/"
-          className="inline-flex items-center gap-10"
-          aria-label="Nimbus"
+          className="inline-flex items-center"
+          aria-label="Nautilus Inventory"
           style={{ color: "var(--text)" }}
         >
-          <Logo size={20} />
-          <span className="label-text--lg" style={{ color: "var(--text)" }}>
-            Nimbus
-          </span>
+          <LogoWordmark size="md" />
         </Link>
         <ThemeToggle />
       </header>
@@ -63,7 +60,7 @@ export default function AuthLayout({
         className="relative z-10 px-32 sm:px-48 py-24 flex items-center justify-between"
         style={chromeOverride}
       >
-        <p className="label-text">© Nimbus WMS</p>
+        <p className="label-text">© Nautilus</p>
         <nav className="flex items-center gap-20">
           <Link
             href="https://nimbuswms.com/legal/privacy"

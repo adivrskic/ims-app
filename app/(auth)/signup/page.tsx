@@ -52,7 +52,7 @@ export default function SignupPage() {
             name="email"
             autoComplete="email"
             required
-            placeholder="ops@nimbus.io"
+            placeholder="ops@nautilusinventory.com"
           />
         </ManifestRow>
 

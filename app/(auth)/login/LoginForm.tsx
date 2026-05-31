@@ -50,7 +50,7 @@ export function LoginForm({ next, initialError }: Props) {
             name="email"
             autoComplete="email"
             required
-            placeholder="ops@nimbus.io"
+            placeholder="ops@nautilusinventory.com"
           />
         </ManifestRow>
 

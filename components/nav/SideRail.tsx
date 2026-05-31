@@ -18,6 +18,7 @@ import {
   LogOut,
 } from "lucide-react";
 import { Logo } from "@/components/ui/Logo";
+import { LogoWordmark } from "@/components/ui/LogoWordmark";
 import { NAV_GROUPS, findActiveHref, type NavItem } from "@/lib/navData";
 import { WorkspaceSwitcher, type WorkspaceOption } from "./WorkspaceSwitcher";
 import type { NotificationItem } from "./NotificationsDropdown";
@@ -128,23 +129,11 @@ export function SideRail({
       >
         <Link
           href="/"
-          className="flex items-center gap-8 text-text"
-          aria-label="Nautilus home"
-          title={collapsed ? "Nautilus home" : undefined}
+          className="flex items-center text-text"
+          aria-label="Nautilus Inventory home"
+          title={collapsed ? "Nautilus Inventory home" : undefined}
         >
-          <Logo size={18} />
-          {!collapsed && (
-            <span
-              style={{
-                fontFamily: "var(--mono)",
-                fontSize: 11,
-                letterSpacing: "2.5px",
-                fontWeight: 500,
-              }}
-            >
-              Nautilus
-            </span>
-          )}
+          {collapsed ? <Logo size={18} title="Nautilus" /> : <LogoWordmark size="sm" />}
         </Link>
       </div>
 
@@ -234,8 +223,8 @@ export function SideRail({
         <button
           type="button"
           onClick={openPalette}
-          className={`hairline-subtle bg-[var(--surface-2)] hover:border-[var(--border-hover)] transition-colors text-text-secondary flex items-center ${
-            collapsed ? "justify-center h-32 w-full" : "gap-8 px-10 py-7"
+          className={`hairline-subtle bg-[var(--surface-2)] hover:border-[var(--border-hover)] transition-colors text-text-secondary flex items-center h-32 ${
+            collapsed ? "justify-center w-full" : "gap-8 px-10"
           }`}
           aria-label="Open command palette"
           title={collapsed ? "Search · ⌘K" : undefined}
@@ -268,10 +257,8 @@ export function SideRail({
         >
           <Link
             href="/notifications"
-            className={`relative hairline-subtle hover:border-[var(--border-hover)] text-text-secondary transition-colors flex items-center ${
-              collapsed
-                ? "justify-center h-28 w-full"
-                : "gap-8 px-10 py-6 flex-1"
+            className={`relative hairline-subtle hover:border-[var(--border-hover)] text-text-secondary transition-colors flex items-center h-32 ${
+              collapsed ? "justify-center w-full" : "gap-8 px-10 flex-1"
             }`}
             aria-label={`Notifications${
               unreadCount > 0 ? `, ${unreadCount} unread` : ""
@@ -311,7 +298,9 @@ export function SideRail({
           </Link>
           <Link
             href="/kiosk"
-            className="hairline-subtle hover:border-[var(--border-hover)] text-text-secondary hover:text-text transition-colors flex items-center justify-center shrink-0 h-28 w-28"
+            className={`hairline-subtle hover:border-[var(--border-hover)] text-text-secondary hover:text-text transition-colors flex items-center justify-center shrink-0 h-32 ${
+              collapsed ? "w-full" : "w-32"
+            }`}
             aria-label="Open kiosk mode"
             title="Kiosk mode"
           >
@@ -324,10 +313,7 @@ export function SideRail({
            collapsed. Separated from the row above by a subtle divider
            and a touch of vertical breathing room so it reads as its own
            operational tools section. */}
-        <div
-          className={`hairline-t pt-8 mt-2 ${collapsed ? "" : ""}`}
-          aria-label="Devices"
-        >
+        <div className="hairline-t pt-6" aria-label="Devices">
           <SidebarDeviceBar collapsed={collapsed} />
         </div>
 
@@ -338,10 +324,8 @@ export function SideRail({
         <button
           type="button"
           onClick={() => setCollapsed((c) => !c)}
-          className={`hairline-subtle hover:border-[var(--border-hover)] text-text-muted hover:text-text transition-colors flex items-center ${
-            collapsed
-              ? "justify-center h-28 w-full mt-4"
-              : "justify-center gap-6 px-10 py-6 mt-4"
+          className={`hairline-subtle hover:border-[var(--border-hover)] text-text-muted hover:text-text transition-colors flex items-center h-32 ${
+            collapsed ? "justify-center w-full" : "justify-center gap-6 px-10"
           }`}
           aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
           title={`${collapsed ? "Expand" : "Collapse"} sidebar · ⌘B`}
@@ -474,8 +458,8 @@ function SidebarUserMenu({
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
-        className={`hairline-subtle hover:border-[var(--border-hover)] transition-colors flex items-center w-full ${
-          collapsed ? "justify-center h-32" : "gap-8 px-8 py-5"
+        className={`hairline-subtle hover:border-[var(--border-hover)] transition-colors flex items-center w-full h-32 ${
+          collapsed ? "justify-center" : "gap-8 px-10"
         }`}
         aria-label="Account menu"
         aria-expanded={open}
@@ -500,7 +484,7 @@ function SidebarUserMenu({
 
       {open && (
         <div
-          className="absolute bottom-full left-0 mb-8 w-[220px] hairline bg-[var(--surface)] flex flex-col"
+          className="absolute bottom-full left-0 mb-8 w-[240px] hairline bg-[var(--surface)] flex flex-col"
           style={{ zIndex: 50 }}
         >
           <header className="px-14 py-10 hairline-b">
