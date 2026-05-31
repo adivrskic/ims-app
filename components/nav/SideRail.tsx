@@ -6,6 +6,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ChevronsLeft,
   ChevronsRight,
+  ChevronDown,
   Search,
   Bell,
   Command,
@@ -18,7 +19,13 @@ import {
   LogOut,
 } from "lucide-react";
 import { Logo } from "@/components/ui/Logo";
-import { NAV_GROUPS, findActiveHref, type NavItem } from "@/lib/navData";
+import { LogoWordmark } from "@/components/ui/LogoWordmark";
+import {
+  ALL_NAV_ITEMS,
+  resolveNav,
+  findActiveHref,
+  type NavItem,
+} from "@/lib/navData";
 import { WorkspaceSwitcher, type WorkspaceOption } from "./WorkspaceSwitcher";
 import type { NotificationItem } from "./NotificationsDropdown";
 import { signOut } from "@/app/(auth)/actions";
@@ -43,6 +50,8 @@ interface Props {
   initialCollapsed: boolean;
   facilities: FacilityOption[];
   currentFacilityId: string | null;
+  /** Workspace industry slug — drives which items show by default. */
+  industry: string | null;
 }
 
 /**
@@ -67,9 +76,11 @@ export function SideRail({
   initialCollapsed,
   facilities,
   currentFacilityId,
+  industry,
 }: Props) {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(initialCollapsed);
+  const [moreOpen, setMoreOpen] = useState(false);
 
   useEffect(() => {
     document.cookie = `${SIDEBAR_COOKIE}=${collapsed}; path=/; max-age=${
@@ -102,10 +113,16 @@ export function SideRail({
     window.dispatchEvent(new Event("open-command-palette"));
   };
 
-  const allItems = useMemo(() => NAV_GROUPS.flatMap((g) => g.items), []);
   const activeHref = useMemo(
-    () => findActiveHref(allItems, pathname),
-    [allItems, pathname]
+    () => findActiveHref(ALL_NAV_ITEMS, pathname),
+    [pathname]
+  );
+
+  // Industry-driven nav: primary items stay grouped; the rest collapse into
+  // "More" so nothing's unreachable (and ⌘K finds everything regardless).
+  const { groups: navGroups, more: moreItems } = useMemo(
+    () => resolveNav(industry),
+    [industry]
   );
 
   const width = collapsed ? COLLAPSED_WIDTH : EXPANDED_WIDTH;
@@ -128,23 +145,11 @@ export function SideRail({
       >
         <Link
           href="/"
-          className="flex items-center gap-8 text-text"
-          aria-label="Nautilus home"
-          title={collapsed ? "Nautilus home" : undefined}
+          className="flex items-center text-text"
+          aria-label="Nautilus Inventory home"
+          title={collapsed ? "Nautilus Inventory home" : undefined}
         >
-          <Logo size={18} />
-          {!collapsed && (
-            <span
-              style={{
-                fontFamily: "var(--mono)",
-                fontSize: 11,
-                letterSpacing: "2.5px",
-                fontWeight: 500,
-              }}
-            >
-              Nautilus
-            </span>
-          )}
+          {collapsed ? <Logo size={18} title="Nautilus" /> : <LogoWordmark size="sm" />}
         </Link>
       </div>
 
@@ -185,7 +190,7 @@ export function SideRail({
           collapsed ? "px-6 py-10 gap-10" : "px-10 py-14 gap-18"
         }`}
       >
-        {NAV_GROUPS.map((group) => (
+        {navGroups.map((group) => (
           <div key={group.label}>
             {!collapsed && (
               <div className="px-10 mb-6">
@@ -193,35 +198,61 @@ export function SideRail({
               </div>
             )}
             <ul className="flex flex-col gap-1">
-              {group.items.map((item) => {
-                // Facilities gets the special switcher (button + popover).
-                // Every other item renders as a normal Link.
-                if (item.href === "/settings/facilities") {
-                  return (
-                    <FacilitiesNavItem
-                      key={item.href}
-                      label={item.label}
-                      icon={item.icon}
-                      manageHref={item.href}
-                      active={item.href === activeHref}
-                      collapsed={collapsed}
-                      facilities={facilities}
-                      currentFacilityId={currentFacilityId}
-                    />
-                  );
-                }
-                return (
-                  <NavItemLink
-                    key={item.href}
-                    item={item}
-                    active={item.href === activeHref}
-                    collapsed={collapsed}
-                  />
-                );
-              })}
+              {group.items.map((item) =>
+                renderNavItem(item, {
+                  activeHref,
+                  collapsed,
+                  facilities,
+                  currentFacilityId,
+                })
+              )}
             </ul>
           </div>
         ))}
+
+        {/* More — items not primary for this industry. Expanded: a toggle.
+            Collapsed: appended as icons so nothing is unreachable. */}
+        {moreItems.length > 0 &&
+          (collapsed ? (
+            <ul className="flex flex-col gap-1">
+              {moreItems.map((item) =>
+                renderNavItem(item, {
+                  activeHref,
+                  collapsed,
+                  facilities,
+                  currentFacilityId,
+                })
+              )}
+            </ul>
+          ) : (
+            <div>
+              <button
+                type="button"
+                onClick={() => setMoreOpen((o) => !o)}
+                className="w-full flex items-center gap-6 px-10 mb-6 text-text-muted hover:text-text transition-colors"
+                aria-expanded={moreOpen}
+              >
+                <span className="label-text">More</span>
+                <ChevronDown
+                  size={11}
+                  strokeWidth={1.5}
+                  className={`transition-transform ${moreOpen ? "rotate-180" : ""}`}
+                />
+              </button>
+              {moreOpen && (
+                <ul className="flex flex-col gap-1">
+                  {moreItems.map((item) =>
+                    renderNavItem(item, {
+                      activeHref,
+                      collapsed,
+                      facilities,
+                      currentFacilityId,
+                    })
+                  )}
+                </ul>
+              )}
+            </div>
+          ))}
       </nav>
 
       {/* ── Footer ──────────────────────────────────────────────────── */}
@@ -234,8 +265,8 @@ export function SideRail({
         <button
           type="button"
           onClick={openPalette}
-          className={`hairline-subtle bg-[var(--surface-2)] hover:border-[var(--border-hover)] transition-colors text-text-secondary flex items-center ${
-            collapsed ? "justify-center h-32 w-full" : "gap-8 px-10 py-7"
+          className={`hairline-subtle bg-[var(--surface-2)] hover:border-[var(--border-hover)] transition-colors text-text-secondary flex items-center h-32 ${
+            collapsed ? "justify-center w-full" : "gap-8 px-10"
           }`}
           aria-label="Open command palette"
           title={collapsed ? "Search · ⌘K" : undefined}
@@ -268,10 +299,8 @@ export function SideRail({
         >
           <Link
             href="/notifications"
-            className={`relative hairline-subtle hover:border-[var(--border-hover)] text-text-secondary transition-colors flex items-center ${
-              collapsed
-                ? "justify-center h-28 w-full"
-                : "gap-8 px-10 py-6 flex-1"
+            className={`relative hairline-subtle hover:border-[var(--border-hover)] text-text-secondary transition-colors flex items-center h-32 ${
+              collapsed ? "justify-center w-full" : "gap-8 px-10 flex-1"
             }`}
             aria-label={`Notifications${
               unreadCount > 0 ? `, ${unreadCount} unread` : ""
@@ -311,7 +340,9 @@ export function SideRail({
           </Link>
           <Link
             href="/kiosk"
-            className="hairline-subtle hover:border-[var(--border-hover)] text-text-secondary hover:text-text transition-colors flex items-center justify-center shrink-0 h-28 w-28"
+            className={`hairline-subtle hover:border-[var(--border-hover)] text-text-secondary hover:text-text transition-colors flex items-center justify-center shrink-0 h-32 ${
+              collapsed ? "w-full" : "w-32"
+            }`}
             aria-label="Open kiosk mode"
             title="Kiosk mode"
           >
@@ -324,10 +355,7 @@ export function SideRail({
            collapsed. Separated from the row above by a subtle divider
            and a touch of vertical breathing room so it reads as its own
            operational tools section. */}
-        <div
-          className={`hairline-t pt-8 mt-2 ${collapsed ? "" : ""}`}
-          aria-label="Devices"
-        >
+        <div className="hairline-t pt-6" aria-label="Devices">
           <SidebarDeviceBar collapsed={collapsed} />
         </div>
 
@@ -338,10 +366,8 @@ export function SideRail({
         <button
           type="button"
           onClick={() => setCollapsed((c) => !c)}
-          className={`hairline-subtle hover:border-[var(--border-hover)] text-text-muted hover:text-text transition-colors flex items-center ${
-            collapsed
-              ? "justify-center h-28 w-full mt-4"
-              : "justify-center gap-6 px-10 py-6 mt-4"
+          className={`hairline-subtle hover:border-[var(--border-hover)] text-text-muted hover:text-text transition-colors flex items-center h-32 ${
+            collapsed ? "justify-center w-full" : "justify-center gap-6 px-10"
           }`}
           aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
           title={`${collapsed ? "Expand" : "Collapse"} sidebar · ⌘B`}
@@ -363,6 +389,42 @@ export function SideRail({
         </button>
       </div>
     </aside>
+  );
+}
+
+// ─── Item renderer ──────────────────────────────────────────────────────
+// Facilities gets the special switcher (button + popover); everything else is
+// a plain link. Shared by the primary groups and the "More" section.
+function renderNavItem(
+  item: NavItem,
+  ctx: {
+    activeHref: string | null;
+    collapsed: boolean;
+    facilities: FacilityOption[];
+    currentFacilityId: string | null;
+  }
+) {
+  if (item.key === "facilities") {
+    return (
+      <FacilitiesNavItem
+        key={item.key}
+        label={item.label}
+        icon={item.icon}
+        manageHref={item.href}
+        active={item.href === ctx.activeHref}
+        collapsed={ctx.collapsed}
+        facilities={ctx.facilities}
+        currentFacilityId={ctx.currentFacilityId}
+      />
+    );
+  }
+  return (
+    <NavItemLink
+      key={item.key}
+      item={item}
+      active={item.href === ctx.activeHref}
+      collapsed={ctx.collapsed}
+    />
   );
 }
 
@@ -474,8 +536,8 @@ function SidebarUserMenu({
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
-        className={`hairline-subtle hover:border-[var(--border-hover)] transition-colors flex items-center w-full ${
-          collapsed ? "justify-center h-32" : "gap-8 px-8 py-5"
+        className={`hairline-subtle hover:border-[var(--border-hover)] transition-colors flex items-center w-full h-32 ${
+          collapsed ? "justify-center" : "gap-8 px-10"
         }`}
         aria-label="Account menu"
         aria-expanded={open}
@@ -500,7 +562,7 @@ function SidebarUserMenu({
 
       {open && (
         <div
-          className="absolute bottom-full left-0 mb-8 w-[220px] hairline bg-[var(--surface)] flex flex-col"
+          className="absolute bottom-full left-0 mb-8 w-[240px] hairline bg-[var(--surface)] flex flex-col"
           style={{ zIndex: 50 }}
         >
           <header className="px-14 py-10 hairline-b">

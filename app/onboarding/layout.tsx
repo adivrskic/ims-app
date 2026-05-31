@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Logo } from "@/components/ui/Logo";
+import { LogoWordmark } from "@/components/ui/LogoWordmark";
 
 export const metadata = { title: "Set up workspace · Nautilus" };
 
@@ -17,20 +17,10 @@ export default function OnboardingLayout({
       <header className="relative z-10 px-32 md:px-48 py-24 flex items-center justify-between">
         <Link
           href="/"
-          className="inline-flex items-center gap-10 text-text"
-          aria-label="Nautilus"
+          className="inline-flex items-center text-text"
+          aria-label="Nautilus Inventory"
         >
-          <Logo size={20} />
-          <span
-            style={{
-              fontFamily: "var(--mono)",
-              fontSize: 12,
-              letterSpacing: "2.5px",
-              fontWeight: 500,
-            }}
-          >
-            Nautilus
-          </span>
+          <LogoWordmark size="md" />
         </Link>
         <span className="label-text text-text-muted">First-time setup</span>
       </header>

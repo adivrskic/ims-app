@@ -6,6 +6,7 @@ import { CornerButton } from "@/components/ui/CornerButton";
 import { Input } from "@/components/ui/Input";
 import { AddressFields } from "@/components/ui/AddressFields";
 import { InviteLinks } from "@/components/invites/InviteLinks";
+import { INDUSTRIES } from "@/lib/industries";
 import { setUpWorkspace, type OnboardingState } from "./actions";
 
 interface Props {
@@ -91,6 +92,29 @@ export function OnboardingForm({ fullName, email }: Props) {
             placeholder="Acme Flooring Supply"
             autoComplete="organization"
           />
+
+          <div className="flex flex-col gap-6">
+            <label className="field-shell block" data-filled="true">
+              <span className="field-label">Industry</span>
+              <select
+                name="industry"
+                defaultValue=""
+                className="field-input cursor-pointer"
+                aria-label="Industry"
+              >
+                <option value="">— Select your industry —</option>
+                {INDUSTRIES.map((ind) => (
+                  <option key={ind.slug} value={ind.slug}>
+                    {ind.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <p className="mono-sm text-text-dim" style={{ lineHeight: 1.6 }}>
+              We&apos;ll tailor your dashboard — surfacing the tools that matter
+              most for your industry. You can fine-tune this anytime in Settings.
+            </p>
+          </div>
         </section>
 
         {/* ── First facility ────────────────────────────────── */}

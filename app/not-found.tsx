@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Logo } from "@/components/ui/Logo";
+import { LogoWordmark } from "@/components/ui/LogoWordmark";
 import { CornerLink as ButtonLink } from "@/components/ui/CornerButton";
 
 export const metadata = { title: "Not found" };
@@ -8,9 +8,8 @@ export default function NotFound() {
   return (
     <main className="min-h-screen flex flex-col">
       <header className="h-56 hairline-b flex items-center px-32">
-        <Link href="/" className="flex items-center gap-10 text-text">
-          <Logo size={20} />
-          <span className="label-text--lg">Nimbus</span>
+        <Link href="/" className="flex items-center text-text">
+          <LogoWordmark size="sm" />
         </Link>
       </header>
 

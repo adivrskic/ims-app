@@ -112,6 +112,7 @@ export default async function AppLayout({
             initialCollapsed={initialCollapsed}
             facilities={facilityState.facilities}
             currentFacilityId={facilityState.currentId}
+            industry={activeMembership.org?.industry ?? null}
           />
 
           <div className="flex-1 min-w-0 flex flex-col min-h-screen">
