@@ -89,7 +89,9 @@ export async function setApprovalThreshold(formData: FormData): Promise<void> {
   let threshold: number | null = null;
   if (raw !== "") {
     const n = parseInt(raw, 10);
-    threshold = Number.isFinite(n) && n > 0 ? n : null;
+    // 0 is a valid, meaningful value: "every adjustment needs approval". Only a
+    // blank field or an invalid/negative number disables approvals (null).
+    threshold = Number.isFinite(n) && n >= 0 ? n : null;
   }
   await ctx.supabase
     .from("orgs")

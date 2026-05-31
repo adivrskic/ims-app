@@ -7,8 +7,12 @@ import { runReport } from "@/lib/data/reports";
 const EXPORT_LIMIT = 100_000;
 
 function csvCell(v: unknown): string {
-  const s = v == null ? "" : String(v);
-  if (s.includes(",") || s.includes('"') || s.includes("\n")) {
+  let s = v == null ? "" : String(v);
+  // Neutralize spreadsheet formula injection: Excel/Sheets evaluate a cell that
+  // begins with = + - @ (or a leading tab/CR). Prefix such values with an
+  // apostrophe so they render as literal text instead of executing.
+  if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
+  if (s.includes(",") || s.includes('"') || s.includes("\n") || s.includes("\r")) {
     return `"${s.replace(/"/g, '""')}"`;
   }
   return s;

@@ -222,8 +222,11 @@ export async function applyOrQueueAdjustment(
       ?.requires_approval
   );
 
+  // `>=` so a delta exactly at the threshold is gated (the boundary should
+  // require approval, not slip through), and so threshold 0 gates every nonzero
+  // adjustment (delta === 0 already returned as a no-op above).
   const needsApproval =
-    (threshold != null && Math.abs(delta) > threshold) || reasonRequiresApproval;
+    (threshold != null && Math.abs(delta) >= threshold) || reasonRequiresApproval;
 
   if (needsApproval) {
     const { error } = await supabase.from("stock_adjustment_requests").insert({

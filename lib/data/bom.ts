@@ -159,51 +159,11 @@ export async function getBomTree(
   return build(rootProductId, 1, 1, 0, new Set<string>());
 }
 
-// ── Explosion to leaves (for planning) ─────────────────────────────────────
-
-export interface ExplodedLeaf {
-  productId: string;
-  name: string;
-  sku: string | null;
-  totalQty: number;
-}
-
-/**
- * Flatten a BOM to its leaf (non-kit) components with total quantities for
- * building `qty` units of the root. Sub-assemblies are expanded; only
- * non-kit leaves are returned.
- */
-export async function explodeBom(
-  supabase: Client,
-  orgId: string,
-  rootProductId: string,
-  qty: number
-): Promise<ExplodedLeaf[]> {
-  const tree = await getBomTree(supabase, orgId, rootProductId);
-  if (!tree) return [];
-
-  const totals = new Map<string, { node: BomNode; qty: number }>();
-  // unitsNeeded = how many of `node` are required for the whole build.
-  const walk = (node: BomNode, unitsNeeded: number) => {
-    const isLeaf = !node.isKit || node.children.length === 0 || node.cycle;
-    if (isLeaf) {
-      const cur = totals.get(node.productId);
-      if (cur) cur.qty += unitsNeeded;
-      else totals.set(node.productId, { node, qty: unitsNeeded });
-      return;
-    }
-    for (const c of node.children) walk(c, unitsNeeded * c.qtyPerParent);
-  };
-  // Skip the root (the finished good); accumulate its components.
-  for (const c of tree.children) walk(c, qty * c.qtyPerParent);
-
-  return [...totals.values()].map(({ node, qty }) => ({
-    productId: node.productId,
-    name: node.name,
-    sku: node.sku,
-    totalQty: qty,
-  }));
-}
+// NOTE: a BOM-explosion-to-leaves helper (explodeBom) was removed here — it was
+// dead code that implied a multi-level auto-build capability the system doesn't
+// have (work orders snapshot and consume only the DIRECT BOM; sub-assemblies must
+// be pre-built via their own work orders). Re-add it only alongside real
+// multi-level planning. See docs/audit-followups.md.
 
 // ── Cycle guard for BOM editing ────────────────────────────────────────────
 
