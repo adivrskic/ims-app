@@ -5,6 +5,8 @@ import { ArrowLeft, FileText, Send, X as XIcon } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentOrgContext } from "@/lib/data/user";
 import { getSlottingSuggestions } from "@/lib/data/slotting";
+import { getFillableBackorders } from "@/lib/data/allocation";
+import { fillBackorders } from "@/app/(app)/orders/actions";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { SectionTitle } from "@/components/ui/SectionTitle";
 import { CornerButton } from "@/components/ui/CornerButton";
@@ -173,6 +175,47 @@ export default async function PurchaseOrderDetailPage({
     }
   }
 
+  // Backorder fill suggestions (allocation §): for products already received on
+  // this PO, surface how much backordered order demand the new stock can fill.
+  // Suggestion only — the user confirms via the per-product button.
+  type FillSuggestion = {
+    productId: string;
+    productName: string;
+    fillableUnits: number;
+    backorderedUnits: number;
+    orderCount: number;
+  };
+  const fillSuggestions: FillSuggestion[] = [];
+  if ((canReceive || status === "fully_received") && warehouse?.id) {
+    const ctx = await getCurrentOrgContext();
+    if (ctx) {
+      const receivedProducts = new Map<string, string>();
+      for (const l of lines) {
+        if (l.product_id && (l.quantity_received ?? 0) > 0) {
+          receivedProducts.set(l.product_id, l.product_name);
+        }
+      }
+      const fills = await Promise.all(
+        [...receivedProducts.entries()].map(([pid, name]) =>
+          getFillableBackorders(supabase, ctx.orgId, warehouse.id, pid).then(
+            (f) => ({ ...f, name })
+          )
+        )
+      );
+      for (const f of fills) {
+        if (f.fillableUnits > 0) {
+          fillSuggestions.push({
+            productId: f.productId,
+            productName: f.name,
+            fillableUnits: f.fillableUnits,
+            backorderedUnits: f.backorderedUnits,
+            orderCount: f.orderCount,
+          });
+        }
+      }
+    }
+  }
+
   // PO title falls back to a truncated UUID if no po_number is set (e.g.
   // a draft that hadn't been numbered yet — shouldn't happen in practice
   // since draftReorderPO always assigns one).
@@ -254,6 +297,57 @@ export default async function PurchaseOrderDetailPage({
           />
         </div>
       </section>
+
+      {/* Backorder fill suggestions — received stock can satisfy waiting orders. */}
+      {fillSuggestions.length > 0 && (
+        <section aria-labelledby="backorder-fill">
+          <SectionTitle
+            eyebrow="Allocation"
+            title="Fill backorders"
+            action={
+              <span className="label-text text-text-muted">
+                Received stock can satisfy waiting orders
+              </span>
+            }
+          />
+          <ul className="flex flex-col gap-10">
+            {fillSuggestions.map((f) => (
+              <li
+                key={f.productId}
+                className="hairline bg-[var(--surface)] px-16 py-12 flex items-center gap-14 flex-wrap"
+              >
+                <div className="flex-1 min-w-0">
+                  <Link
+                    href={`/inventory/${f.productId}`}
+                    className="text-text hover:text-[var(--accent)] transition-colors"
+                    style={{ fontFamily: "var(--display)", fontSize: 13 }}
+                  >
+                    {f.productName}
+                  </Link>
+                  <p className="mono-sm text-text-muted mt-2">
+                    Fill <span className="text-[var(--accent)]">{f.fillableUnits}</span>{" "}
+                    of {f.backorderedUnits} backordered unit
+                    {f.backorderedUnits === 1 ? "" : "s"} across {f.orderCount}{" "}
+                    order{f.orderCount === 1 ? "" : "s"} (oldest first).
+                  </p>
+                </div>
+                <form action={fillBackorders}>
+                  <input
+                    type="hidden"
+                    name="warehouse_id"
+                    value={warehouse?.id ?? ""}
+                  />
+                  <input type="hidden" name="product_id" value={f.productId} />
+                  <input type="hidden" name="po_id" value={poData.id} />
+                  <CornerButton type="submit" variant="primary" size="sm">
+                    Fill backorders
+                  </CornerButton>
+                </form>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       {/* Notes — only shown when populated (auto-drafted POs have a notes
           summary; manually-created ones may not). */}

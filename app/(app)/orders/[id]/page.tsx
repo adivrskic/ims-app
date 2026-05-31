@@ -13,7 +13,7 @@ import {
   User,
   FileText,
 } from "lucide-react";
-import { advanceOrderStatus, cancelOrder } from "../actions";
+import { advanceOrderStatus, cancelOrder, allocateOrder } from "../actions";
 import { OrderDetailRealtime } from "@/components/realtime/PageRealtime";
 
 export const metadata = { title: "Order detail" };
@@ -107,13 +107,14 @@ export default async function OrderDetailPage({
   const { data: items } = await supabase
     .from("order_items")
     .select(
-      "id, quantity_requested, quantity_picked, notes, product:products ( id, name, barcode ), location:locations ( bay, level, section:sections ( code ) )"
+      "id, quantity_requested, quantity_allocated, quantity_picked, notes, product:products ( id, name, barcode ), location:locations ( bay, level, section:sections ( code ) )"
     )
     .eq("order_id", id);
 
   type ItemRow = {
     id: string;
     quantity_requested: number;
+    quantity_allocated: number | null;
     quantity_picked: number | null;
     notes: string | null;
     product:
@@ -131,6 +132,15 @@ export default async function OrderDetailPage({
   const totalPicked = rows.reduce((s, i) => s + (i.quantity_picked ?? 0), 0);
   const fulfillment =
     totalRequested > 0 ? Math.round((totalPicked / totalRequested) * 100) : 0;
+
+  const totalAllocated = rows.reduce(
+    (s, i) => s + (i.quantity_allocated ?? 0),
+    0
+  );
+  const totalBackordered = rows.reduce(
+    (s, i) => s + Math.max(0, i.quantity_requested - (i.quantity_allocated ?? 0)),
+    0
+  );
 
   const status = order.status as OrderStatus;
   const cfg = STATUS_CONFIG[status];
@@ -261,13 +271,36 @@ export default async function OrderDetailPage({
             >
               Line items
             </h2>
-            <div className="flex items-baseline gap-12">
-              <span className="label-text text-text-muted">Fulfillment</span>
-              <span className="mono-body tnum text-text">
-                {totalPicked} <span className="text-text-dim">/</span>{" "}
-                {totalRequested}{" "}
-                <span className="text-[var(--accent)]">({fulfillment}%)</span>
-              </span>
+            <div className="flex items-baseline gap-16 flex-wrap">
+              <div className="flex items-baseline gap-8">
+                <span className="label-text text-text-muted">Allocated</span>
+                <span className="mono-body tnum text-text">
+                  {totalAllocated} <span className="text-text-dim">/</span>{" "}
+                  {totalRequested}
+                  {totalBackordered > 0 && (
+                    <span className="text-[var(--warning)]">
+                      {" "}
+                      · {totalBackordered} backordered
+                    </span>
+                  )}
+                </span>
+              </div>
+              <div className="flex items-baseline gap-8">
+                <span className="label-text text-text-muted">Fulfillment</span>
+                <span className="mono-body tnum text-text">
+                  {totalPicked} <span className="text-text-dim">/</span>{" "}
+                  {totalRequested}{" "}
+                  <span className="text-[var(--accent)]">({fulfillment}%)</span>
+                </span>
+              </div>
+              {canCancel && totalBackordered > 0 && (
+                <form action={allocateOrder}>
+                  <input type="hidden" name="id" value={order.id} />
+                  <CornerButton type="submit" variant="ghost" size="sm">
+                    Re-allocate
+                  </CornerButton>
+                </form>
+              )}
             </div>
           </header>
 
@@ -292,6 +325,18 @@ export default async function OrderDetailPage({
                     scope="col"
                   >
                     Requested
+                  </th>
+                  <th
+                    className="text-right px-16 py-10 label-text text-text-muted"
+                    scope="col"
+                  >
+                    Allocated
+                  </th>
+                  <th
+                    className="text-right px-16 py-10 label-text text-text-muted"
+                    scope="col"
+                  >
+                    Backorder
                   </th>
                   <th
                     className="text-right px-16 py-10 label-text text-text-muted"
@@ -335,6 +380,8 @@ export default async function OrderDetailPage({
                       : "Unassigned";
                   const picked = row.quantity_picked ?? 0;
                   const requested = row.quantity_requested;
+                  const allocated = row.quantity_allocated ?? 0;
+                  const backordered = Math.max(0, requested - allocated);
                   const fullyPicked = picked >= requested;
                   return (
                     <tr key={row.id} className="hairline-b last:border-b-0">
@@ -376,6 +423,30 @@ export default async function OrderDetailPage({
                       <td className="px-16 py-12 text-right">
                         <span className="mono-body text-text tnum">
                           {requested}
+                        </span>
+                      </td>
+                      <td className="px-16 py-12 text-right">
+                        <span
+                          className={`mono-body tnum ${
+                            allocated >= requested
+                              ? "text-[var(--success)]"
+                              : allocated === 0
+                              ? "text-text-dim"
+                              : "text-text"
+                          }`}
+                        >
+                          {allocated}
+                        </span>
+                      </td>
+                      <td className="px-16 py-12 text-right">
+                        <span
+                          className={`mono-body tnum ${
+                            backordered > 0
+                              ? "text-[var(--warning)]"
+                              : "text-text-dim"
+                          }`}
+                        >
+                          {backordered > 0 ? backordered : "—"}
                         </span>
                       </td>
                       <td className="px-16 py-12 text-right">

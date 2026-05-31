@@ -12,6 +12,7 @@ import { formatCurrency } from "@/lib/dashboard";
 import { getCurrentOrgContext } from "@/lib/data/user";
 import { getActiveScope } from "@/lib/facilityScope";
 import { getSlottingSuggestions } from "@/lib/data/slotting";
+import { getProductAllocationOrgWide } from "@/lib/data/allocation";
 import { productVelocity } from "@/lib/data/velocity";
 import { daysToStockout } from "@/lib/replenishment";
 import { expiryStatus, expiryLabel } from "@/lib/lots";
@@ -231,6 +232,13 @@ export default async function ProductDetailPage({
     }
   }
 
+  // Allocation / ATP (workspace-wide: on-hand aggregates all facilities, so we
+  // sum allocations across all open orders too).
+  const allocation = orgCtx
+    ? await getProductAllocationOrgWide(supabase, orgCtx.orgId, id)
+    : { allocated: 0, backordered: 0 };
+  const available = Math.max(0, totalStock - allocation.allocated);
+
   const unitCostNum =
     product.unit_cost == null ? null : parseFloat(String(product.unit_cost));
   const inventoryValue = unitCostNum != null ? unitCostNum * totalStock : null;
@@ -372,7 +380,32 @@ export default async function ProductDetailPage({
         <h2 id="kpi-heading" className="sr-only">
           Product metrics
         </h2>
-        <KpiCard label="Units on hand" value={totalStock.toLocaleString()} />
+        <KpiCard
+          label="Units on hand"
+          value={totalStock.toLocaleString()}
+          delta={
+            allocation.allocated > 0
+              ? {
+                  value: `${allocation.allocated.toLocaleString()} allocated`,
+                  direction: "flat",
+                  tone: "neutral",
+                }
+              : undefined
+          }
+        />
+        <KpiCard
+          label="Available (ATP)"
+          value={available.toLocaleString()}
+          delta={
+            allocation.backordered > 0
+              ? {
+                  value: `${allocation.backordered.toLocaleString()} backordered`,
+                  direction: "down",
+                  tone: "bad",
+                }
+              : undefined
+          }
+        />
         <KpiCard
           label="Inventory value"
           value={inventoryValue != null ? formatCurrency(inventoryValue) : "—"}
@@ -381,7 +414,6 @@ export default async function ProductDetailPage({
           label="Reorder point"
           value={(product.reorder_point ?? 0).toLocaleString()}
         />
-        <KpiCard label="Locations" value={product.locations?.length ?? 0} />
       </section>
 
       <section
