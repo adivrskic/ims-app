@@ -6,13 +6,15 @@ import { KpiCard } from "@/components/ui/KpiCard";
 import { Badge } from "@/components/ui/Badge";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { SectionTitle } from "@/components/ui/SectionTitle";
-import { CornerLink } from "@/components/ui/CornerButton";
+import { CornerLink, CornerButton } from "@/components/ui/CornerButton";
 import { ProductDetailRealtime } from "@/components/realtime/PageRealtime";
 import { formatCurrency } from "@/lib/dashboard";
 import { getCurrentOrgContext } from "@/lib/data/user";
 import { getActiveScope } from "@/lib/facilityScope";
 import { getSlottingSuggestions } from "@/lib/data/slotting";
 import { getProductAllocationOrgWide } from "@/lib/data/allocation";
+import { getProductForecast } from "@/lib/data/forecast";
+import { applyForecastSettings } from "@/app/(app)/analytics/forecast/actions";
 import { productVelocity } from "@/lib/data/velocity";
 import { daysToStockout } from "@/lib/replenishment";
 import { expiryStatus, expiryLabel } from "@/lib/lots";
@@ -245,6 +247,14 @@ export default async function ProductDetailPage({
 
   const effectiveLeadTime =
     product.lead_time_days ?? supplier?.default_lead_time_days ?? null;
+
+  // Statistical demand forecast (trend + seasonality + service-level safety
+  // stock) over the last 90 days, used to suggest reorder settings.
+  const forecast = orgCtx
+    ? await getProductForecast(supabase, orgCtx.orgId, id, {
+        leadTimeDays: effectiveLeadTime ?? 7,
+      })
+    : null;
 
   // Build received-qty-per-lot map for the lots section
   const receivedByLot = new Map<string, number>();
@@ -488,6 +498,77 @@ export default async function ProductDetailPage({
               mono
             />
           </dl>
+
+          {forecast && !forecast.empty && (
+            <>
+              <p className="label-text--lg mt-32 mb-16">Demand forecast</p>
+              <dl className="grid grid-cols-2 gap-x-32 gap-y-16">
+                <Detail
+                  label="Avg demand / day"
+                  value={`${forecast.forecast.avgDaily.toFixed(2)}`}
+                  mono
+                />
+                <Detail
+                  label="Trend"
+                  value={
+                    forecast.forecast.trendPerDay > 0.02
+                      ? `Rising (+${forecast.forecast.trendPerDay.toFixed(3)}/day)`
+                      : forecast.forecast.trendPerDay < -0.02
+                      ? `Falling (${forecast.forecast.trendPerDay.toFixed(3)}/day)`
+                      : "Flat"
+                  }
+                  mono
+                />
+                <Detail
+                  label="Seasonality"
+                  value={
+                    forecast.forecast.seasonality.significant
+                      ? `Day-of-week (peaks ${
+                          ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][
+                            forecast.forecast.seasonality.peakDow
+                          ]
+                        })`
+                      : "None detected"
+                  }
+                  mono
+                />
+                <Detail
+                  label="Forecast over lead time"
+                  value={`${Math.ceil(forecast.forecast.forecastLeadTime)} units`}
+                  mono
+                />
+                <Detail
+                  label="Suggested reorder point"
+                  value={`${forecast.forecast.reorderPoint} (now ${forecast.currentReorderPoint})`}
+                  mono
+                />
+                <Detail
+                  label="Suggested safety stock"
+                  value={`${forecast.forecast.safetyStock} (now ${forecast.currentSafetyStock})`}
+                  mono
+                />
+              </dl>
+              {(forecast.forecast.reorderPoint !== forecast.currentReorderPoint ||
+                forecast.forecast.safetyStock !== forecast.currentSafetyStock) && (
+                <form action={applyForecastSettings} className="mt-14">
+                  <input type="hidden" name="product_id" value={product.id} />
+                  <input
+                    type="hidden"
+                    name="reorder_point"
+                    value={forecast.forecast.reorderPoint}
+                  />
+                  <input
+                    type="hidden"
+                    name="safety_stock"
+                    value={forecast.forecast.safetyStock}
+                  />
+                  <CornerButton type="submit" variant="ghost" size="sm">
+                    Apply suggested settings
+                  </CornerButton>
+                </form>
+              )}
+            </>
+          )}
 
           {product.notes && (
             <>

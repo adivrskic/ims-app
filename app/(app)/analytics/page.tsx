@@ -5,7 +5,7 @@ import { SectionTitle } from "@/components/ui/SectionTitle";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { CornerLink } from "@/components/ui/CornerButton";
 import type { ScanAction } from "@/types/db";
-import { BarChart3, Scale, Snowflake, Boxes } from "lucide-react";
+import { BarChart3, Scale, Snowflake, Boxes, LineChart } from "lucide-react";
 import { getActiveScope, scopeDescription } from "@/lib/facilityScope";
 import { Suspense } from "react";
 import { ForecastNarration } from "@/components/analytics/ForecastNarration";
@@ -213,6 +213,10 @@ export default async function AnalyticsPage() {
             <CornerLink href="/analytics/slotting" variant="ghost" size="sm">
               <Boxes size={11} strokeWidth={1.5} />
               Slotting
+            </CornerLink>
+            <CornerLink href="/analytics/forecast" variant="ghost" size="sm">
+              <LineChart size={11} strokeWidth={1.5} />
+              Forecast
             </CornerLink>
           </div>
         }
