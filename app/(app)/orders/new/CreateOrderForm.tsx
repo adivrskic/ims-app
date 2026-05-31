@@ -20,6 +20,8 @@ interface WarehouseOption {
 interface Props {
   products: ProductOption[];
   warehouses: WarehouseOption[];
+  /** Preselect the order type (e.g. from /orders/new?type=internal_transfer). */
+  initialType?: string;
 }
 
 interface LineItem {
@@ -43,14 +45,19 @@ function newId(): string {
   return Math.random().toString(36).slice(2, 10);
 }
 
-export function CreateOrderForm({ products, warehouses }: Props) {
-  const [orderType, setOrderType] = useState<string>("installer_job");
+export function CreateOrderForm({ products, warehouses, initialType }: Props) {
+  const [orderType, setOrderType] = useState<string>(
+    ORDER_TYPES.some((t) => t.value === initialType)
+      ? (initialType as string)
+      : "installer_job"
+  );
   const [items, setItems] = useState<LineItem[]>([
     { uid: newId(), product_id: "", quantity: 1 },
   ]);
   const [state, formAction, pending] = useActionState(createOrder, undefined);
 
   const showCustomer = CUSTOMER_TYPES.has(orderType);
+  const isTransfer = orderType === "internal_transfer";
 
   const itemsJson = useMemo(
     () =>
@@ -135,13 +142,15 @@ export function CreateOrderForm({ products, warehouses }: Props) {
           </label>
 
           <label className="field-shell block" data-filled="true">
-            <span className="field-label">Facility</span>
+            <span className="field-label">
+              {isTransfer ? "Source facility" : "Facility"}
+            </span>
             <select
               name="warehouse_id"
               defaultValue={warehouses[0]?.id ?? ""}
               required
               className="field-input cursor-pointer"
-              aria-label="Facility"
+              aria-label={isTransfer ? "Source facility" : "Facility"}
             >
               {warehouses.map((w) => (
                 <option key={w.id} value={w.id}>
@@ -150,6 +159,28 @@ export function CreateOrderForm({ products, warehouses }: Props) {
               ))}
             </select>
           </label>
+
+          {isTransfer && (
+            <label className="field-shell block" data-filled="true">
+              <span className="field-label">Destination facility</span>
+              <select
+                name="destination_warehouse_id"
+                defaultValue=""
+                required
+                className="field-input cursor-pointer"
+                aria-label="Destination facility"
+              >
+                <option value="" disabled>
+                  — Select —
+                </option>
+                {warehouses.map((w) => (
+                  <option key={w.id} value={w.id}>
+                    {w.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
         </div>
       </section>
 

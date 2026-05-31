@@ -144,6 +144,7 @@ export const INDUSTRIES: IndustryDef[] = [
       "overview",
       "orders",
       "inventory",
+      "transfers",
       "integrations",
       "returns",
       "customers",

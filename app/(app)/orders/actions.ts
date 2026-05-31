@@ -41,6 +41,9 @@ export async function createOrder(
   const customerPhone = String(formData.get("customer_phone") ?? "").trim();
   const customerAddress = String(formData.get("customer_address") ?? "").trim();
   const warehouseId = String(formData.get("warehouse_id") ?? "").trim();
+  const destinationWarehouseId = String(
+    formData.get("destination_warehouse_id") ?? ""
+  ).trim();
   const deliveryDate = String(formData.get("delivery_date") ?? "").trim();
   const deliveryWindow = String(formData.get("delivery_window") ?? "").trim();
   const notes = String(formData.get("notes") ?? "").trim();
@@ -86,6 +89,16 @@ export async function createOrder(
     };
   }
 
+  // Transfers move stock between facilities — require a distinct destination.
+  if (orderType === "internal_transfer") {
+    if (!destinationWarehouseId) {
+      return { error: "Pick a destination facility for the transfer" };
+    }
+    if (destinationWarehouseId === warehouseId) {
+      return { error: "Source and destination facilities must be different" };
+    }
+  }
+
   // Generate next order number
   const { data: lastOrder } = await ctx.supabase
     .from("orders")
@@ -105,6 +118,8 @@ export async function createOrder(
       order_type: orderType,
       status: "created" as OrderStatus,
       order_number: `ORD-${nextNum}`,
+      destination_warehouse_id:
+        orderType === "internal_transfer" ? destinationWarehouseId : null,
       customer_name: customerName || null,
       customer_phone: customerPhone || null,
       customer_address: customerAddress || null,

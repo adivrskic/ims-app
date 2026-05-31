@@ -12,6 +12,7 @@ import {
   Factory,
   Contact,
   CalendarClock,
+  ArrowLeftRight,
 } from "lucide-react";
 import type { ComponentType } from "react";
 import { primaryNavKeys } from "@/lib/industries";
@@ -55,6 +56,12 @@ export const NAV_GROUPS: NavGroup[] = [
         href: "/purchase-orders",
         label: "Purchase Orders",
         icon: Truck,
+      },
+      {
+        key: "transfers",
+        href: "/transfers",
+        label: "Transfers",
+        icon: ArrowLeftRight,
       },
       { key: "returns", href: "/returns", label: "Returns", icon: RotateCcw },
     ],

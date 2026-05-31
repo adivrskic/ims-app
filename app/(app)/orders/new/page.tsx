@@ -6,7 +6,12 @@ import { ArrowLeft } from "lucide-react";
 
 export const metadata = { title: "New order" };
 
-export default async function NewOrderPage() {
+export default async function NewOrderPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ type?: string }>;
+}) {
+  const { type } = await searchParams;
   const supabase = await createClient();
 
   const [{ data: products }, { data: warehouses }] = await Promise.all([
@@ -42,6 +47,7 @@ export default async function NewOrderPage() {
       <CreateOrderForm
         products={products ?? []}
         warehouses={warehouses ?? []}
+        initialType={type}
       />
     </div>
   );
