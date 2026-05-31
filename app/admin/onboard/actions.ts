@@ -187,13 +187,26 @@ export async function createWorkspace(
   // 10. Refresh the admin dashboard so the new workspace appears.
   revalidatePath("/admin");
 
+  // 11. Generate a copy/paste magic sign-in link as a fallback to the invite
+  //     email (the owner was just created via inviteUserByEmail above, so we
+  //     use type "magiclink" rather than "invite" to avoid "already registered").
+  //     generateLink does NOT send an email — it only returns the link.
+  //     Fail-open to undefined so a link-generation hiccup never fails onboarding.
+  let magicLinkUrl: string | undefined;
+  try {
+    const { data: linkData } = await admin.auth.admin.generateLink({
+      type: "magiclink",
+      email: ownerEmail,
+      options: { redirectTo },
+    });
+    magicLinkUrl = linkData?.properties?.action_link ?? undefined;
+  } catch {
+    magicLinkUrl = undefined;
+  }
+
   return {
     workspace_name: org.name,
     owner_email: ownerEmail,
-    // TODO(stub): inviteUserByEmail returns only { user }, not an action_link.
-    // To surface a copy/paste magic link, call admin.auth.admin.generateLink({
-    // type: "invite", email: ownerEmail, options: { redirectTo } }) and read
-    // data.properties.action_link from that response.
-    magic_link_url: undefined as string | undefined,
+    magic_link_url: magicLinkUrl,
   };
 }

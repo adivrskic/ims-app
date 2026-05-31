@@ -8,6 +8,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { sendInviteEmail } from "@/lib/email/invite";
 import { CURRENT_WORKSPACE_COOKIE } from "@/lib/currentWorkspace";
+import { CURRENT_FACILITY_COOKIE } from "@/lib/currentFacility";
 
 export interface OnboardingState {
   error?: string;
@@ -270,27 +271,92 @@ export async function setUpWorkspace(
   redirect("/");
 }
 
-// TODO(stub): mark a single notification as read.
-// Real impl: update app.notifications set read_at = now() where id = $1 and
-// user_id = current user, then revalidate the relevant paths.
-export async function markNotificationRead(_id: string): Promise<void> {
-  return;
+/**
+ * Mark a single notification as read. The notifications RLS policy already
+ * scopes updates to the current user (user_id = auth.uid()); we also filter
+ * user_id explicitly as defense-in-depth.
+ */
+export async function markNotificationRead(id: string): Promise<void> {
+  if (!id) return;
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return;
+
+  await supabase
+    .from("notifications")
+    .update({ read_at: new Date().toISOString() })
+    .eq("id", id)
+    .eq("user_id", user.id)
+    .is("read_at", null);
+
+  // Refresh the layout so the unread badge in the nav updates.
+  revalidatePath("/", "layout");
 }
 
-// TODO(stub): mark all of the current user's notifications as read.
-// Real impl: update app.notifications set read_at = now() where user_id =
-// current user and read_at is null, then revalidate. Invoked as a form action,
-// so it receives FormData.
+/**
+ * Mark all of the current user's unread notifications as read. Invoked as a
+ * form action, so it receives (and ignores) FormData.
+ */
 export async function markAllNotificationsRead(
   _formData?: FormData
 ): Promise<void> {
-  return;
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return;
+
+  await supabase
+    .from("notifications")
+    .update({ read_at: new Date().toISOString() })
+    .eq("user_id", user.id)
+    .is("read_at", null);
+
+  revalidatePath("/", "layout");
 }
 
-// TODO(stub): set the active-facility cookie from the submitted "id" field.
-// Real impl: read formData.get("id") (a facility UUID or "all"), set the
-// CURRENT_FACILITY_COOKIE, then revalidatePath("/", "layout"). Invoked as a
-// form action, so it receives FormData.
-export async function setCurrentFacility(_formData: FormData): Promise<void> {
-  return;
+/**
+ * Set the active-facility cookie from the submitted "id" field ("all" or a
+ * facility UUID). Validates a concrete id resolves to a facility the caller
+ * can see (RLS-scoped) before writing the cookie — never pin to a facility the
+ * user can't access. Invoked as a form action from the sidebar FacilitiesNavItem.
+ */
+export async function setCurrentFacility(formData: FormData): Promise<void> {
+  const raw = String(formData.get("id") ?? "").trim();
+  if (!raw) return;
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return;
+
+  let value: string;
+  if (raw === "all") {
+    value = "all";
+  } else {
+    // Verify the facility exists + is visible to this user (RLS scopes to org).
+    const { data: warehouse } = await supabase
+      .from("warehouses")
+      .select("id")
+      .eq("id", raw)
+      .maybeSingle();
+    if (!warehouse) return; // unknown / inaccessible facility — ignore
+    value = warehouse.id;
+  }
+
+  const cookieStore = await cookies();
+  cookieStore.set(CURRENT_FACILITY_COOKIE, value, {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    path: "/",
+    maxAge: 60 * 60 * 24 * 365, // 1 year
+  });
+
+  // Bust the layout subtree so every cached fetch re-resolves against the
+  // newly selected facility.
+  revalidatePath("/", "layout");
 }
