@@ -380,15 +380,23 @@ export async function allocateOrderInternal(
   };
 }
 
-/** Release an order's reservation (e.g. on cancel). */
+/**
+ * Release an order's reservation (e.g. on cancel). Clamps each line's
+ * `quantity_allocated` down to `quantity_picked` rather than zeroing it — so the
+ * still-unpicked portion returns to ATP for other orders, while already-picked
+ * units stay accounted for (zeroing would break the allocated ≥ picked invariant
+ * the ATP math depends on, re-promising picked-but-unshipped stock). Runs in the
+ * `release_order_allocation` RPC as a single column-to-column UPDATE.
+ */
 export async function releaseOrderAllocationInternal(
   supabase: AllocClient,
+  orgId: string,
   orderId: string
 ): Promise<void> {
-  await supabase
-    .from("order_items")
-    .update({ quantity_allocated: 0 })
-    .eq("order_id", orderId);
+  await supabase.rpc("release_order_allocation", {
+    p_org_id: orgId,
+    p_order_id: orderId,
+  });
 }
 
 export interface FillableBackorders {
