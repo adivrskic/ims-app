@@ -23,7 +23,7 @@ export async function connectSlack(
 ): Promise<ConnectResult> {
   const ctx = await getCurrentOrgContext();
   if (!ctx) return { error: "Not signed in to a workspace" };
-  if (!["owner", "admin"].includes(ctx.role)) {
+  if (!ctx.can("integrations.manage")) {
     return { error: "Only admins can configure integrations" };
   }
 
@@ -94,7 +94,7 @@ export async function connectSlack(
 export async function disconnectSlack(): Promise<void> {
   const ctx = await getCurrentOrgContext();
   if (!ctx) return;
-  if (!["owner", "admin"].includes(ctx.role)) return;
+  if (!ctx.can("integrations.manage")) return;
 
   const admin = createAdminClient();
   await admin

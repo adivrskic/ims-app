@@ -92,7 +92,7 @@ export async function importProductsCsv(
       errors: [{ row: 0, barcode: "", message: ctx.error }],
     };
   }
-  if (!["owner", "admin"].includes(ctx.role)) {
+  if (!ctx.can("inventory.manage")) {
     return {
       imported: 0,
       skipped: 0,

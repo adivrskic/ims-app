@@ -27,7 +27,7 @@ export default async function AdjustmentsSettingsPage() {
     return <PageHeader eyebrow="Settings" title="Adjustments" description="No workspace." />;
   }
   const supabase = await createClient();
-  const isAdmin = ["owner", "admin"].includes(ctx.role);
+  const isAdmin = ctx.can("adjustments.approve");
 
   const [reasons, pending, { data: org }] = await Promise.all([
     getReasons(supabase, ctx.orgId),

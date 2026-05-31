@@ -63,7 +63,7 @@ export async function draftReorderPO(): Promise<void> {
 export async function setAutoDraftEnabled(formData: FormData): Promise<void> {
   const ctx = await getActionContext();
   if ("error" in ctx) return;
-  if (!["owner", "admin"].includes(ctx.role)) return;
+  if (!ctx.can("purchasing.manage")) return;
 
   const enabled = String(formData.get("enabled") ?? "") === "true";
   await ctx.supabase

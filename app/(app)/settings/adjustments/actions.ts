@@ -21,7 +21,7 @@ function slugCode(s: string): string {
 export async function seedDefaultReasons(): Promise<void> {
   const ctx = await getActionContext();
   if ("error" in ctx) return;
-  if (!["owner", "admin"].includes(ctx.role)) return;
+  if (!ctx.can("adjustments.approve")) return;
   const rows = DEFAULT_REASONS.map((r, i) => ({
     org_id: ctx.orgId,
     code: r.code,
@@ -42,7 +42,7 @@ export async function addReason(
 ): Promise<{ error?: string; success?: string }> {
   const ctx = await getActionContext();
   if ("error" in ctx) return { error: ctx.error };
-  if (!["owner", "admin"].includes(ctx.role)) {
+  if (!ctx.can("adjustments.approve")) {
     return { error: "Only admins can manage reasons" };
   }
   const label = String(formData.get("label") ?? "").trim();
@@ -68,7 +68,7 @@ export async function addReason(
 export async function toggleReason(formData: FormData): Promise<void> {
   const ctx = await getActionContext();
   if ("error" in ctx) return;
-  if (!["owner", "admin"].includes(ctx.role)) return;
+  if (!ctx.can("adjustments.approve")) return;
   const id = String(formData.get("id") ?? "");
   const field = String(formData.get("field") ?? "");
   const value = String(formData.get("value") ?? "") === "true";
@@ -84,7 +84,7 @@ export async function toggleReason(formData: FormData): Promise<void> {
 export async function setApprovalThreshold(formData: FormData): Promise<void> {
   const ctx = await getActionContext();
   if ("error" in ctx) return;
-  if (!["owner", "admin"].includes(ctx.role)) return;
+  if (!ctx.can("adjustments.approve")) return;
   const raw = String(formData.get("threshold") ?? "").trim();
   let threshold: number | null = null;
   if (raw !== "") {
@@ -101,7 +101,7 @@ export async function setApprovalThreshold(formData: FormData): Promise<void> {
 export async function approveAdjustment(formData: FormData): Promise<void> {
   const ctx = await getActionContext();
   if ("error" in ctx) return;
-  if (!["owner", "admin"].includes(ctx.role)) return;
+  if (!ctx.can("adjustments.approve")) return;
   const id = String(formData.get("id") ?? "");
   if (!id) return;
   const r = await approveAdjustmentInternal(
@@ -117,7 +117,7 @@ export async function approveAdjustment(formData: FormData): Promise<void> {
 export async function rejectAdjustment(formData: FormData): Promise<void> {
   const ctx = await getActionContext();
   if ("error" in ctx) return;
-  if (!["owner", "admin"].includes(ctx.role)) return;
+  if (!ctx.can("adjustments.approve")) return;
   const id = String(formData.get("id") ?? "");
   if (!id) return;
   await rejectAdjustmentInternal(
