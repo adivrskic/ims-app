@@ -30,6 +30,13 @@ export interface OrgRow {
   auto_draft_pos_enabled: boolean;
   /** Industry vertical slug (drives default nav) or null. */
   industry: string | null;
+  /** Plan tier (starter | pro | enterprise). Defaults 'starter'. */
+  tier: string;
+  /** Staff user who provisioned via /admin/onboard (null for self-signup). */
+  onboarded_by: string | null;
+  onboarded_at: string | null;
+  /** Internal staff notes captured at onboarding. */
+  notes: string | null;
 }
 
 export interface OrgMemberRow {
@@ -207,6 +214,10 @@ export type Database = {
           | "logo_url"
           | "auto_draft_pos_enabled"
           | "industry"
+          | "tier"
+          | "onboarded_by"
+          | "onboarded_at"
+          | "notes"
         >;
         Update: Partial<OrgRow>;
         Relationships: [];
