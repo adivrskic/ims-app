@@ -85,7 +85,7 @@ export default async function PurchaseOrderDetailPage({
     .select(
       `id, product_id, product_name, barcode, quantity_expected,
        quantity_received, unit_cost, landed_unit_cost, reasoning,
-       received_at, lot_number`
+       received_at, lot_number, qc_status`
     )
     .eq("po_id", id)
     .order("created_at", { ascending: true });
@@ -102,6 +102,7 @@ export default async function PurchaseOrderDetailPage({
     reasoning: string | null;
     received_at: string | null;
     lot_number: string | null;
+    qc_status: string | null;
   };
 
   const lines = (lineData ?? []) as LineRow[];
@@ -481,6 +482,33 @@ export default async function PurchaseOrderDetailPage({
                                     Lot {line.lot_number}
                                   </span>
                                 )}
+                                {line.qc_status &&
+                                  line.qc_status !== "none" && (
+                                    <span
+                                      className="px-6 py-1"
+                                      style={{
+                                        fontFamily: "var(--mono)",
+                                        fontSize: 8,
+                                        letterSpacing: "0.5px",
+                                        textTransform: "uppercase",
+                                        background:
+                                          line.qc_status === "failed"
+                                            ? "var(--danger-dim)"
+                                            : line.qc_status === "passed"
+                                            ? "var(--success-dim)"
+                                            : "var(--warning-dim)",
+                                        color:
+                                          line.qc_status === "failed"
+                                            ? "var(--danger)"
+                                            : line.qc_status === "passed"
+                                            ? "var(--success)"
+                                            : "var(--warning)",
+                                      }}
+                                      title={`QC ${line.qc_status}`}
+                                    >
+                                      QC {line.qc_status}
+                                    </span>
+                                  )}
                               </div>
                               {slotHint && (
                                 <span

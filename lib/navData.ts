@@ -17,6 +17,7 @@ import {
   ScanBarcode,
   Waypoints,
   Hammer,
+  ShieldCheck,
 } from "lucide-react";
 import type { ComponentType } from "react";
 import { primaryNavKeys } from "@/lib/industries";
@@ -69,6 +70,12 @@ export const NAV_GROUPS: NavGroup[] = [
         href: "/purchase-orders",
         label: "Purchase Orders",
         icon: Truck,
+      },
+      {
+        key: "receiving",
+        href: "/receiving",
+        label: "Receiving QC",
+        icon: ShieldCheck,
       },
       {
         key: "transfers",

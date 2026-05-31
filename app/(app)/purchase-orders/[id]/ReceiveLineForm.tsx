@@ -120,6 +120,23 @@ export function ReceiveLineForm({
         </span>
       </label>
 
+      {/* Hold for QC */}
+      <label
+        className="flex flex-col items-center justify-end gap-1 select-none cursor-pointer"
+        title="Quarantine this receipt for QC inspection before putaway"
+      >
+        <input
+          name="qc_hold"
+          type="checkbox"
+          value="1"
+          className="accent-[var(--accent)]"
+          aria-label="Hold for QC"
+        />
+        <span className="label-text text-text-dim" style={{ fontSize: 9 }}>
+          QC hold
+        </span>
+      </label>
+
       <button
         type="submit"
         disabled={pending}

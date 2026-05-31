@@ -322,6 +322,11 @@ export async function receiveLineItem(
   if (landedCost !== null) {
     lineUpdate.landed_unit_cost = landedCost;
   }
+  // Inbound QC: receiving with "Hold for QC" quarantines the line for
+  // inspection before it's cleared for putaway.
+  if (String(formData.get("qc_hold") ?? "") === "1") {
+    lineUpdate.qc_status = "hold";
+  }
 
   // Lot capture: when a lot number is entered, find-or-create the lot for this
   // product and attach it to the line. Also flips the product to lot-tracked
