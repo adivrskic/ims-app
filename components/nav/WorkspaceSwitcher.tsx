@@ -45,16 +45,16 @@ export function WorkspaceSwitcher({ current, workspaces }: Props) {
   };
 
   return (
-    <div ref={ref} className="relative">
+    <div ref={ref} className="relative w-full">
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
         disabled={pending}
-        className="flex items-center gap-8 hairline-subtle px-10 py-5 hover:border-[var(--border-hover)] transition-colors disabled:opacity-60"
+        className="flex items-center gap-8 w-full h-32 px-10 hairline-subtle hover:border-[var(--border-hover)] transition-colors disabled:opacity-60"
         aria-label="Switch workspace"
         aria-expanded={open}
       >
-        <span className="w-14 h-14 bg-[var(--accent-dim)] flex items-center justify-center shrink-0">
+        <span className="w-16 h-16 bg-[var(--accent-dim)] flex items-center justify-center shrink-0">
           <span
             className="text-[var(--accent)]"
             style={{ fontFamily: "var(--mono)", fontSize: 9, fontWeight: 600 }}
@@ -62,18 +62,20 @@ export function WorkspaceSwitcher({ current, workspaces }: Props) {
             {current.name.slice(0, 1).toUpperCase()}
           </span>
         </span>
-        <span className="label-text text-text">{current.name}</span>
+        <span className="label-text text-text flex-1 text-left truncate">
+          {current.name}
+        </span>
         {pending ? (
           <Loader2
             size={10}
             strokeWidth={1.5}
-            className="text-text-muted animate-spin"
+            className="text-text-muted shrink-0 animate-spin"
           />
         ) : (
           <ChevronDown
             size={10}
             strokeWidth={1.5}
-            className="text-text-muted"
+            className="text-text-muted shrink-0"
           />
         )}
       </button>

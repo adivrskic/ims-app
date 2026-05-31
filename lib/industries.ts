@@ -41,19 +41,17 @@ export interface IndustryDef {
 export const ALWAYS_PRIMARY = ["overview", "settings"] as const;
 
 // Shown when a workspace has no industry set (existing orgs / skipped step):
-// the full, generic set in natural order — nothing hidden.
+// a lean generic core that fits without scrolling. The rest land under "More";
+// users promote them in Settings → Navigation (which is when the sidenav is
+// allowed to overflow/scroll).
 export const DEFAULT_PRIMARY_NAV = [
   "overview",
   "inventory",
   "analytics",
-  "cycle-counts",
   "orders",
   "purchase-orders",
-  "returns",
   "suppliers",
-  "customers",
   "facilities",
-  "integrations",
   "settings",
 ];
 
