@@ -14,6 +14,8 @@
  * scalable). Code 128 barcode via ^BC.
  */
 
+import { gs1128, toGtin14, toYYMMDD } from "@/lib/print/gs1";
+
 const DPI = 203;
 const IN = (inches: number) => Math.round(inches * DPI);
 
@@ -140,6 +142,98 @@ export function receiveLabel(input: ReceiveLabelInput): string {
     `^FO20,${IN(3.2)}^BY4,3,${IN(1.0)}^BCN,${IN(1.0)},Y,N,N^FD${barcode}^FS`,
     `^FO20,${IN(4.6)}^A0N,28,28^FDQty${"  "}${input.quantity}^FS`,
     lot ? `^FO20,${IN(5.0)}^A0N,28,28^FDLot${"  "}${lot}^FS` : "",
+    "^XZ",
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+interface Gs1ProductLabelInput {
+  productName: string;
+  /** Product barcode — normalized to a GTIN-14 (AI 01). */
+  barcode: string;
+  sku?: string | null;
+  category?: string | null;
+  /** Optional lot/batch (AI 10) and expiry (AI 17) for per-lot labels. */
+  lot?: string | null;
+  expiry?: Date | null;
+}
+
+/**
+ * 4" × 2" GS1-128 product label. Encodes (01)GTIN — plus (10)lot and (17)expiry
+ * when provided — as a single GS1-128 barcode, with the human-readable AI line
+ * beneath. Returns null when the barcode isn't a GTIN-able numeric (caller
+ * should fall back to `productLabel`, a plain Code-128).
+ */
+export function gs1ProductLabel(input: Gs1ProductLabelInput): string | null {
+  const gtin = toGtin14(input.barcode);
+  if (!gtin) return null;
+
+  const name = sanitize(input.productName).slice(0, 40);
+  const sku = input.sku ? sanitize(input.sku).slice(0, 20) : "";
+  const category = input.category ? sanitize(input.category).slice(0, 30) : "";
+  const lot = input.lot ? sanitize(input.lot).slice(0, 20) : "";
+
+  const { zplData, human } = gs1128({
+    gtin,
+    lot: lot || null,
+    expiryYYMMDD: input.expiry ? toYYMMDD(input.expiry) : null,
+  });
+
+  return [
+    "^XA",
+    `^PW${IN(4)}`,
+    `^LL${IN(2)}`,
+    "^LH0,0",
+    "^CI28",
+    category ? `^FO20,16^A0N,18,18^FD${category}^FS` : "",
+    `^FO20,40^A0N,34,34^FB${IN(4) - 40},2,0,L,0^FD${name}^FS`,
+    // GS1-128 — ^BC Code 128, data carries FNC1 (>8) + AIs (see lib/print/gs1).
+    `^FO20,${IN(1.0)}^BY3,3,${IN(0.5)}^BCN,${IN(0.5)},N,N,N^FD${zplData}^FS`,
+    // Human-readable AI line under the bars.
+    `^FO20,${IN(1.6)}^A0N,20,20^FB${IN(4) - 40},2,0,L,0^FD${human}^FS`,
+    sku ? `^FO${IN(2.95)},16^A0N,18,18^FDSKU ${sku}^FS` : "",
+    "^XZ",
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+interface SsccLabelInput {
+  /** 18-digit SSCC (use buildSscc to generate). */
+  sscc: string;
+  /** Optional title line — e.g. "Transfer TRN-1042" or ship-to. */
+  title?: string | null;
+  shipTo?: string | null;
+  product?: string | null;
+  quantity?: number | null;
+}
+
+/**
+ * 4" × 6" SSCC shipping-container (pallet/carton) label: a GS1-128 (00)SSCC
+ * license plate, big and forklift-readable, plus optional ship-to / contents.
+ */
+export function ssccLabel(input: SsccLabelInput): string {
+  const sscc = sanitize(input.sscc).slice(0, 18);
+  const title = input.title ? sanitize(input.title).slice(0, 40) : "";
+  const shipTo = input.shipTo ? sanitize(input.shipTo).slice(0, 60) : "";
+  const product = input.product ? sanitize(input.product).slice(0, 60) : "";
+  const { zplData, human } = gs1128({ sscc });
+
+  return [
+    "^XA",
+    `^PW${IN(4)}`,
+    `^LL${IN(6)}`,
+    "^LH0,0",
+    "^CI28",
+    "^FO20,30^A0N,26,26^FDSSCC^FS",
+    title ? `^FO20,70^A0N,30,30^FB${IN(4) - 40},2,0,L,0^FD${title}^FS` : "",
+    shipTo ? `^FO20,150^A0N,26,26^FB${IN(4) - 40},3,0,L,0^FDShip to: ${shipTo}^FS` : "",
+    product ? `^FO20,270^A0N,28,28^FB${IN(4) - 40},2,0,L,0^FD${product}^FS` : "",
+    input.quantity != null ? `^FO20,340^A0N,26,26^FDQty ${input.quantity}^FS` : "",
+    // Big GS1-128 SSCC barcode toward the bottom.
+    `^FO20,${IN(3.6)}^BY4,3,${IN(1.2)}^BCN,${IN(1.2)},N,N,N^FD${zplData}^FS`,
+    `^FO20,${IN(5.0)}^A0N,28,28^FD${human}^FS`,
     "^XZ",
   ]
     .filter(Boolean)
