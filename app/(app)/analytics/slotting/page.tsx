@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getCurrentOrgContext } from "@/lib/data/user";
 import { getActiveScope, scopeDescription } from "@/lib/facilityScope";
 import { getSlottingHealth, type SlottingHealth } from "@/lib/data/slotting";
+import { ApplyMoveButton } from "./ApplyMoveButton";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { KpiCard } from "@/components/ui/KpiCard";
 import { SectionTitle } from "@/components/ui/SectionTitle";
@@ -182,6 +183,7 @@ function FacilityReport({
                   <Th>Suggested</Th>
                   <Th>Why</Th>
                   <Th className="text-right">Velocity</Th>
+                  <Th className="text-right">Apply</Th>
                 </tr>
               </thead>
               <tbody>
@@ -233,6 +235,21 @@ function FacilityReport({
                       <span className="mono-sm tnum text-text-secondary">
                         {m.velocity > 0 ? `${m.velocity.toFixed(2)}/d` : "—"}
                       </span>
+                    </Td>
+                    <Td className="text-right">
+                      <ApplyMoveButton
+                        toLabel={m.suggested.label}
+                        args={{
+                          productId: m.productId,
+                          warehouseId: report.facilityId,
+                          fromSectionId: m.current.sectionId,
+                          fromBay: m.current.bay,
+                          fromLevel: m.current.level,
+                          toSectionId: m.suggested.slot.sectionId,
+                          toBay: m.suggested.slot.bay,
+                          toLevel: m.suggested.slot.level,
+                        }}
+                      />
                     </Td>
                   </tr>
                 ))}
