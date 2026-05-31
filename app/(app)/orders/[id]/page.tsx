@@ -97,7 +97,7 @@ export default async function OrderDetailPage({
   const { data: order } = await supabase
     .from("orders")
     .select(
-      "id, order_number, order_type, status, customer_name, customer_phone, customer_address, delivery_date, delivery_window, notes, created_at, updated_at, assigned_to, warehouse:warehouses ( name ), assignee:profiles!orders_assigned_to_fkey ( full_name, email )"
+      "id, order_number, order_type, status, customer_name, customer_phone, customer_address, delivery_date, delivery_window, notes, created_at, updated_at, assigned_to, warehouse:warehouses!orders_warehouse_id_fkey ( name ), destination:warehouses!orders_destination_warehouse_id_fkey ( name ), assignee:profiles!orders_assigned_to_fkey ( full_name, email )"
     )
     .eq("id", id)
     .maybeSingle();
@@ -139,6 +139,10 @@ export default async function OrderDetailPage({
   const warehouse = Array.isArray(order.warehouse)
     ? order.warehouse[0]
     : order.warehouse;
+  const destination = Array.isArray(order.destination)
+    ? order.destination[0]
+    : order.destination;
+  const isTransfer = orderType === "internal_transfer";
   const assignee = Array.isArray(order.assignee)
     ? order.assignee[0]
     : order.assignee;
@@ -188,7 +192,9 @@ export default async function OrderDetailPage({
               {cfg.label}
             </Badge>
             <span className="mono-sm text-text-dim">
-              {warehouse?.name ?? "—"}
+              {isTransfer
+                ? `${warehouse?.name ?? "—"} → ${destination?.name ?? "—"}`
+                : warehouse?.name ?? "—"}
             </span>
 
             {nextStatusLabel && (
