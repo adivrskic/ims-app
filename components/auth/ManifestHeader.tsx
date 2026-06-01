@@ -41,7 +41,7 @@ export function ManifestHeader({ eyebrow }: Props) {
   }, []);
 
   return (
-    <header className="flex items-baseline justify-between pb-14 mb-24 hairline-b">
+    <header className="flex items-baseline justify-between mb-24">
       <span className="label-text" style={{ color: "var(--text-muted)" }}>
         — {eyebrow}
       </span>
