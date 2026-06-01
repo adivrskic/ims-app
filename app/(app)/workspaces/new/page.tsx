@@ -1,6 +1,4 @@
 import { redirect } from "next/navigation";
-import Link from "next/link";
-import { ArrowLeft } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { getCurrentUser, getProfile } from "@/lib/data/user";
 import { NewWorkspaceForm } from "./NewWorkspaceForm";
@@ -26,15 +24,9 @@ export default async function NewWorkspacePage() {
 
   return (
     <div className="flex flex-col gap-32 max-w-[760px]">
-      <Link
-        href="/"
-        className="inline-flex items-center gap-6 text-text-muted hover:text-text transition-colors w-fit"
-      >
-        <ArrowLeft size={11} strokeWidth={1.5} />
-        <span className="label-text">Back</span>
-      </Link>
-
       <PageHeader
+        backHref="/"
+        backLabel="Back"
         eyebrow="Workspaces"
         title="Create a new workspace"
         description="Spin up a separate workspace for another company, location, or business unit. Each workspace has its own inventory, facilities, team, and integrations — they don't share data."

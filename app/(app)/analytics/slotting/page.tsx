@@ -8,7 +8,7 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { KpiCard } from "@/components/ui/KpiCard";
 import { SectionTitle } from "@/components/ui/SectionTitle";
 import { EmptyState } from "@/components/ui/EmptyState";
-import { ArrowLeft, ArrowRight, Boxes, AlertTriangle } from "lucide-react";
+import { ArrowRight, Boxes, AlertTriangle } from "lucide-react";
 
 export const metadata = { title: "Slotting health" };
 
@@ -55,31 +55,24 @@ export default async function SlottingPage() {
 
   return (
     <div className="flex flex-col gap-48">
-      <div className="flex flex-col gap-12">
-        <Link
-          href="/analytics"
-          className="inline-flex items-center gap-6 text-text-muted hover:text-text transition-colors w-fit"
-        >
-          <ArrowLeft size={11} strokeWidth={1.5} />
-          <span className="label-text">Analytics</span>
-        </Link>
-        <PageHeader
-          eyebrow="Analytics · Operations"
-          title="Slotting health"
-          description={scopeDescription(scope, {
-            all: "Mis-slotted SKUs across all facilities — fast movers stuck in the back, slow movers blocking prime space, and category drift.",
-            single: (name) =>
-              `Mis-slotted SKUs at ${name} — fast movers stuck in the back, slow movers blocking prime space, and category drift.`,
-          })}
-          meta={[
-            {
-              label: "Mis-slotted",
-              value: sum((r) => r.misSlottedCount).toLocaleString(),
-              status: "live" as const,
-            },
-          ]}
-        />
-      </div>
+      <PageHeader
+        backHref="/analytics"
+        backLabel="Analytics"
+        eyebrow="Analytics · Operations"
+        title="Slotting health"
+        description={scopeDescription(scope, {
+          all: "Mis-slotted SKUs across all facilities — fast movers stuck in the back, slow movers blocking prime space, and category drift.",
+          single: (name) =>
+            `Mis-slotted SKUs at ${name} — fast movers stuck in the back, slow movers blocking prime space, and category drift.`,
+        })}
+        meta={[
+          {
+            label: "Mis-slotted",
+            value: sum((r) => r.misSlottedCount).toLocaleString(),
+            status: "live" as const,
+          },
+        ]}
+      />
 
       {empty ? (
         <EmptyState

@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import Link from "next/link";
+import { ArrowLeft } from "lucide-react";
 import type { ReactNode } from "react";
 import styles from "./PageHeader.module.css";
 import { usePageShell } from "./pageShellContext";
@@ -20,6 +22,10 @@ interface Props {
   meta?: MetaItem[];
   accent?: string;
   numeral?: string;
+  /** Optional "← back" link shown above the eyebrow (collapses when pinned).
+   *  Use on detail pages instead of a separate in-flow back-link. */
+  backHref?: string;
+  backLabel?: string;
   /** When true, renders a small pulsing accent dot next to the title
    *  to signal that the page auto-refreshes via realtime. */
   live?: boolean;
@@ -51,14 +57,29 @@ function HeaderInner({
   actions,
   meta,
   live,
+  backHref,
+  backLabel,
 }: Pick<
   Props,
-  "eyebrow" | "title" | "description" | "actions" | "meta" | "live"
+  | "eyebrow"
+  | "title"
+  | "description"
+  | "actions"
+  | "meta"
+  | "live"
+  | "backHref"
+  | "backLabel"
 >) {
   const hasRight = (meta && meta.length > 0) || actions;
   return (
     <div className={styles.row}>
       <div className={styles.titleArea}>
+        {backHref && (
+          <Link href={backHref} className={styles.back}>
+            <ArrowLeft size={11} strokeWidth={1.5} />
+            {backLabel ?? "Back"}
+          </Link>
+        )}
         {eyebrow && <p className={styles.eyebrow}>{eyebrow}</p>}
         <h1 className={styles.title}>
           {title}

@@ -8,7 +8,7 @@ import { KpiCard } from "@/components/ui/KpiCard";
 import { SectionTitle } from "@/components/ui/SectionTitle";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { CornerButton } from "@/components/ui/CornerButton";
-import { ArrowLeft, TrendingUp, TrendingDown, Minus, LineChart } from "lucide-react";
+import { TrendingUp, TrendingDown, Minus, LineChart } from "lucide-react";
 
 export const metadata = { title: "Demand forecast" };
 
@@ -29,25 +29,18 @@ export default async function ForecastPage() {
 
   return (
     <div className="flex flex-col gap-32">
-      <div className="flex flex-col gap-12">
-        <Link
-          href="/analytics"
-          className="inline-flex items-center gap-6 text-text-muted hover:text-text transition-colors w-fit"
-        >
-          <ArrowLeft size={11} strokeWidth={1.5} />
-          <span className="label-text">Analytics</span>
-        </Link>
-        <PageHeader
-          eyebrow="Analytics · Planning"
-          title="Demand forecast"
-          description={scopeDescription(scope, {
-            all: "Statistical demand forecast (trend + seasonality + service-level safety stock) vs current reorder settings. Tune the reorder points that have drifted.",
-            single: (name) =>
-              `Demand forecast vs current reorder settings at ${name}. Tune the reorder points that have drifted.`,
-          })}
-          meta={[{ label: "To tune", value: String(rows.length), status: rows.length ? ("live" as const) : undefined }]}
-        />
-      </div>
+      <PageHeader
+        backHref="/analytics"
+        backLabel="Analytics"
+        eyebrow="Analytics · Planning"
+        title="Demand forecast"
+        description={scopeDescription(scope, {
+          all: "Statistical demand forecast (trend + seasonality + service-level safety stock) vs current reorder settings. Tune the reorder points that have drifted.",
+          single: (name) =>
+            `Demand forecast vs current reorder settings at ${name}. Tune the reorder points that have drifted.`,
+        })}
+        meta={[{ label: "To tune", value: String(rows.length), status: rows.length ? ("live" as const) : undefined }]}
+      />
 
       {rows.length === 0 ? (
         <EmptyState

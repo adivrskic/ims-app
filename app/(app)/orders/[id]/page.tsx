@@ -3,10 +3,10 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { Badge } from "@/components/ui/Badge";
 import { CornerButton, CornerLink } from "@/components/ui/CornerButton";
+import { PageHeader } from "@/components/ui/PageHeader";
 import {
   Check,
   X,
-  ArrowLeft,
   Phone,
   MapPin,
   Calendar,
@@ -167,41 +167,14 @@ export default async function OrderDetailPage({
   return (
     <div className="flex flex-col gap-32">
       <OrderDetailRealtime orderId={id} />
-      <div className="flex flex-col gap-12">
-        <Link
-          href="/orders"
-          className="inline-flex items-center gap-6 text-text-muted hover:text-text transition-colors w-fit"
-        >
-          <ArrowLeft size={11} strokeWidth={1.5} />
-          <span className="label-text">All orders</span>
-        </Link>
-
-        <div className="flex items-start justify-between gap-20 flex-wrap">
-          <div className="flex flex-col gap-8">
-            <p className="label-text text-text-muted">
-              {TYPE_LABEL[orderType]}
-            </p>
-            <h1
-              className="text-text"
-              style={{
-                fontFamily: "var(--mono)",
-                fontSize: 28,
-                fontWeight: 500,
-                letterSpacing: "-0.5px",
-              }}
-            >
-              {order.order_number ?? order.id.slice(0, 8)}
-            </h1>
-            {order.customer_name && (
-              <p
-                className="text-text-secondary"
-                style={{ fontFamily: "var(--display)", fontSize: 15 }}
-              >
-                {order.customer_name}
-              </p>
-            )}
-          </div>
-          <div className="flex items-center gap-12 flex-wrap">
+      <PageHeader
+        backHref="/orders"
+        backLabel="All orders"
+        eyebrow={TYPE_LABEL[orderType]}
+        title={order.order_number ?? order.id.slice(0, 8)}
+        description={order.customer_name ?? undefined}
+        actions={
+          <>
             <Badge tone={cfg.tone} variant="filled">
               {cfg.label}
             </Badge>
@@ -238,9 +211,9 @@ export default async function OrderDetailPage({
                 </CornerButton>
               </form>
             )}
-          </div>
-        </div>
-      </div>
+          </>
+        }
+      />
 
       {/* Status timeline */}
       {isCancelled ? (

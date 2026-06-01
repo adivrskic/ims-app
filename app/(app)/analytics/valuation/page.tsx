@@ -9,7 +9,7 @@ import { KpiCard } from "@/components/ui/KpiCard";
 import { SectionTitle } from "@/components/ui/SectionTitle";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { CornerLink } from "@/components/ui/CornerButton";
-import { ArrowLeft, Download, Scale } from "lucide-react";
+import { Download, Scale } from "lucide-react";
 
 export const metadata = { title: "Inventory valuation" };
 
@@ -43,44 +43,37 @@ export default async function ValuationPage() {
 
   return (
     <div className="flex flex-col gap-48">
-      <div className="flex flex-col gap-12">
-        <Link
-          href="/analytics"
-          className="inline-flex items-center gap-6 text-text-muted hover:text-text transition-colors w-fit"
-        >
-          <ArrowLeft size={11} strokeWidth={1.5} />
-          <span className="label-text">Analytics</span>
-        </Link>
-        <PageHeader
-          eyebrow="Analytics · Finance"
-          title="Inventory valuation"
-          description={scopeDescription(scope, {
-            all: "Where capital is tied up — value, turnover, ABC class, and aging across all facilities.",
-            single: (name) =>
-              `Value, turnover, ABC class, and aging at ${name}.`,
-          })}
-          actions={
-            <CornerLink
-              href={`/analytics/valuation/export${
-                warehouseId ? `?facility=${warehouseId}` : ""
-              }`}
-              variant="ghost"
-              size="sm"
-            >
-              <Download size={11} strokeWidth={1.5} />
-              Export CSV
-            </CornerLink>
-          }
-          meta={[
-            { label: "Valued SKUs", value: r.valuedSkus.toLocaleString() },
-            {
-              label: "Total value",
-              value: formatCurrency(r.totalValue),
-              status: "live" as const,
-            },
-          ]}
-        />
-      </div>
+      <PageHeader
+        backHref="/analytics"
+        backLabel="Analytics"
+        eyebrow="Analytics · Finance"
+        title="Inventory valuation"
+        description={scopeDescription(scope, {
+          all: "Where capital is tied up — value, turnover, ABC class, and aging across all facilities.",
+          single: (name) =>
+            `Value, turnover, ABC class, and aging at ${name}.`,
+        })}
+        actions={
+          <CornerLink
+            href={`/analytics/valuation/export${
+              warehouseId ? `?facility=${warehouseId}` : ""
+            }`}
+            variant="ghost"
+            size="sm"
+          >
+            <Download size={11} strokeWidth={1.5} />
+            Export CSV
+          </CornerLink>
+        }
+        meta={[
+          { label: "Valued SKUs", value: r.valuedSkus.toLocaleString() },
+          {
+            label: "Total value",
+            value: formatCurrency(r.totalValue),
+            status: "live" as const,
+          },
+        ]}
+      />
 
       {empty ? (
         <EmptyState

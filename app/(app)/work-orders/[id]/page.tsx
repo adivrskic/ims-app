@@ -13,7 +13,7 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { SectionTitle } from "@/components/ui/SectionTitle";
 import { Badge } from "@/components/ui/Badge";
 import { CornerButton } from "@/components/ui/CornerButton";
-import { ArrowLeft, Boxes } from "lucide-react";
+import { Boxes } from "lucide-react";
 
 export const metadata = { title: "Work order" };
 
@@ -59,50 +59,43 @@ export default async function WorkOrderDetailPage({
 
   return (
     <div className="flex flex-col gap-32">
-      <div className="flex flex-col gap-12">
-        <Link
-          href="/work-orders"
-          className="inline-flex items-center gap-6 text-text-muted hover:text-text transition-colors w-fit"
-        >
-          <ArrowLeft size={11} strokeWidth={1.5} />
-          <span className="label-text">All work orders</span>
-        </Link>
-        <PageHeader
-          eyebrow="Work order"
-          title={wo.code}
-          description={`${wo.quantity} × ${wo.productName}${
-            wo.warehouseName ? ` · ${wo.warehouseName}` : ""
-          }`}
-          meta={[{ label: "Builder", value: mineLabel }]}
-          actions={
-            <div className="flex items-center gap-10 flex-wrap">
-              <Badge tone={WO_TONE[wo.status]} variant="filled">
-                {WO_LABEL[wo.status]}
-              </Badge>
-              {isOpen && (
-                <form action={claimWorkOrder}>
-                  <input type="hidden" name="id" value={wo.id} />
-                  {wo.assignedTo === ctx.user.id && (
-                    <input type="hidden" name="release" value="1" />
-                  )}
-                  <CornerButton type="submit" variant="ghost" size="sm">
-                    {wo.assignedTo === ctx.user.id ? "Release" : "Claim"}
-                  </CornerButton>
-                </form>
-              )}
-              {wo.status === "draft" && (
-                <StatusForm id={wo.id} status="released" label="Release" variant="primary" />
-              )}
-              {(wo.status === "released" || wo.status === "in_progress") && (
-                <CompleteWorkOrderButton workOrderId={wo.id} disabled={!canComplete} />
-              )}
-              {isOpen && (
-                <StatusForm id={wo.id} status="cancelled" label="Cancel" variant="danger" />
-              )}
-            </div>
-          }
-        />
-      </div>
+      <PageHeader
+        backHref="/work-orders"
+        backLabel="All work orders"
+        eyebrow="Work order"
+        title={wo.code}
+        description={`${wo.quantity} × ${wo.productName}${
+          wo.warehouseName ? ` · ${wo.warehouseName}` : ""
+        }`}
+        meta={[{ label: "Builder", value: mineLabel }]}
+        actions={
+          <div className="flex items-center gap-10 flex-wrap">
+            <Badge tone={WO_TONE[wo.status]} variant="filled">
+              {WO_LABEL[wo.status]}
+            </Badge>
+            {isOpen && (
+              <form action={claimWorkOrder}>
+                <input type="hidden" name="id" value={wo.id} />
+                {wo.assignedTo === ctx.user.id && (
+                  <input type="hidden" name="release" value="1" />
+                )}
+                <CornerButton type="submit" variant="ghost" size="sm">
+                  {wo.assignedTo === ctx.user.id ? "Release" : "Claim"}
+                </CornerButton>
+              </form>
+            )}
+            {wo.status === "draft" && (
+              <StatusForm id={wo.id} status="released" label="Release" variant="primary" />
+            )}
+            {(wo.status === "released" || wo.status === "in_progress") && (
+              <CompleteWorkOrderButton workOrderId={wo.id} disabled={!canComplete} />
+            )}
+            {isOpen && (
+              <StatusForm id={wo.id} status="cancelled" label="Cancel" variant="danger" />
+            )}
+          </div>
+        }
+      />
 
       {wo.status !== "complete" && !wo.buildable && wo.lines.length > 0 && (
         <div

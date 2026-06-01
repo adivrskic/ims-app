@@ -1,6 +1,4 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
-import { ArrowLeft } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { ProviderLogo } from "@/components/integrations/ProviderLogo";
 import { getCurrentOrgContext } from "@/lib/data/user";
@@ -28,16 +26,11 @@ export default async function ResendPage() {
 
   return (
     <div className="flex flex-col gap-32">
-      <Link
-        href="/integrations"
-        className="mono-sm text-text-muted hover:text-text inline-flex items-center gap-6 self-start"
-      >
-        <ArrowLeft size={12} strokeWidth={1.5} /> All integrations
-      </Link>
-
       <div className="flex items-start gap-16">
         <ProviderLogo provider={info} size={56} />
         <PageHeader
+          backHref="/integrations"
+          backLabel="All integrations"
           eyebrow={info.category}
           title="Resend"
           description="Transactional email — invite delivery, event digests, branded customer comms. You'll need a verified sending domain in Resend before connecting."

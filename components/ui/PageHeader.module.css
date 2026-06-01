@@ -141,6 +141,34 @@
   flex: 1;
 }
 
+/* ─── Back link (collapses when stuck, like the eyebrow) ──────────────── */
+.back {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  align-self: flex-start;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-bottom: 10px;
+  max-height: 20px;
+  opacity: 1;
+  overflow: hidden;
+  transition: max-height 200ms var(--ease-out), opacity 180ms var(--ease-out),
+    margin-bottom 200ms var(--ease-out), color 150ms var(--ease-out);
+}
+
+.back:hover {
+  color: var(--text);
+}
+
+.header[data-stuck="true"] .back {
+  max-height: 0;
+  opacity: 0;
+  margin-bottom: 0;
+  pointer-events: none;
+}
+
 /* ─── Eyebrow (collapses when stuck) ──────────────────────────────────── */
 .eyebrow {
   font-family: var(--mono);

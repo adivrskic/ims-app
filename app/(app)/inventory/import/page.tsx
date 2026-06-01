@@ -1,7 +1,6 @@
-import Link from "next/link";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { CornerLink } from "@/components/ui/CornerButton";
-import { ArrowLeft, FileDown } from "lucide-react";
+import { FileDown } from "lucide-react";
 import { ImportForm } from "./ImportForm";
 
 export const metadata = { title: "Import products" };
@@ -29,30 +28,23 @@ const COLUMNS = [
 export default async function ImportPage() {
   return (
     <div className="flex flex-col gap-32">
-      <div className="flex flex-col gap-12">
-        <Link
-          href="/inventory"
-          className="inline-flex items-center gap-6 text-text-muted hover:text-text transition-colors w-fit"
-        >
-          <ArrowLeft size={11} strokeWidth={1.5} />
-          <span className="label-text">All products</span>
-        </Link>
-        <PageHeader
-          eyebrow="Workspace · Inventory"
-          title="Import products"
-          description="Bulk-add products from a CSV. Rows with errors are reported back so you can fix and re-upload — the valid rows still ingest on the first pass."
-          actions={
-            <CornerLink
-              href="/api/inventory/import-template"
-              variant="ghost"
-              size="sm"
-            >
-              <FileDown size={11} strokeWidth={1.5} />
-              Download template
-            </CornerLink>
-          }
-        />
-      </div>
+      <PageHeader
+        eyebrow="Workspace · Inventory"
+        title="Import products"
+        description="Bulk-add products from a CSV. Rows with errors are reported back so you can fix and re-upload — the valid rows still ingest on the first pass."
+        backHref="/inventory"
+        backLabel="All products"
+        actions={
+          <CornerLink
+            href="/api/inventory/import-template"
+            variant="ghost"
+            size="sm"
+          >
+            <FileDown size={11} strokeWidth={1.5} />
+            Download template
+          </CornerLink>
+        }
+      />
 
       <section aria-labelledby="schema">
         <h2

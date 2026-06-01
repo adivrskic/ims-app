@@ -1,9 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import {
-  ArrowLeft,
   Pencil,
-  Truck,
   Mail,
   Phone,
   Globe,
@@ -15,6 +13,7 @@ import {
   FileText,
 } from "lucide-react";
 import { CornerLink } from "@/components/ui/CornerButton";
+import { PageHeader } from "@/components/ui/PageHeader";
 import { paymentTermsLabel } from "../../customers/types";
 import { getSupplier } from "../actions";
 import { SupplierActiveToggle } from "./SupplierActiveToggle";
@@ -40,72 +39,42 @@ export default async function SupplierDetailPage({
 
   return (
     <>
-      <header className="hairline-b pb-12 mb-20 flex items-center gap-14 flex-wrap">
-        <Link
-          href="/suppliers"
-          className="inline-flex items-center gap-6 text-text-muted hover:text-text transition-colors"
-        >
-          <ArrowLeft size={11} strokeWidth={1.5} />
-          <span className="label-text">Suppliers</span>
-        </Link>
-        <span
-          className="h-14 w-px bg-[var(--border-subtle)] hidden sm:inline-block"
-          aria-hidden
-        />
-        <div className="flex items-baseline gap-8 min-w-0">
-          <span
-            className="w-22 h-22 hairline-subtle bg-[var(--accent-dim)] flex items-center justify-center shrink-0 text-[var(--accent)]"
-            aria-hidden
-          >
-            <Truck size={11} strokeWidth={1.5} />
-          </span>
-          <h1
-            className="text-text truncate"
-            style={{
-              fontFamily: "var(--display)",
-              fontSize: 18,
-              fontWeight: 600,
-            }}
-          >
-            {s.name}
-          </h1>
-          {s.contact_name && (
-            <span
-              className="text-text-muted truncate hidden md:inline"
-              style={{ fontFamily: "var(--mono)", fontSize: 12 }}
+      <PageHeader
+        eyebrow="Supplier"
+        title={s.name}
+        description={s.contact_name ?? undefined}
+        backHref="/suppliers"
+        backLabel="Suppliers"
+        actions={
+          <>
+            {!s.is_active && (
+              <span
+                className="hairline-subtle px-8 py-2 shrink-0 text-text-dim"
+                style={{
+                  fontFamily: "var(--mono)",
+                  fontSize: 9,
+                  letterSpacing: "0.5px",
+                  textTransform: "uppercase",
+                }}
+              >
+                Inactive
+              </span>
+            )}
+            <SupplierActiveToggle
+              supplierId={s.id}
+              isActive={s.is_active}
+            />
+            <CornerLink
+              href={`/suppliers/${s.id}/edit`}
+              variant="primary"
+              size="sm"
             >
-              · {s.contact_name}
-            </span>
-          )}
-          {!s.is_active && (
-            <span
-              className="hairline-subtle px-8 py-2 shrink-0 text-text-dim"
-              style={{
-                fontFamily: "var(--mono)",
-                fontSize: 9,
-                letterSpacing: "0.5px",
-                textTransform: "uppercase",
-              }}
-            >
-              Inactive
-            </span>
-          )}
-        </div>
-        <div className="ml-auto flex items-center gap-10">
-          <SupplierActiveToggle
-            supplierId={s.id}
-            isActive={s.is_active}
-          />
-          <CornerLink
-            href={`/suppliers/${s.id}/edit`}
-            variant="primary"
-            size="sm"
-          >
-            <Pencil size={11} strokeWidth={1.5} />
-            Edit
-          </CornerLink>
-        </div>
-      </header>
+              <Pencil size={11} strokeWidth={1.5} />
+              Edit
+            </CornerLink>
+          </>
+        }
+      />
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-16">
         <div className="lg:col-span-2 flex flex-col gap-14">

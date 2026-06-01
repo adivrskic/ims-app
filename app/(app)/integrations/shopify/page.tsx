@@ -1,6 +1,4 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
-import { ArrowLeft } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { ProviderLogo } from "@/components/integrations/ProviderLogo";
 import { getCurrentOrgContext } from "@/lib/data/user";
@@ -67,16 +65,11 @@ export default async function ShopifyPage({ searchParams }: PageProps) {
 
   return (
     <div className="flex flex-col gap-32">
-      <Link
-        href="/integrations"
-        className="mono-sm text-text-muted hover:text-text inline-flex items-center gap-6 self-start"
-      >
-        <ArrowLeft size={12} strokeWidth={1.5} /> All integrations
-      </Link>
-
       <div className="flex items-start gap-16">
         <ProviderLogo provider={info} size={56} />
         <PageHeader
+          backHref="/integrations"
+          backLabel="All integrations"
           eyebrow={info.category}
           title="Shopify"
           description="Sync incoming orders from your storefront. New orders arrive in Nautilus within seconds; cancellations sync automatically. Outbound inventory updates and fulfillment marking are coming in v2."

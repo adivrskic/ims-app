@@ -1,6 +1,5 @@
-import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft, Check, Truck, X, Boxes } from "lucide-react";
+import { Check, Truck, X, Boxes } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentOrgContext } from "@/lib/data/user";
 import { getAsnDetail, type AsnLine } from "@/lib/data/asn";
@@ -36,12 +35,9 @@ export default async function AsnDetailPage({
 
   return (
     <div className="flex flex-col gap-24">
-      <Link href="/inbound" className="inline-flex items-center gap-6 text-text-muted hover:text-text transition-colors w-fit">
-        <ArrowLeft size={11} strokeWidth={1.5} />
-        <span className="label-text">Inbound</span>
-      </Link>
-
       <PageHeader
+        backHref="/inbound"
+        backLabel="Inbound"
         eyebrow={`Inbound · ${asn.status.replace("_", " ").toUpperCase()}`}
         title={asn.asnNumber}
         description={[
