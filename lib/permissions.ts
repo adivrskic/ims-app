@@ -20,8 +20,10 @@ export type Permission =
   | "cycle_counts.void" // void a recorded count
   | "orders.manage" // create / advance / cancel orders
   | "orders.allocate" // allocate stock to orders
+  | "customers.manage" // create / edit / deactivate customers
   | "purchasing.manage" // create/send POs, auto-draft settings
   | "purchasing.receive" // receive PO lines
+  | "suppliers.manage" // create / edit / deactivate suppliers
   | "qc.review" // pass/fail inbound QC
   | "picking.manage" // build / manage pick waves
   | "work_orders.manage" // create / complete work orders
@@ -45,9 +47,11 @@ export const PERMISSIONS: PermissionDef[] = [
   { key: "cycle_counts.void", label: "Void cycle counts", group: "Inventory" },
   { key: "orders.manage", label: "Manage orders", group: "Orders" },
   { key: "orders.allocate", label: "Allocate stock", group: "Orders" },
+  { key: "customers.manage", label: "Manage customers", group: "Orders" },
   { key: "picking.manage", label: "Manage pick waves", group: "Orders" },
   { key: "purchasing.manage", label: "Manage purchase orders", group: "Purchasing" },
   { key: "purchasing.receive", label: "Receive shipments", group: "Purchasing" },
+  { key: "suppliers.manage", label: "Manage suppliers", group: "Purchasing" },
   { key: "qc.review", label: "Review inbound QC", group: "Purchasing" },
   { key: "work_orders.manage", label: "Manage work orders", group: "Production" },
   { key: "reports.manage", label: "Build & manage reports", group: "Insights" },
@@ -69,8 +73,10 @@ const MEMBER_DEFAULTS: Permission[] = [
   "inventory.adjust",
   "orders.manage",
   "orders.allocate",
+  "customers.manage",
   "picking.manage",
   "purchasing.receive",
+  "suppliers.manage",
   "qc.review",
   "work_orders.manage",
   "reports.manage",

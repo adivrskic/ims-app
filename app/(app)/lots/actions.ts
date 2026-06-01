@@ -13,6 +13,9 @@ export async function createLot(
 ): Promise<{ error?: string; success?: string }> {
   const ctx = await getActionContext();
   if ("error" in ctx) return { error: ctx.error };
+  if (!ctx.can("inventory.adjust")) {
+    return { error: "You don't have permission to manage lots" };
+  }
 
   const productId = String(formData.get("product_id") ?? "").trim();
   const lotNumber = String(formData.get("lot_number") ?? "").trim();
@@ -62,6 +65,7 @@ export async function createLot(
 export async function deleteLot(formData: FormData): Promise<void> {
   const ctx = await getActionContext();
   if ("error" in ctx) return;
+  if (!ctx.can("inventory.adjust")) return;
   const id = String(formData.get("id") ?? "");
   if (!id) return;
   await ctx.supabase.from("lots").delete().eq("id", id).eq("org_id", ctx.orgId);
@@ -74,6 +78,7 @@ export async function setProductLotTracking(
 ): Promise<void> {
   const ctx = await getActionContext();
   if ("error" in ctx) return;
+  if (!ctx.can("inventory.adjust")) return;
   const productId = String(formData.get("product_id") ?? "").trim();
   const enabled = String(formData.get("enabled") ?? "") === "true";
   if (!productId) return;

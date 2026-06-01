@@ -33,6 +33,9 @@ export async function recordCycleCount(
 ): Promise<{ error?: string; success?: string; id?: string }> {
   const ctx = await getActionContext();
   if ("error" in ctx) return { error: ctx.error };
+  if (!ctx.can("inventory.adjust")) {
+    return { error: "You don't have permission to adjust inventory" };
+  }
 
   const locationId = String(formData.get("location_id") ?? "").trim();
   const productId = String(formData.get("product_id") ?? "").trim();

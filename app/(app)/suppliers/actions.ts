@@ -110,6 +110,9 @@ export async function createSupplier(
 ): Promise<{ error?: string; id?: string }> {
   const ctx = await getActionContext();
   if ("error" in ctx) return { error: ctx.error };
+  if (!ctx.can("suppliers.manage")) {
+    return { error: "You don't have permission to manage suppliers" };
+  }
 
   const v = validateSupplierInput(input);
   if (v) return { error: v };
@@ -154,6 +157,9 @@ export async function updateSupplier(
 ): Promise<{ error?: string }> {
   const ctx = await getActionContext();
   if ("error" in ctx) return { error: ctx.error };
+  if (!ctx.can("suppliers.manage")) {
+    return { error: "You don't have permission to manage suppliers" };
+  }
 
   const v = validateSupplierInput(input);
   if (v) return { error: v };
@@ -198,6 +204,9 @@ export async function setSupplierActive(
 ): Promise<{ error?: string }> {
   const ctx = await getActionContext();
   if ("error" in ctx) return { error: ctx.error };
+  if (!ctx.can("suppliers.manage")) {
+    return { error: "You don't have permission to manage suppliers" };
+  }
 
   const { error } = await ctx.supabase
     .from("suppliers")
