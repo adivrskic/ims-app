@@ -25,6 +25,11 @@ import {
   type LocationRow,
 } from "./actions";
 
+export interface ReasonOption {
+  code: string;
+  label: string;
+}
+
 interface Props {
   warehouseId: string;
   sectionId: string;
@@ -35,6 +40,7 @@ interface Props {
   totalLevels: number;
   slotCapacity: number | null;
   locations: LocationRow[];
+  reasons: ReasonOption[];
 }
 
 const slotKey = (bay: number, level: number) => `${bay}:${level}`;
@@ -49,6 +55,7 @@ export function SectionDetail({
   totalLevels,
   slotCapacity,
   locations: initialLocations,
+  reasons,
 }: Props) {
   // Local mutable copy of locations — optimistic mutations land here.
   const [locations, setLocations] = useState<LocationRow[]>(initialLocations);
@@ -93,7 +100,11 @@ export function SectionDetail({
 
   // ── Mutations ────────────────────────────────────────────────────────
 
-  const handleUpdateQty = async (locId: string, newQty: number) => {
+  const handleUpdateQty = async (
+    locId: string,
+    newQty: number,
+    reasonCode: string | null
+  ) => {
     const prev = locations;
     setLocations((p) =>
       p.map((l) => (l.id === locId ? { ...l, quantity: newQty } : l))
@@ -105,6 +116,7 @@ export function SectionDetail({
       sectionId,
       locationId: locId,
       quantity: newQty,
+      reasonCode,
     });
     setBusyId(null);
     if (r.error) {
@@ -421,7 +433,10 @@ export function SectionDetail({
                       moving={movingId === loc.id}
                       totalBays={totalBays}
                       totalLevels={totalLevels}
-                      onUpdateQty={(q) => handleUpdateQty(loc.id, q)}
+                      reasons={reasons}
+                      onUpdateQty={(q, reason) =>
+                        handleUpdateQty(loc.id, q, reason)
+                      }
                       onRemove={() => handleRemove(loc.id)}
                       onStartMove={() => {
                         setMovingId(loc.id);
@@ -743,6 +758,7 @@ function LocationCard({
   moving,
   totalBays,
   totalLevels,
+  reasons,
   onUpdateQty,
   onRemove,
   onStartMove,
@@ -754,24 +770,34 @@ function LocationCard({
   moving: boolean;
   totalBays: number;
   totalLevels: number;
-  onUpdateQty: (qty: number) => void;
+  reasons: ReasonOption[];
+  onUpdateQty: (qty: number, reasonCode: string | null) => void;
   onRemove: () => void;
   onStartMove: () => void;
   onCancelMove: () => void;
   onMove: (toBay: number, toLevel: number) => void | Promise<boolean>;
 }) {
   const [draftQty, setDraftQty] = useState(String(loc.quantity ?? 0));
+  const [reasonCode, setReasonCode] = useState("");
   useEffect(() => {
     setDraftQty(String(loc.quantity ?? 0));
+    setReasonCode("");
   }, [loc.quantity]);
 
-  const commitQty = () => {
-    const n = parseInt(draftQty, 10);
-    if (Number.isNaN(n) || n < 0) {
-      setDraftQty(String(loc.quantity ?? 0));
-      return;
-    }
-    if (n !== (loc.quantity ?? 0)) onUpdateQty(n);
+  const parsed = parseInt(draftQty, 10);
+  const qtyValid = !Number.isNaN(parsed) && parsed >= 0;
+  // The qty differs from on-hand → a pending adjustment that needs an explicit
+  // Apply (so we can capture a reason) rather than committing on blur.
+  const changed = qtyValid && parsed !== (loc.quantity ?? 0);
+
+  const applyQty = () => {
+    if (!changed) return;
+    onUpdateQty(parsed, reasonCode || null);
+  };
+
+  const revertQty = () => {
+    setDraftQty(String(loc.quantity ?? 0));
+    setReasonCode("");
   };
 
   return (
@@ -836,10 +862,9 @@ function LocationCard({
               value={draftQty}
               disabled={busy}
               onChange={(e) => setDraftQty(e.target.value)}
-              onBlur={commitQty}
               onKeyDown={(e) => {
-                if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-                if (e.key === "Escape") setDraftQty(String(loc.quantity ?? 0));
+                if (e.key === "Enter") applyQty();
+                if (e.key === "Escape") revertQty();
               }}
               className="hairline-subtle bg-[var(--surface-2)] px-6 py-2 text-text tnum w-[64px] disabled:opacity-50"
               style={{ fontFamily: "var(--mono)", fontSize: 11 }}
@@ -873,6 +898,72 @@ function LocationCard({
               )}
             </button>
           </div>
+
+          {changed && (
+            <div className="flex flex-col gap-6 mt-2 hairline-t pt-8">
+              <span
+                className="label-text text-text-muted"
+                style={{ fontSize: 9 }}
+              >
+                Adjust {loc.quantity ?? 0} → {parsed} (
+                {parsed - (loc.quantity ?? 0) > 0 ? "+" : ""}
+                {parsed - (loc.quantity ?? 0)})
+              </span>
+              {reasons.length > 0 && (
+                <select
+                  value={reasonCode}
+                  disabled={busy}
+                  onChange={(e) => setReasonCode(e.target.value)}
+                  aria-label="Adjustment reason"
+                  className="hairline-subtle bg-[var(--surface-2)] px-6 py-4 text-text disabled:opacity-50 w-full"
+                  style={{ fontFamily: "var(--mono)", fontSize: 10 }}
+                >
+                  <option value="">Reason (optional)…</option>
+                  {reasons.map((r) => (
+                    <option key={r.code} value={r.code}>
+                      {r.label}
+                    </option>
+                  ))}
+                </select>
+              )}
+              <div className="flex items-center gap-6">
+                <button
+                  type="button"
+                  onClick={applyQty}
+                  disabled={busy}
+                  className="hairline-subtle px-10 py-5 inline-flex items-center gap-6 border-[var(--accent-soft)] bg-[var(--accent-dim)] text-[var(--accent)] hover:border-[var(--accent)] disabled:opacity-40 transition-colors"
+                >
+                  {busy ? (
+                    <Loader2 size={10} strokeWidth={1.5} className="animate-spin" />
+                  ) : null}
+                  <span
+                    style={{
+                      fontFamily: "var(--mono)",
+                      fontSize: 10,
+                      letterSpacing: "0.8px",
+                      textTransform: "uppercase",
+                    }}
+                  >
+                    Apply
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={revertQty}
+                  disabled={busy}
+                  className="hairline-subtle px-10 py-5 hover:border-[var(--border-hover)] text-text-secondary hover:text-text disabled:opacity-50 transition-colors"
+                  style={{
+                    fontFamily: "var(--mono)",
+                    fontSize: 10,
+                    letterSpacing: "0.8px",
+                    textTransform: "uppercase",
+                  }}
+                >
+                  Revert
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
