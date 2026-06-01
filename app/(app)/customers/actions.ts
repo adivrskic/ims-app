@@ -116,6 +116,9 @@ export async function createCustomer(
 ): Promise<{ error?: string; id?: string }> {
   const ctx = await getActionContext();
   if ("error" in ctx) return { error: ctx.error };
+  if (!ctx.can("customers.manage")) {
+    return { error: "You don't have permission to manage customers" };
+  }
 
   const validation = validateCustomerInput(input);
   if (validation) return { error: validation };
@@ -160,6 +163,9 @@ export async function updateCustomer(
 ): Promise<{ error?: string }> {
   const ctx = await getActionContext();
   if ("error" in ctx) return { error: ctx.error };
+  if (!ctx.can("customers.manage")) {
+    return { error: "You don't have permission to manage customers" };
+  }
 
   const validation = validateCustomerInput(input);
   if (validation) return { error: validation };
@@ -204,6 +210,9 @@ export async function setCustomerActive(
 ): Promise<{ error?: string }> {
   const ctx = await getActionContext();
   if ("error" in ctx) return { error: ctx.error };
+  if (!ctx.can("customers.manage")) {
+    return { error: "You don't have permission to manage customers" };
+  }
 
   const { error } = await ctx.supabase
     .from("customers")

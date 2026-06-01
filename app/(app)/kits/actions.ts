@@ -9,6 +9,7 @@ import { assembleKit } from "@/lib/data/assemble";
 export async function setKitFlag(formData: FormData): Promise<void> {
   const ctx = await getActionContext();
   if ("error" in ctx) return;
+  if (!ctx.can("work_orders.manage")) return;
   const productId = String(formData.get("product_id") ?? "").trim();
   const enabled = String(formData.get("enabled") ?? "") === "true";
   if (!productId) return;
@@ -28,6 +29,9 @@ export async function addKitComponent(
 ): Promise<{ error?: string; success?: string }> {
   const ctx = await getActionContext();
   if ("error" in ctx) return { error: ctx.error };
+  if (!ctx.can("work_orders.manage")) {
+    return { error: "You don't have permission to edit kit BOMs" };
+  }
 
   const kitProductId = String(formData.get("kit_product_id") ?? "").trim();
   const componentProductId = String(
@@ -118,6 +122,7 @@ export async function buildKit(
 export async function removeKitComponent(formData: FormData): Promise<void> {
   const ctx = await getActionContext();
   if ("error" in ctx) return;
+  if (!ctx.can("work_orders.manage")) return;
   const id = String(formData.get("id") ?? "");
   if (!id) return;
   await ctx.supabase

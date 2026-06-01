@@ -23,6 +23,9 @@ export async function registerSerials(
 ): Promise<{ error?: string; success?: string }> {
   const ctx = await getActionContext();
   if ("error" in ctx) return { error: ctx.error };
+  if (!ctx.can("inventory.adjust")) {
+    return { error: "You don't have permission to manage serials" };
+  }
 
   const productId = String(formData.get("product_id") ?? "").trim();
   const warehouseId = String(formData.get("warehouse_id") ?? "").trim();
@@ -99,6 +102,7 @@ export async function registerSerials(
 export async function setSerialStatus(formData: FormData): Promise<void> {
   const ctx = await getActionContext();
   if ("error" in ctx) return;
+  if (!ctx.can("inventory.adjust")) return;
   const id = String(formData.get("id") ?? "");
   const status = String(formData.get("status") ?? "") as SerialStatus;
   if (!id || !VALID_STATUS.includes(status)) return;
@@ -117,6 +121,7 @@ export async function setSerialStatus(formData: FormData): Promise<void> {
 export async function deleteSerial(formData: FormData): Promise<void> {
   const ctx = await getActionContext();
   if ("error" in ctx) return;
+  if (!ctx.can("inventory.adjust")) return;
   const id = String(formData.get("id") ?? "");
   if (!id) return;
   await ctx.supabase
@@ -133,6 +138,7 @@ export async function setProductSerialTracking(
 ): Promise<void> {
   const ctx = await getActionContext();
   if ("error" in ctx) return;
+  if (!ctx.can("inventory.adjust")) return;
   const productId = String(formData.get("product_id") ?? "").trim();
   const enabled = String(formData.get("enabled") ?? "") === "true";
   if (!productId) return;
