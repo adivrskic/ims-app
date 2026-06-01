@@ -1,0 +1,60 @@
+/* PageShell.module.css
+ *
+ * App-level scroll shell. Mounted once in the (app) layout, it wraps every
+ * page's content so all pages share Overview's behavior:
+ *
+ *   - Content scrolls INSIDE .scroll (internal scroll, hidden scrollbar) whose
+ *     top edge carries a fade mask — content dissolves into the real page
+ *     background before it reaches the header.
+ *   - .overlay is a transparent layer ABOVE the mask. Each page's PageHeader
+ *     portals its header here, so the fade never touches the header and it
+ *     needs no background of its own.
+ */
+
+.shell {
+  position: relative;
+  min-height: 0;
+  flex: 1;
+}
+
+.scroll {
+  position: absolute;
+  inset: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 160px);
+  mask-image: linear-gradient(to bottom, transparent 0, #000 160px);
+}
+
+.scroll::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
+}
+
+/* Holds page content. Horizontal + bottom padding come from the className;
+   the top spacer (resting header band) is set inline from the active
+   PageHeader's measured height. */
+.content {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+}
+
+/* Transparent overlay above the mask — the header layer. pointer-events:none
+   so it never blocks content; the portaled header re-enables them on itself. */
+.overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.overlayInner {
+  display: flex;
+  flex-direction: column;
+}
