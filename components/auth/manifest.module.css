@@ -2,8 +2,8 @@
  * Manifest auth styles.
  *
  * Used only by the auth pages. The forms there sit directly on the
- * underwater backdrop, with each row a typographic line item with a
- * hairline separator below.
+ * underwater backdrop, with each row a typographic line item separated
+ * by spacing alone (no divider rule).
  *
  * Focus indicator: when an input in a row is focused, the row's
  * "01 —" number turns accent gold and the field label brightens.
@@ -16,10 +16,6 @@
   grid-template-columns: 44px minmax(0, 1fr);
   gap: 16px;
   align-items: start;
-}
-
-.rowBorder {
-  border-bottom: 0.5px solid var(--border-subtle);
 }
 
 .rowFull {

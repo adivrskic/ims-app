@@ -36,7 +36,7 @@ export function SignupForm() {
         Request <em className="accent-italic">access</em>.
       </h1>
 
-      <form action={formAction} className="hairline-t">
+      <form action={formAction}>
         <ManifestRow number="01" label="Full name">
           <ManifestInput
             type="text"
@@ -79,13 +79,13 @@ export function SignupForm() {
         {/* Strength meter only renders once the user has started typing,
             keeping the form quiet until it has something to say. */}
         {password.length > 0 && (
-          <div className="py-14 hairline-b">
+          <div className="py-14">
             <PasswordStrength password={password} />
           </div>
         )}
 
         {state?.error && (
-          <div className="py-12 hairline-b">
+          <div className="py-12">
             <p
               role="alert"
               className="hairline-subtle border-[rgba(239,68,68,0.45)] bg-[var(--danger-dim)] px-12 py-10 mono-sm text-[var(--danger)]"
@@ -96,7 +96,7 @@ export function SignupForm() {
         )}
 
         {state?.success && (
-          <div className="py-12 hairline-b">
+          <div className="py-12">
             <p
               role="status"
               className="hairline-subtle border-[rgba(34,197,94,0.45)] bg-[var(--success-dim)] px-12 py-10 mono-sm text-[var(--success)]"
@@ -118,7 +118,7 @@ export function SignupForm() {
         </ManifestRow>
       </form>
 
-      <div className="hairline-t mt-24 pt-16 flex justify-between">
+      <div className="mt-24 pt-16 flex justify-between">
         <Link
           href="/login"
           className="mono-sm text-text-muted hover:text-text transition-colors"

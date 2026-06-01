@@ -42,7 +42,7 @@ export default function ForgotPage() {
         Enter the email on file. We'll send a reset link if the account exists.
       </p>
 
-      <form action={formAction} className="hairline-t">
+      <form action={formAction}>
         <ManifestRow number="01" label="Email address">
           <ManifestInput
             type="email"
@@ -54,7 +54,7 @@ export default function ForgotPage() {
         </ManifestRow>
 
         {state?.error && (
-          <div className="py-12 hairline-b">
+          <div className="py-12">
             <p
               role="alert"
               className="hairline-subtle border-[rgba(239,68,68,0.45)] bg-[var(--danger-dim)] px-12 py-10 mono-sm text-[var(--danger)]"
@@ -65,7 +65,7 @@ export default function ForgotPage() {
         )}
 
         {state?.success && (
-          <div className="py-12 hairline-b">
+          <div className="py-12">
             <p
               role="status"
               className="hairline-subtle border-[rgba(34,197,94,0.45)] bg-[var(--success-dim)] px-12 py-10 mono-sm text-[var(--success)]"
@@ -87,7 +87,7 @@ export default function ForgotPage() {
         </ManifestRow>
       </form>
 
-      <div className="hairline-t mt-24 pt-16">
+      <div className="mt-24 pt-16">
         <Link
           href="/login"
           className="mono-sm text-text-muted hover:text-text transition-colors"

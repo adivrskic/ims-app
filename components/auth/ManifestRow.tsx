@@ -8,7 +8,10 @@ interface Props {
   label?: string;
   /** Content shown on the right of the label row (e.g., a "Reset →" link). */
   rightSlot?: ReactNode;
-  /** Drop the hairline separator below — usually for the last row. */
+  /**
+   * Retained for call-site compatibility; rows no longer draw a separator
+   * (the manifest deliberately reads as one open column, no dividers).
+   */
   noBorder?: boolean;
   children: ReactNode;
 }
@@ -18,21 +21,19 @@ interface Props {
  *
  *   01 —    EMAIL ADDRESS                       Reset →
  *           <input>
- *   ─────────────────────────────────────────────────── (hairline)
  *
  * Number is rendered in the left column (44px wide). Label + rightSlot
- * sit in a header row above the content. Hairline-b separates each row;
- * pass `noBorder` for the last row in a manifest.
+ * sit in a header row above the content. Rows are separated by spacing
+ * alone — no divider rule — so the manifest reads as one open column.
  */
 export function ManifestRow({
   number,
   label,
   rightSlot,
-  noBorder,
   children,
 }: Props) {
   return (
-    <div className={`${styles.row} ${noBorder ? "" : styles.rowBorder}`}>
+    <div className={styles.row}>
       <span className={styles.number}>{number} —</span>
       <div className={styles.content}>
         {(label || rightSlot) && (
