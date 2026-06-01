@@ -86,7 +86,7 @@ export async function signInWithPassword(
 
   const supabase = await createClient();
   const { error } = await supabase.auth.signInWithPassword({ email, password });
-  if (error) return { error: error.message };
+  if (error) return { error: friendlyAuthError(error) };
 
   // Successful sign-in — redirect to wherever the user was headed.
   // redirect() throws a special exception that Next.js catches, so this
@@ -116,7 +116,7 @@ export async function signUpWithPassword(
       data: { full_name: fullName || null },
     },
   });
-  if (error) return { error: error.message };
+  if (error) return { error: friendlyAuthError(error) };
 
   // If email confirmation is required, the user can't sign in yet.
   // Return a success message instructing them to check their inbox.
