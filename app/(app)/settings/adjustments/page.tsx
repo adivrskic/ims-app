@@ -17,7 +17,7 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { SectionTitle } from "@/components/ui/SectionTitle";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { CornerButton } from "@/components/ui/CornerButton";
-import { ArrowLeft, ShieldCheck, Check, X } from "lucide-react";
+import { ShieldCheck, Check, X } from "lucide-react";
 
 export const metadata = { title: "Adjustment governance" };
 
@@ -44,21 +44,14 @@ export default async function AdjustmentsSettingsPage() {
 
   return (
     <div className="flex flex-col gap-32">
-      <div className="flex flex-col gap-12">
-        <Link
-          href="/cycle-counts"
-          className="inline-flex items-center gap-6 text-text-muted hover:text-text transition-colors w-fit"
-        >
-          <ArrowLeft size={11} strokeWidth={1.5} />
-          <span className="label-text">Cycle counts</span>
-        </Link>
-        <PageHeader
-          eyebrow="Settings · Inventory control"
-          title="Adjustment governance"
-          description="Reason codes captured on every stock adjustment, plus an approval gate for large manual adjustments."
-          meta={[{ label: "Pending approvals", value: String(pending.length), status: pending.length ? ("live" as const) : undefined }]}
-        />
-      </div>
+      <PageHeader
+        backHref="/cycle-counts"
+        backLabel="Cycle counts"
+        eyebrow="Settings · Inventory control"
+        title="Adjustment governance"
+        description="Reason codes captured on every stock adjustment, plus an approval gate for large manual adjustments."
+        meta={[{ label: "Pending approvals", value: String(pending.length), status: pending.length ? ("live" as const) : undefined }]}
+      />
 
       {/* Approval queue */}
       <section aria-labelledby="queue">

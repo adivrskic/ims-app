@@ -1,6 +1,7 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { SideRail } from "@/components/nav/SideRail";
+import { PageShell } from "@/components/ui/PageShell";
 import { MobileNav } from "@/components/nav/MobileNav";
 import { MobileTopBar } from "@/components/nav/MobileTopBar";
 import { CommandPalette } from "@/components/nav/CommandPalette";
@@ -119,14 +120,12 @@ export default async function AppLayout({
           <div className="flex-1 min-w-0 flex flex-col min-h-screen">
             <MobileTopBar unreadCount={unread} />
 
-            <main className="flex-1 relative flex flex-col">
+            <main className="flex-1 relative flex flex-col min-h-0">
               <div
                 className="absolute inset-0 dot-grid opacity-40 pointer-events-none"
                 aria-hidden
               />
-              <div className="relative max-w-[1760px] w-full px-20 md:px-32 lg:px-40 py-24 md:py-40 min-h-full flex flex-col">
-                {children}
-              </div>
+              <PageShell>{children}</PageShell>
             </main>
           </div>
         </div>

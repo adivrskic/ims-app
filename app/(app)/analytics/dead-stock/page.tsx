@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/Badge";
 import { ScopeFilter } from "@/components/dashboard/ScopeFilter";
 import { parseScope } from "@/lib/scope";
 import { formatCurrency } from "@/lib/dashboard";
-import { Hourglass, ArrowLeft, ChevronRight } from "lucide-react";
+import { Hourglass, ChevronRight } from "lucide-react";
 
 export const metadata = { title: "Dead stock · Analytics" };
 
@@ -218,14 +218,9 @@ export default async function DeadStockPage({
 
   return (
     <div className="flex flex-col gap-32">
-      <Link
-        href="/analytics"
-        className="mono-sm text-text-muted hover:text-text inline-flex items-center gap-6 self-start"
-      >
-        <ArrowLeft size={12} strokeWidth={1.5} /> Analytics
-      </Link>
-
       <PageHeader
+        backHref="/analytics"
+        backLabel="Analytics"
         eyebrow="Analytics · Reports"
         title="Dead stock"
         description={`Products with on-hand stock but no pick activity in the last ${threshold} days. Sort surfaces the biggest pools of capital tied up in unmoving inventory.`}

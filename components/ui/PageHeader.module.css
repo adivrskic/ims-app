@@ -45,11 +45,35 @@
   will-change: transform;
 }
 
+/* Centralized shell: the header is portaled into the app-level overlay layer
+   (PageShell). It sits in normal flow inside the padded overlay box and is
+   moved purely by its JS-driven translateY — so no absolute positioning, and
+   its horizontal box already matches the content column. */
+.overlayHeader {
+  position: relative;
+  will-change: transform;
+  pointer-events: auto;
+}
+
 .header[data-stuck="true"] {
   padding-bottom: 14px;
   margin-top: -14px;
   /* Stronger bottom border to separate from the content beneath. */
   border-bottom-color: var(--border);
+}
+
+/* In the overlay model the resting/stuck position is owned by the JS translate.
+   When pinned, the header becomes a fixed band matching the sidebar's logo
+   header (56px), with its content vertically centered — so the compact title
+   lines up with the "Nautilus" logo and the band's bottom border continues the
+   sidebar's. */
+.overlayHeader[data-stuck="true"] {
+  margin-top: 0;
+  padding-bottom: 0;
+  min-height: 56px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
 }
 
 /* ── Shell layout ─────────────────────────────────────────────────────── */
@@ -115,6 +139,34 @@
   flex-direction: column;
   min-width: 0;
   flex: 1;
+}
+
+/* ─── Back link (collapses when stuck, like the eyebrow) ──────────────── */
+.back {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  align-self: flex-start;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-bottom: 10px;
+  max-height: 20px;
+  opacity: 1;
+  overflow: hidden;
+  transition: max-height 200ms var(--ease-out), opacity 180ms var(--ease-out),
+    margin-bottom 200ms var(--ease-out), color 150ms var(--ease-out);
+}
+
+.back:hover {
+  color: var(--text);
+}
+
+.header[data-stuck="true"] .back {
+  max-height: 0;
+  opacity: 0;
+  margin-bottom: 0;
+  pointer-events: none;
 }
 
 /* ─── Eyebrow (collapses when stuck) ──────────────────────────────────── */

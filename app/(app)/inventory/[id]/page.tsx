@@ -22,7 +22,6 @@ import type { ScanAction } from "@/types/db";
 import { PrintLabelButton } from "@/components/print/PrintLabelButton";
 import { productLabel } from "@/lib/print/zplTemplates";
 import {
-  ArrowLeft,
   Activity,
   Hash,
   Layers,
@@ -331,14 +330,10 @@ export default async function ProductDetailPage({
   return (
     <div className="flex flex-col gap-48">
       <ProductDetailRealtime productId={product.id} />
-      <Link
-        href="/inventory"
-        className="mono-sm text-text-muted hover:text-text inline-flex items-center gap-6 self-start"
-      >
-        <ArrowLeft size={12} strokeWidth={1.5} /> All inventory
-      </Link>
 
       <PageHeader
+        backHref="/inventory"
+        backLabel="All inventory"
         eyebrow={`Inventory · ${product.barcode}`}
         title={product.name}
         actions={

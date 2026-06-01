@@ -1,7 +1,7 @@
 import { Fragment, type ReactNode } from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft, FileText, Send, X as XIcon } from "lucide-react";
+import { FileText, Send, X as XIcon } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentOrgContext } from "@/lib/data/user";
 import { getSlottingSuggestions } from "@/lib/data/slotting";
@@ -231,16 +231,10 @@ export default async function PurchaseOrderDetailPage({
     <div className="flex flex-col gap-32">
       <PurchaseOrderDetailRealtime poId={id} />
 
-      <Link
-        href="/purchase-orders"
-        className="inline-flex items-center gap-6 text-text-muted hover:text-text transition-colors w-fit"
-      >
-        <ArrowLeft size={11} strokeWidth={1.5} />
-        <span className="label-text">All purchase orders</span>
-      </Link>
-
       <PageHeader
         live
+        backHref="/purchase-orders"
+        backLabel="All purchase orders"
         eyebrow="Purchase order"
         title={title}
         description={subtitleParts.join(" · ")}

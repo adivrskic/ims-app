@@ -1,9 +1,9 @@
 import { notFound } from "next/navigation";
-import Link from "next/link";
-import { ArrowLeft, Pencil } from "lucide-react";
+import { Pencil } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentOrgContext } from "@/lib/data/user";
 import { CornerLink } from "@/components/ui/CornerButton";
+import { PageHeader } from "@/components/ui/PageHeader";
 import { FacilityViewer } from "./FacilityViewer";
 import { ELEMENT_PRESETS } from "@/app/(app)/facilities/[id]/builder/elementPresets";
 import type { ElementKind } from "@/app/(app)/facilities/[id]/builder/types";
@@ -118,63 +118,37 @@ export default async function FacilityPage({
 
   return (
     <>
-      {/* Breadcrumb chrome — back link, name, address, edit affordance */}
-      <header className="hairline-b pb-12 mb-12 flex items-center gap-14 shrink-0">
-        <Link
-          href="/facilities"
-          className="inline-flex items-center gap-6 text-text-muted hover:text-text transition-colors"
-        >
-          <ArrowLeft size={11} strokeWidth={1.5} />
-          <span className="label-text">All facilities</span>
-        </Link>
-
-        <span
-          className="h-14 w-px bg-[var(--border-subtle)] hidden sm:inline-block"
-          aria-hidden
-        />
-
-        <div className="flex items-baseline gap-10 min-w-0">
-          <h1
-            className="text-text truncate"
-            style={{
-              fontFamily: "var(--display)",
-              fontSize: 15,
-              fontWeight: 600,
-            }}
-          >
-            {warehouse.name}
-          </h1>
-          {addrLine && (
-            <span className="label-text text-text-dim truncate hidden md:inline">
-              {addrLine}
-            </span>
-          )}
-        </div>
-
-        <div className="ml-auto flex items-center gap-10">
-          <BulkPrintBayLabels
-            sections={sectionData.map((s) => ({
-              code: s.code,
-              name: s.name ?? null,
-              total_bays: s.total_bays ?? 0,
-              total_levels: s.total_levels ?? 0,
-            }))}
-            buttonLabel="Print all bay labels"
-            variant="ghost"
-            size="sm"
-          />
-          {canEdit && (
-            <CornerLink
-              href={`/facilities/${warehouse.id}/builder`}
+      <PageHeader
+        title={warehouse.name}
+        description={addrLine || undefined}
+        backHref="/facilities"
+        backLabel="All facilities"
+        actions={
+          <>
+            <BulkPrintBayLabels
+              sections={sectionData.map((s) => ({
+                code: s.code,
+                name: s.name ?? null,
+                total_bays: s.total_bays ?? 0,
+                total_levels: s.total_levels ?? 0,
+              }))}
+              buttonLabel="Print all bay labels"
               variant="ghost"
               size="sm"
-            >
-              <Pencil size={11} strokeWidth={1.5} />
-              Edit layout
-            </CornerLink>
-          )}
-        </div>
-      </header>
+            />
+            {canEdit && (
+              <CornerLink
+                href={`/facilities/${warehouse.id}/builder`}
+                variant="ghost"
+                size="sm"
+              >
+                <Pencil size={11} strokeWidth={1.5} />
+                Edit layout
+              </CornerLink>
+            )}
+          </>
+        }
+      />
 
       <div className="flex-1 min-h-0">
         <FacilityViewer

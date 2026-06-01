@@ -13,7 +13,7 @@ import { SectionTitle } from "@/components/ui/SectionTitle";
 import { Badge } from "@/components/ui/Badge";
 import { CornerButton } from "@/components/ui/CornerButton";
 import { EmptyState } from "@/components/ui/EmptyState";
-import { ArrowLeft, MapPin, X, Waypoints } from "lucide-react";
+import { MapPin, X, Waypoints } from "lucide-react";
 
 export const metadata = { title: "Wave" };
 
@@ -46,52 +46,45 @@ export default async function WaveDetailPage({
 
   return (
     <div className="flex flex-col gap-32">
-      <div className="flex flex-col gap-12">
-        <Link
-          href="/picking"
-          className="inline-flex items-center gap-6 text-text-muted hover:text-text transition-colors w-fit"
-        >
-          <ArrowLeft size={11} strokeWidth={1.5} />
-          <span className="label-text">All waves</span>
-        </Link>
-        <PageHeader
-          eyebrow="Pick wave"
-          title={wave.code}
-          description={`${wave.orders.length} order${
-            wave.orders.length === 1 ? "" : "s"
-          } · ${wave.totalUnits} unit${wave.totalUnits === 1 ? "" : "s"} to pick · ${
-            wave.zones.length
-          } zone${wave.zones.length === 1 ? "" : "s"}`}
-          meta={[{ label: "Picker", value: mineLabel }]}
-          actions={
-            <div className="flex items-center gap-10 flex-wrap">
-              <Badge tone={WAVE_TONE[wave.status]} variant="filled">
-                {wave.status}
-              </Badge>
-              {!isTerminal && (
-                <form action={claimWave}>
-                  <input type="hidden" name="wave_id" value={wave.id} />
-                  {wave.assignedTo === ctx.user.id && (
-                    <input type="hidden" name="release" value="1" />
-                  )}
-                  <CornerButton type="submit" variant="ghost" size="sm">
-                    {wave.assignedTo === ctx.user.id ? "Release" : "Claim"}
-                  </CornerButton>
-                </form>
-              )}
-              {wave.status === "planned" && (
-                <StatusForm waveId={wave.id} status="released" label="Release" variant="primary" />
-              )}
-              {wave.status === "released" && (
-                <StatusForm waveId={wave.id} status="complete" label="Mark complete" variant="primary" />
-              )}
-              {!isTerminal && (
-                <StatusForm waveId={wave.id} status="cancelled" label="Cancel" variant="danger" />
-              )}
-            </div>
-          }
-        />
-      </div>
+      <PageHeader
+        backHref="/picking"
+        backLabel="All waves"
+        eyebrow="Pick wave"
+        title={wave.code}
+        description={`${wave.orders.length} order${
+          wave.orders.length === 1 ? "" : "s"
+        } · ${wave.totalUnits} unit${wave.totalUnits === 1 ? "" : "s"} to pick · ${
+          wave.zones.length
+        } zone${wave.zones.length === 1 ? "" : "s"}`}
+        meta={[{ label: "Picker", value: mineLabel }]}
+        actions={
+          <div className="flex items-center gap-10 flex-wrap">
+            <Badge tone={WAVE_TONE[wave.status]} variant="filled">
+              {wave.status}
+            </Badge>
+            {!isTerminal && (
+              <form action={claimWave}>
+                <input type="hidden" name="wave_id" value={wave.id} />
+                {wave.assignedTo === ctx.user.id && (
+                  <input type="hidden" name="release" value="1" />
+                )}
+                <CornerButton type="submit" variant="ghost" size="sm">
+                  {wave.assignedTo === ctx.user.id ? "Release" : "Claim"}
+                </CornerButton>
+              </form>
+            )}
+            {wave.status === "planned" && (
+              <StatusForm waveId={wave.id} status="released" label="Release" variant="primary" />
+            )}
+            {wave.status === "released" && (
+              <StatusForm waveId={wave.id} status="complete" label="Mark complete" variant="primary" />
+            )}
+            {!isTerminal && (
+              <StatusForm waveId={wave.id} status="cancelled" label="Cancel" variant="danger" />
+            )}
+          </div>
+        }
+      />
 
       {/* Orders in the wave */}
       <section aria-labelledby="orders">

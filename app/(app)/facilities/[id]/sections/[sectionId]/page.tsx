@@ -1,9 +1,8 @@
 import { notFound } from "next/navigation";
-import Link from "next/link";
-import { ArrowLeft } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentOrgContext } from "@/lib/data/user";
 import { getReasons } from "@/lib/data/adjustments";
+import { PageHeader } from "@/components/ui/PageHeader";
 import { SectionDetail } from "./SectionDetail";
 
 export default async function SectionPage({
@@ -69,34 +68,12 @@ export default async function SectionPage({
 
   return (
     <>
-      <header className="hairline-b pb-12 mb-12 flex items-center gap-14 shrink-0">
-        <Link
-          href={`/facilities/${facilityId}`}
-          className="inline-flex items-center gap-6 text-text-muted hover:text-text transition-colors"
-        >
-          <ArrowLeft size={11} strokeWidth={1.5} />
-          <span className="label-text">{warehouse.name}</span>
-        </Link>
-
-        <span
-          className="h-14 w-px bg-[var(--border-subtle)] hidden sm:inline-block"
-          aria-hidden
-        />
-
-        <div className="flex items-baseline gap-10 min-w-0">
-          <span className="label-text text-text-muted">Section</span>
-          <h1
-            className="text-text truncate"
-            style={{
-              fontFamily: "var(--display)",
-              fontSize: 15,
-              fontWeight: 600,
-            }}
-          >
-            {section.code} · {section.name}
-          </h1>
-        </div>
-      </header>
+      <PageHeader
+        backHref={`/facilities/${facilityId}`}
+        backLabel={warehouse.name}
+        eyebrow="Section"
+        title={`${section.code} · ${section.name}`}
+      />
 
       <SectionDetail
         warehouseId={facilityId}

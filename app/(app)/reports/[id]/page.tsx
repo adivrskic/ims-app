@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentOrgContext } from "@/lib/data/user";
@@ -9,7 +8,7 @@ import { deleteReport } from "../actions";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { CornerButton, CornerLink } from "@/components/ui/CornerButton";
 import { EmptyState } from "@/components/ui/EmptyState";
-import { ArrowLeft, Download, Trash2, Table2 } from "lucide-react";
+import { Download, Trash2, Table2 } from "lucide-react";
 
 export const metadata = { title: "Report" };
 
@@ -53,43 +52,36 @@ export default async function ReportRunPage({
 
   return (
     <div className="flex flex-col gap-24">
-      <div className="flex flex-col gap-12">
-        <Link
-          href="/reports"
-          className="inline-flex items-center gap-6 text-text-muted hover:text-text transition-colors w-fit"
-        >
-          <ArrowLeft size={11} strokeWidth={1.5} />
-          <span className="label-text">All reports</span>
-        </Link>
-        <PageHeader
-          eyebrow={`Report · ${meta?.label ?? r.dataset}`}
-          title={r.name}
-          description={
-            result
-              ? `${result.rows.length}${
-                  result.rows.length >= PREVIEW_LIMIT ? "+" : ""
-                } rows · ${result.columns.length} columns${
-                  warehouseId && scope.mode === "single" ? ` · ${scope.name}` : ""
-                }`
-              : "Unknown dataset."
-          }
-          actions={
-            <div className="flex items-center gap-10">
-              <CornerLink href={exportHref} variant="ghost" size="sm">
-                <Download size={11} strokeWidth={1.5} />
-                Export CSV
-              </CornerLink>
-              <form action={deleteReport}>
-                <input type="hidden" name="id" value={r.id} />
-                <CornerButton type="submit" variant="danger" size="sm">
-                  <Trash2 size={11} strokeWidth={1.5} />
-                  Delete
-                </CornerButton>
-              </form>
-            </div>
-          }
-        />
-      </div>
+      <PageHeader
+        backHref="/reports"
+        backLabel="All reports"
+        eyebrow={`Report · ${meta?.label ?? r.dataset}`}
+        title={r.name}
+        description={
+          result
+            ? `${result.rows.length}${
+                result.rows.length >= PREVIEW_LIMIT ? "+" : ""
+              } rows · ${result.columns.length} columns${
+                warehouseId && scope.mode === "single" ? ` · ${scope.name}` : ""
+              }`
+            : "Unknown dataset."
+        }
+        actions={
+          <div className="flex items-center gap-10">
+            <CornerLink href={exportHref} variant="ghost" size="sm">
+              <Download size={11} strokeWidth={1.5} />
+              Export CSV
+            </CornerLink>
+            <form action={deleteReport}>
+              <input type="hidden" name="id" value={r.id} />
+              <CornerButton type="submit" variant="danger" size="sm">
+                <Trash2 size={11} strokeWidth={1.5} />
+                Delete
+              </CornerButton>
+            </form>
+          </div>
+        }
+      />
 
       {!result || result.rows.length === 0 ? (
         <EmptyState

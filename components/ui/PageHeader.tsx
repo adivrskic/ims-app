@@ -1,8 +1,12 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import Link from "next/link";
+import { ArrowLeft } from "lucide-react";
 import type { ReactNode } from "react";
 import styles from "./PageHeader.module.css";
+import { usePageShell } from "./pageShellContext";
 
 interface MetaItem {
   label: string;
@@ -18,6 +22,10 @@ interface Props {
   meta?: MetaItem[];
   accent?: string;
   numeral?: string;
+  /** Optional "← back" link shown above the eyebrow (collapses when pinned).
+   *  Use on detail pages instead of a separate in-flow back-link. */
+  backHref?: string;
+  backLabel?: string;
   /** When true, renders a small pulsing accent dot next to the title
    *  to signal that the page auto-refreshes via realtime. */
   live?: boolean;
@@ -49,14 +57,29 @@ function HeaderInner({
   actions,
   meta,
   live,
+  backHref,
+  backLabel,
 }: Pick<
   Props,
-  "eyebrow" | "title" | "description" | "actions" | "meta" | "live"
+  | "eyebrow"
+  | "title"
+  | "description"
+  | "actions"
+  | "meta"
+  | "live"
+  | "backHref"
+  | "backLabel"
 >) {
   const hasRight = (meta && meta.length > 0) || actions;
   return (
     <div className={styles.row}>
       <div className={styles.titleArea}>
+        {backHref && (
+          <Link href={backHref} className={styles.back}>
+            <ArrowLeft size={11} strokeWidth={1.5} />
+            {backLabel ?? "Back"}
+          </Link>
+        )}
         {eyebrow && <p className={styles.eyebrow}>{eyebrow}</p>}
         <h1 className={styles.title}>
           {title}
@@ -94,111 +117,102 @@ function HeaderInner({
 }
 
 export function PageHeader(props: Props) {
-  return props.children !== undefined ? (
-    <PageHeaderShell {...props} />
-  ) : (
-    <PageHeaderBar {...props} />
-  );
+  const shell = usePageShell();
+  // Inside the app shell (the common case), portal the header into the shared
+  // overlay so every page behaves like Overview. Outside it, fall back to the
+  // legacy window-sticky bar.
+  if (shell) return <PageHeaderPortal shell={shell} {...props} />;
+  return <PageHeaderBar {...props} />;
 }
 
-/* ── Shell mode: transparent overlay header over a masked, scrollbar-hidden
-      content region. ─────────────────────────────────────────────────────── */
+/* ── Centralized shell mode: header portaled into the app-level overlay ─────
+      (PageShell). Content scrolls inside the shared masked scroller; the
+      header is moved by a JS-driven translate and never touched by the fade. */
 
-// How far below the top the header rests before it scrolls up and pins. Tune
-// this to taste — it's the "scroll up N px, then stick" distance.
-const REST_GAP = 24;
+// Extra gap below the resting header before it pins. Small, so the resting
+// title sits near the top. No effect on the pinned position.
+const REST_GAP = 8;
+// Where the pinned (compact) header rests, measured from the top of the
+// content area. 0 pins it flush to the top; the compact header is then a
+// fixed band (see .overlayHeader[data-stuck] in the CSS) whose centered
+// content lines up with the sidebar "Nautilus" logo.
+const STUCK_OFFSET = 0;
 
-function PageHeaderShell({ children, contentClassName, ...header }: Props) {
+function PageHeaderPortal({
+  shell,
+  children,
+  contentClassName,
+  ...header
+}: Props & { shell: NonNullable<ReturnType<typeof usePageShell>> }) {
   const [stuck, setStuck] = useState(false);
-  const [height, setHeight] = useState<number>();
-  const outerRef = useRef<HTMLDivElement>(null);
-  const scrollRef = useRef<HTMLDivElement>(null);
   const headerRef = useRef<HTMLElement>(null);
   const maxHRef = useRef(0);
+  const { scrollEl, overlayEl, setSpacer } = shell;
 
-  // Fill from our own top down to the bottom of the viewport, so content
-  // scrolls INSIDE .scroll. The internal scroll is what lets the top fade
-  // mask stay anchored to the top edge and lets us hide the scrollbar.
-  useEffect(() => {
-    const el = outerRef.current;
-    if (!el) return;
-    const measure = () => {
-      const rect = el.getBoundingClientRect();
-      const parent = el.parentElement;
-      const pb = parent
-        ? parseFloat(getComputedStyle(parent).paddingBottom || "0") || 0
-        : 0;
-      setHeight(Math.max(240, Math.round(window.innerHeight - rect.top - pb)));
-    };
-    measure();
-    window.addEventListener("resize", measure, { passive: true });
-    return () => window.removeEventListener("resize", measure);
-  }, []);
-
-  // Reserve the header's (expanded) height + rest gap as a spacer at the top of
-  // the scroll content, so content starts just below the resting header. Track
-  // the max height seen so compaction never shrinks the spacer (which would
-  // make content jump).
+  // Reserve the resting header band (max height seen + offsets) at the top of
+  // the scrolled content, so page content starts just below the header.
   useEffect(() => {
     const head = headerRef.current;
-    const outer = outerRef.current;
-    if (!head || !outer) return;
+    if (!head) return;
     const ro = new ResizeObserver(() => {
       const h = head.offsetHeight;
       if (h > maxHRef.current) {
         maxHRef.current = h;
-        outer.style.setProperty("--ph-spacer", `${h + REST_GAP}px`);
+        setSpacer(h + STUCK_OFFSET + REST_GAP);
       }
     });
     ro.observe(head);
-    return () => ro.disconnect();
-  }, []);
+    return () => {
+      ro.disconnect();
+      setSpacer(0);
+      maxHRef.current = 0;
+    };
+  }, [setSpacer, overlayEl]);
 
-  // Manual sticky: the header overlay lives OUTSIDE the masked scroller (so the
-  // fade never touches it — hence it needs no background of its own). Translate
-  // it up as the content scrolls, clamp it at the top, and toggle the compact
-  // state once it pins.
+  // Manual sticky: translate the header down to its resting offset, slide it up
+  // as the content scrolls, clamp at STUCK_OFFSET, and toggle the compact state.
   useEffect(() => {
-    const scroll = scrollRef.current;
+    if (!scrollEl || !overlayEl) return;
     const head = headerRef.current;
-    if (!scroll || !head) return;
+    if (!head) return;
     let raf = 0;
     const apply = () => {
       raf = 0;
-      const y = scroll.scrollTop;
-      head.style.transform = `translateY(${Math.max(0, REST_GAP - y)}px)`;
+      const y = scrollEl.scrollTop;
+      head.style.transform = `translateY(${
+        STUCK_OFFSET + Math.max(0, REST_GAP - y)
+      }px)`;
       setStuck((prev) => (prev ? y > REST_GAP - 8 : y >= REST_GAP));
     };
     const onScroll = () => {
       if (raf) return;
       raf = requestAnimationFrame(apply);
     };
-    scroll.addEventListener("scroll", onScroll, { passive: true });
+    scrollEl.addEventListener("scroll", onScroll, { passive: true });
     apply();
     return () => {
-      scroll.removeEventListener("scroll", onScroll);
+      scrollEl.removeEventListener("scroll", onScroll);
       if (raf) cancelAnimationFrame(raf);
     };
-  }, []);
+  }, [scrollEl, overlayEl]);
+
+  const headerEl = (
+    <header
+      ref={headerRef}
+      className={`${styles.header} ${styles.overlayHeader}`}
+      data-stuck={stuck}
+    >
+      <HeaderInner {...header} />
+    </header>
+  );
 
   return (
-    <div
-      ref={outerRef}
-      className={styles.shell}
-      style={height ? { height } : undefined}
-    >
-      <div ref={scrollRef} className={styles.scroll}>
-        <div className={styles.headerSpacer} aria-hidden />
+    <>
+      {children !== undefined && (
         <div className={contentClassName ?? styles.scrollInner}>{children}</div>
-      </div>
-      <header
-        ref={headerRef}
-        className={`${styles.header} ${styles.shellHeader}`}
-        data-stuck={stuck}
-      >
-        <HeaderInner {...header} />
-      </header>
-    </div>
+      )}
+      {overlayEl ? createPortal(headerEl, overlayEl) : null}
+    </>
   );
 }
 

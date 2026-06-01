@@ -7,7 +7,7 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { KpiCard } from "@/components/ui/KpiCard";
 import { SectionTitle } from "@/components/ui/SectionTitle";
 import { EmptyState } from "@/components/ui/EmptyState";
-import { ArrowLeft, PackageX } from "lucide-react";
+import { PackageX } from "lucide-react";
 
 export const metadata = { title: "Backorders" };
 
@@ -46,31 +46,24 @@ export default async function BackordersPage() {
 
   return (
     <div className="flex flex-col gap-32">
-      <div className="flex flex-col gap-12">
-        <Link
-          href="/orders"
-          className="inline-flex items-center gap-6 text-text-muted hover:text-text transition-colors w-fit"
-        >
-          <ArrowLeft size={11} strokeWidth={1.5} />
-          <span className="label-text">All orders</span>
-        </Link>
-        <PageHeader
-          eyebrow="Orders"
-          title="Backorders"
-          description={scopeDescription(scope, {
-            all: "Open order demand that couldn't be allocated from on-hand stock — oldest first. Fill these as stock arrives on POs.",
-            single: (name) =>
-              `Unallocated open demand at ${name}, oldest first. Fill these as stock arrives on POs.`,
-          })}
-          meta={[
-            {
-              label: "Backordered units",
-              value: totalUnits.toLocaleString(),
-              status: "live" as const,
-            },
-          ]}
-        />
-      </div>
+      <PageHeader
+        backHref="/orders"
+        backLabel="All orders"
+        eyebrow="Orders"
+        title="Backorders"
+        description={scopeDescription(scope, {
+          all: "Open order demand that couldn't be allocated from on-hand stock — oldest first. Fill these as stock arrives on POs.",
+          single: (name) =>
+            `Unallocated open demand at ${name}, oldest first. Fill these as stock arrives on POs.`,
+        })}
+        meta={[
+          {
+            label: "Backordered units",
+            value: totalUnits.toLocaleString(),
+            status: "live" as const,
+          },
+        ]}
+      />
 
       {rows.length === 0 ? (
         <EmptyState

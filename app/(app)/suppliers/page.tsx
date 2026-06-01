@@ -1,5 +1,6 @@
 import { Plus } from "lucide-react";
 import { CornerLink } from "@/components/ui/CornerButton";
+import { PageHeader } from "@/components/ui/PageHeader";
 import { SupplierList, type SupplierStatsMap } from "./SupplierList";
 import { computeSupplierStats, type ScorecardPo } from "@/lib/supplier-stats";
 import { getCurrentOrgContext } from "@/lib/data/user";
@@ -81,37 +82,17 @@ export default async function SuppliersPage() {
 
   return (
     <>
-      <header className="hairline-b pb-16 mb-20 flex items-center gap-14">
-        <div className="flex flex-col gap-4 min-w-0">
-          <h1
-            className="text-text"
-            style={{
-              fontFamily: "var(--display)",
-              fontSize: 22,
-              fontWeight: 600,
-              letterSpacing: "-0.2px",
-            }}
-          >
-            Suppliers
-          </h1>
-          <p
-            className="text-text-dim"
-            style={{ fontFamily: "var(--mono)", fontSize: 11 }}
-          >
-            Vendors you place purchase orders with. Tap any supplier for the
-            full scorecard.
-          </p>
-        </div>
-        <CornerLink
-          href="/suppliers/new"
-          variant="primary"
-          size="sm"
-          className="ml-auto"
-        >
-          <Plus size={11} strokeWidth={1.5} />
-          New supplier
-        </CornerLink>
-      </header>
+      <PageHeader
+        eyebrow="Directory"
+        title="Suppliers"
+        description="Vendors you place purchase orders with. Tap any supplier for the full scorecard."
+        actions={
+          <CornerLink href="/suppliers/new" variant="primary" size="sm">
+            <Plus size={11} strokeWidth={1.5} />
+            New supplier
+          </CornerLink>
+        }
+      />
 
       <SupplierList suppliers={suppliers} stats={stats} />
     </>

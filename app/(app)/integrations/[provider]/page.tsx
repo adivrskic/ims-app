@@ -1,6 +1,4 @@
 import { notFound } from "next/navigation";
-import Link from "next/link";
-import { ArrowLeft } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { ProviderLogo } from "@/components/integrations/ProviderLogo";
 import { getCurrentOrgContext } from "@/lib/data/user";
@@ -38,19 +36,14 @@ export default async function ProviderConfigPage({ params }: PageProps) {
 
   return (
     <div className="flex flex-col gap-32">
-      <Link
-        href="/integrations"
-        className="mono-sm text-text-muted hover:text-text inline-flex items-center gap-6 self-start"
-      >
-        <ArrowLeft size={12} strokeWidth={1.5} /> All integrations
-      </Link>
-
       <div className="flex items-start gap-16">
         <ProviderLogo provider={info} size={56} />
         <PageHeader
           eyebrow={info.category}
           title={info.name}
           description={info.description}
+          backHref="/integrations"
+          backLabel="All integrations"
         />
       </div>
 
