@@ -19,6 +19,7 @@ import {
   Hammer,
   ShieldCheck,
   Table2,
+  PackageCheck,
 } from "lucide-react";
 import type { ComponentType } from "react";
 import { primaryNavKeys } from "@/lib/industries";
@@ -72,6 +73,12 @@ export const NAV_GROUPS: NavGroup[] = [
         href: "/purchase-orders",
         label: "Purchase Orders",
         icon: Truck,
+      },
+      {
+        key: "inbound",
+        href: "/inbound",
+        label: "Inbound (ASN)",
+        icon: PackageCheck,
       },
       {
         key: "receiving",
