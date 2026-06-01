@@ -6,6 +6,7 @@ import { randomBytes } from "crypto";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { sendInviteEmail } from "@/lib/email/invite";
+import { isIndustrySlug } from "@/lib/industries";
 
 export interface OnboardingState {
   error?: string;
@@ -82,6 +83,8 @@ export async function setUpWorkspace(
   const facilityState = String(formData.get("facility_state") ?? "").trim();
   const facilityZip = String(formData.get("facility_zip") ?? "").trim();
   const inviteRaw = String(formData.get("invite_emails") ?? "");
+  const industryRaw = String(formData.get("industry") ?? "").trim();
+  const industry = isIndustrySlug(industryRaw) ? industryRaw : null;
 
   if (!workspaceName) return { error: "Workspace name is required" };
   if (workspaceName.length < 2) {
@@ -110,7 +113,7 @@ export async function setUpWorkspace(
   // 4b. Create org
   const { data: org, error: orgErr } = await admin
     .from("orgs")
-    .insert({ name: workspaceName, slug })
+    .insert({ name: workspaceName, slug, industry })
     .select("id, name")
     .single();
   if (orgErr || !org) {
