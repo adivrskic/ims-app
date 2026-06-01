@@ -1,6 +1,7 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { productVelocities } from "@/lib/data/velocity";
+import { sectionPathDistances, type Rect } from "@/lib/data/floorPath";
 
 /**
  * Directed putaway / slotting optimization (roadmap #8), Phase 1 — read-side.
@@ -20,10 +21,13 @@ import { productVelocities } from "@/lib/data/velocity";
  *   5. capacity fit       — respect sections.slot_capacity
  *   6. fill-existing      — top up partially-used slots before opening new ones
  *
- * Distance is centroid Euclidean to the nearest door/staging element. Section
- * rotation rotates about the centre, so the centroid is rotation-invariant — no
- * rotation term is needed for centroid distance. Aisle/path distance is a later
- * refinement (Open decision #4).
+ * Distance is AISLE/PATH travel to the nearest door/staging element: the floor is
+ * rasterized to a grid, racks (sections) + obstacles block cells, walkways carve
+ * passable aisles, and a multi-source BFS from the origins gives each section's
+ * pick-face travel distance — so a slot behind a wall ranks farther than its
+ * straight-line distance suggests (lib/data/floorPath.ts). Falls back to centroid
+ * Euclidean per-section when a section is unreachable on the grid or no origin
+ * exists. (Resolves Open decision #4.)
  */
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -179,8 +183,7 @@ async function loadFacilityCtx(
         .from("layout_elements")
         .select("kind, floor_x, floor_y, floor_width, floor_height")
         .eq("org_id", orgId)
-        .eq("warehouse_id", warehouseId)
-        .in("kind", ["door", "staging"]),
+        .eq("warehouse_id", warehouseId),
       supabase
         .from("locations")
         .select("product_id, section_id, bay, level, quantity")
@@ -190,15 +193,34 @@ async function loadFacilityCtx(
         .eq("quarantined", false), // don't slot QC-held stock
     ]);
 
-  // Travel-distance origins = door + staging centroids.
-  const origins = (
-    (elementRows ?? []) as Array<{
-      floor_x: number;
-      floor_y: number;
-      floor_width: number;
-      floor_height: number;
-    }>
-  ).map(centroidOf);
+  // Partition layout elements: door/staging are travel origins; obstacles join
+  // sections as path blockers; walkways carve passable aisles through blocked space.
+  const elems = (elementRows ?? []) as Array<{
+    kind: string;
+    floor_x: number | string;
+    floor_y: number | string;
+    floor_width: number | string;
+    floor_height: number | string;
+  }>;
+  const toRect = (e: {
+    floor_x: number | string;
+    floor_y: number | string;
+    floor_width: number | string;
+    floor_height: number | string;
+  }): Rect => ({
+    x: Number(e.floor_x),
+    y: Number(e.floor_y),
+    w: Number(e.floor_width),
+    h: Number(e.floor_height),
+  });
+  const originRects = elems
+    .filter((e) => e.kind === "door" || e.kind === "staging")
+    .map(toRect);
+  const obstacleRects = elems
+    .filter((e) => e.kind === "obstacle")
+    .map(toRect);
+  const walkwayRects = elems.filter((e) => e.kind === "walkway").map(toRect);
+  const origins = originRects.map((r) => ({ x: r.x + r.w / 2, y: r.y + r.h / 2 }));
   const hasOrigin = origins.length > 0;
 
   // Raw section rows → context with centroid + nearest-origin distance.
@@ -216,6 +238,16 @@ async function loadFacilityCtx(
     floor_height: number | string;
   }>;
 
+  // Aisle/path travel distance (routes around racks + obstacles, through aisles).
+  // Racks (sections) + obstacles block; door/staging are sources. Falls back to
+  // centroid Euclidean per-section when the grid can't reach it (or no origins).
+  const pathDist = sectionPathDistances({
+    sections: rawSections.map((s) => ({ id: s.id, rect: toRect(s) })),
+    blockers: [...rawSections.map((s) => toRect(s)), ...obstacleRects],
+    walkways: walkwayRects,
+    origins: originRects,
+  });
+
   const withDistance = rawSections.map((s) => {
     const centroid = centroidOf({
       floor_x: Number(s.floor_x),
@@ -223,9 +255,11 @@ async function loadFacilityCtx(
       floor_width: Number(s.floor_width),
       floor_height: Number(s.floor_height),
     });
-    const nearest = hasOrigin
+    const euclid = hasOrigin
       ? Math.min(...origins.map((o) => dist(centroid, o)))
       : null;
+    const path = pathDist.get(s.id) ?? null;
+    const nearest = path ?? euclid;
     return { s, centroid, nearest };
   });
 
