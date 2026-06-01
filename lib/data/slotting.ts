@@ -186,7 +186,8 @@ async function loadFacilityCtx(
         .select("product_id, section_id, bay, level, quantity")
         .eq("org_id", orgId)
         .eq("warehouse_id", warehouseId)
-        .eq("is_active", true),
+        .eq("is_active", true)
+        .eq("quarantined", false), // don't slot QC-held stock
     ]);
 
   // Travel-distance origins = door + staging centroids.
@@ -587,7 +588,8 @@ export async function getSlottingHealth(
     .select("product_id, section_id, bay, level")
     .eq("org_id", orgId)
     .eq("warehouse_id", warehouseId)
-    .eq("is_active", true);
+    .eq("is_active", true)
+    .eq("quarantined", false); // don't slot QC-held stock
 
   const misSlots: MisSlot[] = [];
   let categoryMismatches = 0;

@@ -78,7 +78,8 @@ export async function getStockAvailability(
     .select("product_id, quantity")
     .eq("org_id", orgId)
     .eq("warehouse_id", warehouseId)
-    .eq("is_active", true);
+    .eq("is_active", true)
+    .eq("quarantined", false); // QC-held stock is owned but not available
   if (limitIds) locQ = locQ.in("product_id", [...limitIds]);
   const { data: locs } = await locQ;
 
