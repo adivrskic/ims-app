@@ -2,6 +2,8 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
+import { getCurrentOrgContext } from "@/lib/data/user";
+import { getReasons } from "@/lib/data/adjustments";
 import { SectionDetail } from "./SectionDetail";
 
 export default async function SectionPage({
@@ -11,6 +13,7 @@ export default async function SectionPage({
 }) {
   const { id: facilityId, sectionId } = await params;
   const supabase = await createClient();
+  const ctx = await getCurrentOrgContext();
 
   const { data: section } = await supabase
     .from("sections")
@@ -41,6 +44,11 @@ export default async function SectionPage({
     .eq("is_active", true)
     .order("level", { ascending: false })
     .order("bay", { ascending: true });
+
+  // Active adjustment reasons for the manual-edit reason picker (controlled
+  // vocabulary; a reason flagged requires_approval routes the edit to the queue).
+  const reasonRows = ctx ? await getReasons(supabase, ctx.orgId, true) : [];
+  const reasons = reasonRows.map((r) => ({ code: r.code, label: r.label }));
 
   const locations = (rawLocations ?? []).map((r) => ({
     id: r.id as string,
@@ -100,6 +108,7 @@ export default async function SectionPage({
         totalLevels={section.total_levels ?? 1}
         slotCapacity={section.slot_capacity ?? null}
         locations={locations}
+        reasons={reasons}
       />
     </>
   );
