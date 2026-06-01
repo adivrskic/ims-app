@@ -25,32 +25,65 @@ function oneOf(v: any): any {
   return Array.isArray(v) ? v[0] ?? null : v ?? null;
 }
 
+/**
+ * Fetch every row of a query in 1000-row pages. PostgREST caps a single response
+ * (~1000 rows), so a plain select silently truncates large tables — fatal for
+ * aggregations like inventory on-hand. `build` must apply `.range(from, to)`.
+ */
+const PAGE = 1000;
+async function fetchAllPaged<T>(
+  build: (from: number, to: number) => PromiseLike<{ data: T[] | null }>,
+  cap = 100_000
+): Promise<T[]> {
+  const out: T[] = [];
+  for (let from = 0; from < cap; from += PAGE) {
+    const to = Math.min(from + PAGE, cap) - 1;
+    const { data } = await build(from, to);
+    const rows = (data ?? []) as T[];
+    out.push(...rows);
+    if (rows.length < PAGE) break;
+    if (out.length >= cap) {
+      console.warn(`[reports] hit ${cap}-row cap; output truncated`);
+      break;
+    }
+  }
+  return out;
+}
+
 async function runInventory(
   supabase: Client,
   orgId: string,
   opts: RunOpts
 ): Promise<Row[]> {
-  const [{ data: products }, { data: locs }] = await Promise.all([
-    supabase
-      .from("products")
-      .select(
-        "id, name, internal_sku, manufacturer, unit_cost, reorder_point, category:categories ( name )"
-      )
-      .eq("org_id", orgId)
-      .order("name", { ascending: true }),
-    (() => {
-      let q = supabase
-        .from("locations")
-        .select("product_id, quantity")
+  // Paginate both: a >1000-row product catalog or location set would otherwise
+  // be silently truncated, dropping products and corrupting on-hand totals.
+  // Quarantined stock is still owned, so it counts toward inventory value here.
+  const [products, locs] = await Promise.all([
+    fetchAllPaged<Record<string, unknown>>((from, to) =>
+      supabase
+        .from("products")
+        .select(
+          "id, name, internal_sku, manufacturer, unit_cost, reorder_point, category:categories ( name )"
+        )
         .eq("org_id", orgId)
-        .eq("is_active", true);
-      if (opts.warehouseId) q = q.eq("warehouse_id", opts.warehouseId);
-      return q;
-    })(),
+        .order("name", { ascending: true })
+        .range(from, to)
+    ),
+    fetchAllPaged<{ product_id: string | null; quantity: number | null }>(
+      (from, to) => {
+        let q = supabase
+          .from("locations")
+          .select("product_id, quantity")
+          .eq("org_id", orgId)
+          .eq("is_active", true);
+        if (opts.warehouseId) q = q.eq("warehouse_id", opts.warehouseId);
+        return q.range(from, to);
+      }
+    ),
   ]);
 
   const onHand = new Map<string, number>();
-  for (const l of (locs ?? []) as Array<{ product_id: string | null; quantity: number | null }>) {
+  for (const l of locs) {
     if (!l.product_id) continue;
     onHand.set(l.product_id, (onHand.get(l.product_id) ?? 0) + (l.quantity ?? 0));
   }
@@ -58,8 +91,10 @@ async function runInventory(
   const lowOnly = opts.filters.low_only === "1" || opts.filters.low_only === "true";
   const catFilter = (opts.filters.category ?? "").trim().toLowerCase();
 
+  const limit = opts.limit ?? 1000;
   const rows: Row[] = [];
-  for (const p of (products ?? []) as Array<Record<string, unknown>>) {
+  for (const p of products) {
+    if (rows.length >= limit) break;
     const cat = oneOf(p.category) as { name: string | null } | null;
     const categoryName = cat?.name ?? "";
     if (catFilter && !categoryName.toLowerCase().includes(catFilter)) continue;

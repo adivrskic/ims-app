@@ -71,7 +71,11 @@ async function getDailyDemandSeries(
     if (!r.product_id || !r.scanned_at) continue;
     const d = new Date(r.scanned_at);
     d.setHours(0, 0, 0, 0);
-    const idx = Math.floor((d.getTime() - startMs) / 86_400_000);
+    // Round, not floor: both ends are LOCAL midnights, so across a DST boundary
+    // the gap between two midnights N days apart is N×24h ± 1h. Flooring the
+    // ms-division dropped a unit into the previous day's bucket near the
+    // transition; rounding to the nearest day is DST-safe.
+    const idx = Math.round((d.getTime() - startMs) / 86_400_000);
     if (idx < 0 || idx >= days) continue;
     ensure(r.product_id)[idx] += Math.abs(r.quantity ?? 0);
   }

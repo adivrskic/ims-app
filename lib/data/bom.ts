@@ -91,6 +91,8 @@ export interface BomNode {
   depth: number;
   /** True when this node would recurse into an ancestor (cycle stopped here). */
   cycle: boolean;
+  /** True when children were omitted because MAX_DEPTH was reached (not a cycle). */
+  truncated: boolean;
   children: BomNode[];
 }
 
@@ -135,10 +137,14 @@ export async function getBomTree(
       qtyPerRoot,
       depth,
       cycle: false,
+      truncated: false,
       children: [],
     };
     if (path.has(id) || depth >= MAX_DEPTH) {
-      node.cycle = path.has(id);
+      // Distinguish a cycle stop from a depth-limit stop, and only flag
+      // truncation when there were real children we declined to expand.
+      if (path.has(id)) node.cycle = true;
+      else node.truncated = (graph.get(id)?.length ?? 0) > 0;
       return node;
     }
     const nextPath = new Set(path).add(id);

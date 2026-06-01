@@ -26,6 +26,15 @@ export const WAVE_STATUSES = [
 ] as const;
 export type WaveStatus = (typeof WAVE_STATUSES)[number];
 
+/**
+ * Distance assigned to a task/zone with no known pick slot. A FINITE sentinel,
+ * not Infinity: a WaveDetail can be serialized to a client component, and
+ * `JSON.stringify(Infinity) === "null"` — which broke distance sorting/labels on
+ * the client. Large enough to sort after every real slot. Pair with sectionCode
+ * === "" (or zone === "Unlocated") to detect an unlocated task.
+ */
+const UNLOCATED_DISTANCE = 1e9;
+
 // ── Section zones + travel distance ────────────────────────────────────────
 
 interface SectionZone {
@@ -407,13 +416,13 @@ export async function getWaveDetail(
       sectionCode: slot?.sectionCode ?? "",
       bay: slot?.bay ?? null,
       level: slot?.level ?? null,
-      distance: slot?.distance ?? Number.POSITIVE_INFINITY,
+      distance: slot?.distance ?? UNLOCATED_DISTANCE,
     });
   }
 
   // Group into zones, sorted by zone proximity then walk order within.
   const zoneOf = (t: PickTask): { zone: string; distance: number } => {
-    if (!t.sectionCode) return { zone: "Unlocated", distance: Infinity };
+    if (!t.sectionCode) return { zone: "Unlocated", distance: UNLOCATED_DISTANCE };
     const z = [...zones.values()].find((s) => s.code === t.sectionCode);
     return { zone: z?.zone ?? t.sectionCode, distance: t.distance };
   };
@@ -422,7 +431,7 @@ export async function getWaveDetail(
   for (const t of tasks) {
     const { zone } = zoneOf(t);
     const g =
-      byZone.get(zone) ?? { zone, distance: Infinity, tasks: [], units: 0 };
+      byZone.get(zone) ?? { zone, distance: UNLOCATED_DISTANCE, tasks: [], units: 0 };
     g.tasks.push(t);
     g.units += t.quantity;
     g.distance = Math.min(g.distance, t.distance);

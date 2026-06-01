@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, Pencil } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
+import { getCurrentOrgContext } from "@/lib/data/user";
 import { CornerLink } from "@/components/ui/CornerButton";
 import { FacilityViewer } from "./FacilityViewer";
 import { ELEMENT_PRESETS } from "@/app/(app)/facilities/[id]/builder/elementPresets";
@@ -33,21 +34,11 @@ export default async function FacilityPage({
 
   if (!warehouse) notFound();
 
-  // Permission check for the edit affordance — purely cosmetic, server
-  // still enforces on save.
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  let canEdit = false;
-  if (user) {
-    const { data: m } = await supabase
-      .from("org_members")
-      .select("role")
-      .eq("user_id", user.id)
-      .limit(1)
-      .maybeSingle();
-    canEdit = !!m && ["owner", "admin"].includes(m.role);
-  }
+  // Permission check for the edit affordance — purely cosmetic, server still
+  // enforces on save. Keyed on the granular permission (cookie-aware context),
+  // not role, so a granted member sees the affordance and a revoked admin doesn't.
+  const ctx = await getCurrentOrgContext();
+  const canEdit = ctx?.can("facilities.manage") ?? false;
 
   // Layout + occupancy in parallel. The occupancy aggregate is cheap (one
   // row per section in this warehouse) and lets the viewer tint sections
