@@ -63,13 +63,13 @@ export default function AuthLayout({
         <p className="label-text">© Nautilus</p>
         <nav className="flex items-center gap-20">
           <Link
-            href="https://nimbuswms.com/legal/privacy"
+            href="https://nautilusinventory.com/legal/privacy"
             className="label-text hover:text-text transition-colors"
           >
             Privacy
           </Link>
           <Link
-            href="https://nimbuswms.com/legal/terms"
+            href="https://nautilusinventory.com/legal/terms"
             className="label-text hover:text-text transition-colors"
           >
             Terms
