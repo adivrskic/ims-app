@@ -397,7 +397,10 @@ function scoreSlot(
   // 6. Fill-existing — mild nudge to top up a partly-used compatible slot
   //    before opening a brand-new one (fewer slots per SKU).
   totalWeight += WEIGHTS.fillExisting;
-  if (qty > 0 && (slotHasSku || occ?.productIds.size === 0)) {
+  if (qty > 0 && slotHasSku) {
+    // Topping up a slot already holding this SKU. (The old `|| productIds.size
+    // === 0` arm was dead: a slot with qty > 0 from a real product row always
+    // has that product in its set.)
     weighted += WEIGHTS.fillExisting;
   } else if (qty === 0) {
     weighted += WEIGHTS.fillExisting * 0.5; // empty is neutral-good
