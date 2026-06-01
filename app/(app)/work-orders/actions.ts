@@ -11,17 +11,15 @@ async function nextWoCode(
   supabase: any,
   orgId: string
 ): Promise<string> {
-  const { data: last } = await supabase
-    .from("work_orders")
-    .select("code")
-    .eq("org_id", orgId)
-    .like("code", "WO-%")
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  const n = last?.code?.match(/WO-(\d+)/)?.[1];
-  const next = n ? parseInt(n, 10) + 1 : 1;
-  return `WO-${String(next).padStart(4, "0")}`;
+  // Atomic per-org counter (no read-max race).
+  const { data } = await supabase.rpc("next_document_number", {
+    p_org_id: orgId,
+    p_kind: "WO",
+    p_prefix: "WO",
+    p_pad: 4,
+    p_start: 1,
+  });
+  return data as string;
 }
 
 export async function createWorkOrder(

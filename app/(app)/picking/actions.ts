@@ -11,17 +11,15 @@ async function nextWaveCode(
   supabase: AnyClient,
   orgId: string
 ): Promise<string> {
-  const { data: last } = await supabase
-    .from("pick_waves")
-    .select("code")
-    .eq("org_id", orgId)
-    .like("code", "WAVE-%")
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  const n = last?.code?.match(/WAVE-(\d+)/)?.[1];
-  const next = n ? parseInt(n, 10) + 1 : 1;
-  return `WAVE-${String(next).padStart(4, "0")}`;
+  // Atomic per-org counter (no read-max race).
+  const { data } = await supabase.rpc("next_document_number", {
+    p_org_id: orgId,
+    p_kind: "WAVE",
+    p_prefix: "WAVE",
+    p_pad: 4,
+    p_start: 1,
+  });
+  return data as string;
 }
 
 /** Create a wave from a set of orders and attach them. Returns the wave id. */

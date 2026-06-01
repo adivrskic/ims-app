@@ -133,7 +133,12 @@ export async function setMemberPermissions(formData: FormData): Promise<void> {
     .eq("user_id", userId)
     .eq("org_id", ctx.orgId)
     .maybeSingle();
-  if (!target || (target.role as string) === "owner") return;
+  if (!target) return;
+  const targetRole = target.role as string;
+  if (targetRole === "owner") return;
+  // Admin-vs-admin guard: only an owner may edit a fellow admin's permissions, so
+  // one admin can't strip another's access out from under them.
+  if (targetRole === "admin" && ctx.role !== "owner") return;
 
   const reset = String(formData.get("reset") ?? "") === "1";
   const valid = new Set(ALL_PERMISSIONS as readonly string[]);
@@ -143,6 +148,10 @@ export async function setMemberPermissions(formData: FormData): Promise<void> {
         .getAll("perm")
         .map(String)
         .filter((p) => valid.has(p));
+
+  // Submitting with every box unchecked writes [] — a full lockout that's almost
+  // always an accident. Treat it as a no-op; remove the member to revoke access.
+  if (permissions !== null && permissions.length === 0) return;
 
   await ctx.supabase
     .from("org_members")
