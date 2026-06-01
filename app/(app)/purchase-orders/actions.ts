@@ -193,21 +193,21 @@ export async function createPurchaseOrder(
     ).map((p) => [p.id, p])
   );
 
-  const { data: lastPO } = await ctx.supabase
-    .from("purchase_orders")
-    .select("po_number")
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  const lastNum = lastPO?.po_number?.match(/PO-(\d+)/)?.[1];
-  const nextNum = lastNum ? parseInt(lastNum, 10) + 1 : 2049;
+  // Next PO number — atomic per-org counter (no read-max race).
+  const { data: poNumber } = await ctx.supabase.rpc("next_document_number", {
+    p_org_id: ctx.orgId,
+    p_kind: "PO",
+    p_prefix: "PO",
+    p_pad: 0,
+    p_start: 2049,
+  });
 
   const { data: newPO, error: poErr } = await ctx.supabase
     .from("purchase_orders")
     .insert({
       org_id: ctx.orgId,
       warehouse_id: warehouseId,
-      po_number: `PO-${nextNum}`,
+      po_number: poNumber as string,
       supplier_id: supplier.id,
       supplier_name: supplier.name,
       supplier_contact: supplier.email,

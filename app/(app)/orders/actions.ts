@@ -107,16 +107,14 @@ export async function createOrder(
     }
   }
 
-  // Generate next order number
-  const { data: lastOrder } = await ctx.supabase
-    .from("orders")
-    .select("order_number")
-    .like("order_number", "ORD-%")
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  const lastNum = lastOrder?.order_number?.match(/ORD-(\d+)/)?.[1];
-  const nextNum = lastNum ? parseInt(lastNum, 10) + 1 : 1049;
+  // Next order number — atomic per-org counter (no read-max race).
+  const { data: orderNumber } = await ctx.supabase.rpc("next_document_number", {
+    p_org_id: ctx.orgId,
+    p_kind: "ORD",
+    p_prefix: "ORD",
+    p_pad: 0,
+    p_start: 1049,
+  });
 
   const { data: newOrder, error: orderErr } = await ctx.supabase
     .from("orders")
@@ -125,7 +123,7 @@ export async function createOrder(
       warehouse_id: warehouseId,
       order_type: orderType,
       status: "created" as OrderStatus,
-      order_number: `ORD-${nextNum}`,
+      order_number: orderNumber as string,
       destination_warehouse_id:
         orderType === "internal_transfer" ? destinationWarehouseId : null,
       customer_name: customerName || null,
