@@ -3,6 +3,7 @@
 import { useActionState, useState } from "react";
 import { Plus, AlertTriangle } from "lucide-react";
 import { Input } from "@/components/ui/Input";
+import { Select } from "@/components/ui/Select";
 import { CornerButton } from "@/components/ui/CornerButton";
 import { REPORT_DATASETS_META, getDatasetMeta } from "@/lib/reports-meta";
 import { saveReport } from "./actions";
@@ -16,22 +17,17 @@ export function ReportBuilder() {
     <form action={action} className="hairline bg-[var(--surface)] p-20 flex flex-col gap-16">
       <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
         <Input label="Report name" name="name" type="text" maxLength={80} required />
-        <label className="field-shell block" data-filled="true">
-          <span className="field-label">Dataset</span>
-          {/* Remount-free: dataset drives the columns/filters below via state. */}
-          <select
-            name="dataset"
-            value={datasetId}
-            onChange={(e) => setDatasetId(e.target.value)}
-            className="field-input w-full"
-          >
-            {REPORT_DATASETS_META.map((d) => (
-              <option key={d.id} value={d.id}>
-                {d.label}
-              </option>
-            ))}
-          </select>
-        </label>
+        {/* Remount-free: dataset drives the columns/filters below via state. */}
+        <Select
+          label="Dataset"
+          name="dataset"
+          value={datasetId}
+          onChange={setDatasetId}
+          options={REPORT_DATASETS_META.map((d) => ({
+            value: d.id,
+            label: d.label,
+          }))}
+        />
       </div>
       <p className="mono-sm text-text-dim">{meta.description}</p>
 
@@ -71,13 +67,16 @@ export function ReportBuilder() {
                     Yes
                   </label>
                 ) : f.type === "select" ? (
-                  <select name={`f_${f.key}`} className="field-input" defaultValue="">
-                    {(f.options ?? []).map((o) => (
-                      <option key={o.value} value={o.value}>
-                        {o.label}
-                      </option>
-                    ))}
-                  </select>
+                  <Select
+                    name={`f_${f.key}`}
+                    defaultValue=""
+                    compact
+                    ariaLabel={f.label}
+                    options={(f.options ?? []).map((o) => ({
+                      value: o.value,
+                      label: o.label,
+                    }))}
+                  />
                 ) : (
                   <input
                     type={f.type === "date" ? "date" : "text"}

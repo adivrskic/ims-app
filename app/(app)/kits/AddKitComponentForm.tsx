@@ -3,6 +3,7 @@
 import { useActionState, useEffect, useRef } from "react";
 import { Plus } from "lucide-react";
 import { CornerButton } from "@/components/ui/CornerButton";
+import { Select } from "@/components/ui/Select";
 import { addKitComponent } from "./actions";
 
 interface ProductOption {
@@ -33,25 +34,19 @@ export function AddKitComponentForm({ kitProductId, products }: Props) {
     >
       <input type="hidden" name="kit_product_id" value={kitProductId} />
 
-      <label className="field-shell block flex-1 min-w-[180px]" data-filled="true">
-        <span className="field-label">Add component</span>
-        <select
-          name="component_product_id"
-          required
-          defaultValue=""
-          className="field-input cursor-pointer"
-          aria-label="Component product"
-        >
-          <option value="" disabled>
-            — Select product —
-          </option>
-          {products.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.name} · {p.barcode}
-            </option>
-          ))}
-        </select>
-      </label>
+      <Select
+        label="Add component"
+        name="component_product_id"
+        required
+        placeholder="— Select product —"
+        ariaLabel="Component product"
+        className="flex-1 min-w-[180px]"
+        options={products.map((p) => ({
+          value: p.id,
+          label: p.name,
+          hint: p.barcode,
+        }))}
+      />
 
       <label className="field-shell block w-[96px]" data-filled="true">
         <span className="field-label">Qty / kit</span>

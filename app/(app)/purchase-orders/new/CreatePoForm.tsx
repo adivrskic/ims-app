@@ -4,6 +4,7 @@ import { useActionState, useMemo, useState } from "react";
 import Link from "next/link";
 import { Plus, Trash2 } from "lucide-react";
 import { Input } from "@/components/ui/Input";
+import { Select } from "@/components/ui/Select";
 import { CornerButton, CornerLink } from "@/components/ui/CornerButton";
 import { createPurchaseOrder } from "../actions";
 
@@ -144,24 +145,19 @@ export function CreatePoForm({ products, warehouses, suppliers }: Props) {
           </Link>
         </header>
 
-        <label className="field-shell block" data-filled="true">
-          <span className="field-label">Supplier</span>
-          <select
-            name="supplier_id"
-            value={supplierId}
-            onChange={(e) => setSupplierId(e.target.value)}
-            required
-            className="field-input cursor-pointer"
-            aria-label="Supplier"
-          >
-            {suppliers.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name}
-                {s.payment_terms ? ` · ${s.payment_terms}` : ""}
-              </option>
-            ))}
-          </select>
-        </label>
+        <Select
+          label="Supplier"
+          name="supplier_id"
+          value={supplierId}
+          onChange={setSupplierId}
+          required
+          ariaLabel="Supplier"
+          options={suppliers.map((s) => ({
+            value: s.id,
+            label: s.name,
+            hint: s.payment_terms ?? undefined,
+          }))}
+        />
 
         {selectedSupplier && (
           <div className="hairline-subtle bg-[var(--surface-2)] px-14 py-10 grid grid-cols-1 md:grid-cols-2 gap-8">
@@ -200,21 +196,14 @@ export function CreatePoForm({ products, warehouses, suppliers }: Props) {
         </header>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
-          <label className="field-shell block" data-filled="true">
-            <span className="field-label">Facility</span>
-            <select
-              name="warehouse_id"
-              defaultValue={warehouses[0]?.id ?? ""}
-              required
-              className="field-input cursor-pointer"
-            >
-              {warehouses.map((w) => (
-                <option key={w.id} value={w.id}>
-                  {w.name}
-                </option>
-              ))}
-            </select>
-          </label>
+          <Select
+            label="Facility"
+            name="warehouse_id"
+            defaultValue={warehouses[0]?.id ?? ""}
+            required
+            ariaLabel="Facility"
+            options={warehouses.map((w) => ({ value: w.id, label: w.name }))}
+          />
           <Input label="Expected delivery" name="expected_date" type="date" />
         </div>
       </section>
@@ -258,27 +247,19 @@ export function CreatePoForm({ products, warehouses, suppliers }: Props) {
                 {String(idx + 1).padStart(2, "0")}
               </span>
 
-              <label
-                className="field-shell flex-1 block min-w-0"
-                data-filled={item.product_id ? "true" : "false"}
-              >
-                <span className="field-label">Product</span>
-                <select
-                  value={item.product_id}
-                  onChange={(e) =>
-                    updateItem(item.uid, { product_id: e.target.value })
-                  }
-                  className="field-input cursor-pointer"
-                  aria-label={`Product for line ${idx + 1}`}
-                >
-                  <option value="">— Select —</option>
-                  {products.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name} · {p.barcode}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              <Select
+                className="flex-1 min-w-0"
+                label="Product"
+                value={item.product_id}
+                onChange={(v) => updateItem(item.uid, { product_id: v })}
+                ariaLabel={`Product for line ${idx + 1}`}
+                placeholder="— Select —"
+                options={products.map((p) => ({
+                  value: p.id,
+                  label: p.name,
+                  hint: p.barcode,
+                }))}
+              />
 
               <label
                 className="field-shell shrink-0 block w-[120px]"

@@ -142,6 +142,19 @@ export function Select({
     return () => document.removeEventListener("mousedown", onPointer);
   }, [open]);
 
+  // Clear with the enclosing <form> on native reset. Native <select> does this
+  // for free; since our value lives in React state, mirror it so uncontrolled
+  // Selects clear when a form calls form.reset() (e.g. after a successful
+  // submit). Controlled Selects are owned by their parent — skip.
+  useEffect(() => {
+    if (isControlled) return;
+    const form = rootRef.current?.closest("form");
+    if (!form) return;
+    const onReset = () => setInternalValue(defaultValue ?? "");
+    form.addEventListener("reset", onReset);
+    return () => form.removeEventListener("reset", onReset);
+  }, [isControlled, defaultValue]);
+
   // Focus search input when opening; reset highlight to current selection.
   useEffect(() => {
     if (!open) {

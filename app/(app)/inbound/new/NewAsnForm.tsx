@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Plus, Trash2, Loader2 } from "lucide-react";
+import { Select } from "@/components/ui/Select";
 import { createAsn } from "../actions";
 
 interface Opt {
@@ -73,20 +74,32 @@ export function NewAsnForm({
       )}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-12">
-        <label className="flex flex-col gap-4">
+        <div className="flex flex-col gap-4">
           <span className="label-text text-text-muted">Supplier</span>
-          <select name="supplier_id" className={field} style={fieldStyle} defaultValue="">
-            <option value="">— none —</option>
-            {suppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-          </select>
-        </label>
-        <label className="flex flex-col gap-4">
+          <Select
+            name="supplier_id"
+            defaultValue=""
+            ariaLabel="Supplier"
+            compact
+            options={[
+              { value: "", label: "— none —" },
+              ...suppliers.map((s) => ({ value: s.id, label: s.name })),
+            ]}
+          />
+        </div>
+        <div className="flex flex-col gap-4">
           <span className="label-text text-text-muted">Destination facility</span>
-          <select name="warehouse_id" className={field} style={fieldStyle} defaultValue={warehouses[0]?.id ?? ""}>
-            <option value="">— none —</option>
-            {warehouses.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
-          </select>
-        </label>
+          <Select
+            name="warehouse_id"
+            defaultValue={warehouses[0]?.id ?? ""}
+            ariaLabel="Destination facility"
+            compact
+            options={[
+              { value: "", label: "— none —" },
+              ...warehouses.map((w) => ({ value: w.id, label: w.name })),
+            ]}
+          />
+        </div>
         <label className="flex flex-col gap-4">
           <span className="label-text text-text-muted">Supplier ref #</span>
           <input name="reference" className={field} style={fieldStyle} />

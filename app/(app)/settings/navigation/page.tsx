@@ -7,6 +7,7 @@ import { defaultNavPrefs } from "@/lib/navData";
 import { INDUSTRIES, getIndustry } from "@/lib/industries";
 import { SectionTitle } from "@/components/ui/SectionTitle";
 import { CornerButton } from "@/components/ui/CornerButton";
+import { Select } from "@/components/ui/Select";
 import { NavCustomizer } from "./NavCustomizer";
 import { updateIndustry } from "./actions";
 
@@ -40,22 +41,18 @@ export default async function NavigationSettingsPage() {
             action={updateIndustry}
             className="hairline bg-[var(--surface)] p-16 flex flex-col sm:flex-row sm:items-end gap-12"
           >
-            <label className="field-shell block flex-1" data-filled="true">
-              <span className="field-label">Industry</span>
-              <select
-                name="industry"
-                defaultValue={industry ?? ""}
-                className="field-input cursor-pointer"
-                aria-label="Industry"
-              >
-                <option value="">— None —</option>
-                {INDUSTRIES.map((ind) => (
-                  <option key={ind.slug} value={ind.slug}>
-                    {ind.label}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <Select
+              label="Industry"
+              name="industry"
+              defaultValue={industry ?? ""}
+              ariaLabel="Industry"
+              placeholder="— None —"
+              className="flex-1"
+              options={INDUSTRIES.map((ind) => ({
+                value: ind.slug,
+                label: ind.label,
+              }))}
+            />
             <CornerButton type="submit" variant="ghost" size="sm">
               Save industry
             </CornerButton>

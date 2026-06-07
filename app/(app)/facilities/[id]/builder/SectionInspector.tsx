@@ -2,6 +2,7 @@
 
 import { Trash2 } from "lucide-react";
 import { Input } from "@/components/ui/Input";
+import { Select } from "@/components/ui/Select";
 import { CornerButton } from "@/components/ui/CornerButton";
 import type { SectionDraft, CategoryOption } from "./types";
 
@@ -133,28 +134,16 @@ export function SectionInspector({
       </div>
 
       <div className="hairline-t pt-12">
-        <label
-          className="label-text text-text-muted block mb-6"
-          htmlFor="section-category"
-        >
+        <label className="label-text text-text-muted block mb-6">
           Default category
         </label>
-        <select
-          id="section-category"
+        <Select
           value={section.default_category ?? ""}
-          onChange={(e) =>
-            onUpdate({ default_category: e.target.value || null })
-          }
-          className="field-input w-full"
-          style={{ fontFamily: "var(--mono)", fontSize: 12 }}
-        >
-          <option value="">No preference</option>
-          {categories.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.name}
-            </option>
-          ))}
-        </select>
+          onChange={(v) => onUpdate({ default_category: v || null })}
+          ariaLabel="Default category"
+          placeholder="No preference"
+          options={categories.map((c) => ({ value: c.id, label: c.name }))}
+        />
         <p className="mono-sm text-text-dim mt-6" style={{ fontSize: 10 }}>
           Slotting prefers homing this category's products here.
         </p>

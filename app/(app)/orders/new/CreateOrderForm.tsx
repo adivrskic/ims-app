@@ -3,6 +3,7 @@
 import { useActionState, useMemo, useState } from "react";
 import { Plus, Trash2 } from "lucide-react";
 import { Input } from "@/components/ui/Input";
+import { Select } from "@/components/ui/Select";
 import { CornerButton, CornerLink } from "@/components/ui/CornerButton";
 import { createOrder } from "../actions";
 
@@ -123,63 +124,35 @@ export function CreateOrderForm({ products, warehouses, initialType }: Props) {
         </header>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
-          <label className="field-shell block" data-filled="true">
-            <span className="field-label">Order type</span>
-            <select
-              name="order_type"
-              value={orderType}
-              onChange={(e) => setOrderType(e.target.value)}
-              required
-              className="field-input cursor-pointer"
-              aria-label="Order type"
-            >
-              {ORDER_TYPES.map((t) => (
-                <option key={t.value} value={t.value}>
-                  {t.label}
-                </option>
-              ))}
-            </select>
-          </label>
+          <Select
+            label="Order type"
+            name="order_type"
+            value={orderType}
+            onChange={setOrderType}
+            required
+            ariaLabel="Order type"
+            options={ORDER_TYPES.map((t) => ({ value: t.value, label: t.label }))}
+          />
 
-          <label className="field-shell block" data-filled="true">
-            <span className="field-label">
-              {isTransfer ? "Source facility" : "Facility"}
-            </span>
-            <select
-              name="warehouse_id"
-              defaultValue={warehouses[0]?.id ?? ""}
-              required
-              className="field-input cursor-pointer"
-              aria-label={isTransfer ? "Source facility" : "Facility"}
-            >
-              {warehouses.map((w) => (
-                <option key={w.id} value={w.id}>
-                  {w.name}
-                </option>
-              ))}
-            </select>
-          </label>
+          <Select
+            label={isTransfer ? "Source facility" : "Facility"}
+            name="warehouse_id"
+            defaultValue={warehouses[0]?.id ?? ""}
+            required
+            ariaLabel={isTransfer ? "Source facility" : "Facility"}
+            options={warehouses.map((w) => ({ value: w.id, label: w.name }))}
+          />
 
           {isTransfer && (
-            <label className="field-shell block" data-filled="true">
-              <span className="field-label">Destination facility</span>
-              <select
-                name="destination_warehouse_id"
-                defaultValue=""
-                required
-                className="field-input cursor-pointer"
-                aria-label="Destination facility"
-              >
-                <option value="" disabled>
-                  — Select —
-                </option>
-                {warehouses.map((w) => (
-                  <option key={w.id} value={w.id}>
-                    {w.name}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <Select
+              label="Destination facility"
+              name="destination_warehouse_id"
+              defaultValue=""
+              required
+              ariaLabel="Destination facility"
+              placeholder="— Select —"
+              options={warehouses.map((w) => ({ value: w.id, label: w.name }))}
+            />
           )}
         </div>
       </section>
@@ -285,27 +258,19 @@ export function CreateOrderForm({ products, warehouses, initialType }: Props) {
                 {String(idx + 1).padStart(2, "0")}
               </span>
 
-              <label
-                className="field-shell flex-1 block min-w-0"
-                data-filled={item.product_id ? "true" : "false"}
-              >
-                <span className="field-label">Product</span>
-                <select
-                  value={item.product_id}
-                  onChange={(e) =>
-                    updateItem(item.uid, { product_id: e.target.value })
-                  }
-                  className="field-input cursor-pointer"
-                  aria-label={`Product for line ${idx + 1}`}
-                >
-                  <option value="">— Select —</option>
-                  {products.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name} · {p.barcode}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              <Select
+                className="flex-1 min-w-0"
+                label="Product"
+                value={item.product_id}
+                onChange={(v) => updateItem(item.uid, { product_id: v })}
+                ariaLabel={`Product for line ${idx + 1}`}
+                placeholder="— Select —"
+                options={products.map((p) => ({
+                  value: p.id,
+                  label: p.name,
+                  hint: p.barcode,
+                }))}
+              />
 
               <label
                 className="field-shell shrink-0 block w-[120px]"

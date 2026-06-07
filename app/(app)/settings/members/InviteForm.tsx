@@ -2,6 +2,7 @@
 
 import { useActionState, useEffect, useRef } from "react";
 import { Input } from "@/components/ui/Input";
+import { Select } from "@/components/ui/Select";
 import { CornerButton } from "@/components/ui/CornerButton";
 import { inviteMember } from "../actions";
 
@@ -50,18 +51,16 @@ export function InviteForm() {
           />
         </div>
         <div className="md:w-[180px]">
-          <label className="field-shell block" data-filled="true">
-            <span className="field-label">Role</span>
-            <select
-              name="role"
-              defaultValue="member"
-              className="field-input cursor-pointer"
-              aria-label="Role"
-            >
-              <option value="member">Member</option>
-              <option value="admin">Admin</option>
-            </select>
-          </label>
+          <Select
+            label="Role"
+            name="role"
+            defaultValue="member"
+            ariaLabel="Role"
+            options={[
+              { value: "member", label: "Member" },
+              { value: "admin", label: "Admin" },
+            ]}
+          />
         </div>
       </div>
 
