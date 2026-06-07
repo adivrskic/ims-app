@@ -3,6 +3,7 @@
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { useTransition } from "react";
 import { Building2, Calendar } from "lucide-react";
+import { Select } from "@/components/ui/Select";
 import { RANGES, type Range, rangeLabel } from "@/lib/scope";
 
 interface Warehouse {
@@ -66,20 +67,16 @@ export function ScopeFilter({
           className="text-text-dim shrink-0"
         />
         <span className="label-text text-text-muted">Facility</span>
-        <select
+        <Select
           value={currentWarehouseId ?? ""}
-          onChange={(e) => setParam("warehouse", e.target.value || null)}
-          className="hairline-subtle bg-[var(--surface-2)] mono-sm text-text px-10 py-5 cursor-pointer hover:border-[var(--border-hover)] focus:border-[var(--accent)] outline-none transition-colors"
-          aria-label="Filter by facility"
+          onChange={(v) => setParam("warehouse", v || null)}
+          ariaLabel="Filter by facility"
+          compact
           disabled={pending}
-        >
-          <option value="">All facilities</option>
-          {warehouses.map((w) => (
-            <option key={w.id} value={w.id}>
-              {w.name}
-            </option>
-          ))}
-        </select>
+          placeholder="All facilities"
+          className="min-w-[180px]"
+          options={warehouses.map((w) => ({ value: w.id, label: w.name }))}
+        />
       </label>
 
       {!rangeHidden && (

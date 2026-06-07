@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Printer, Check, Loader2, AlertTriangle, X } from "lucide-react";
 import { CornerButton } from "@/components/ui/CornerButton";
+import { Select } from "@/components/ui/Select";
 import { usePrinter } from "./PrinterProvider";
 import { productLabel, gs1ProductLabel } from "@/lib/print/zplTemplates";
 
@@ -133,19 +134,18 @@ export function BulkProductLabelButton({
 
   return (
     <span className="inline-flex items-center gap-8">
-      <label className="field-shell" data-filled="true" style={{ minWidth: 132 }}>
-        <span className="field-label">Format</span>
-        <select
-          value={format}
-          onChange={(e) => setFormat(e.target.value as "standard" | "gs1")}
-          className="field-input cursor-pointer"
-          aria-label="Label format"
-          style={{ paddingTop: 14, paddingBottom: 4, height: 34 }}
-        >
-          <option value="standard">Standard (Code-128)</option>
-          <option value="gs1">GS1-128</option>
-        </select>
-      </label>
+      <Select
+        label="Format"
+        value={format}
+        onChange={(v) => setFormat(v as "standard" | "gs1")}
+        ariaLabel="Label format"
+        compact
+        className="min-w-[132px]"
+        options={[
+          { value: "standard", label: "Standard (Code-128)" },
+          { value: "gs1", label: "GS1-128" },
+        ]}
+      />
       <CornerButton type="button" variant={variant} size={size} onClick={handleClick} disabled={total === 0}>
         <Printer size={11} strokeWidth={1.5} />
         {buttonLabel}

@@ -3,6 +3,7 @@
 import { useActionState, useEffect, useRef } from "react";
 import { Hammer } from "lucide-react";
 import { CornerButton } from "@/components/ui/CornerButton";
+import { Select } from "@/components/ui/Select";
 import { buildKit } from "./actions";
 
 interface WarehouseOption {
@@ -41,18 +42,14 @@ export function BuildKitForm({ kitProductId, warehouses }: Props) {
         className="hairline-subtle bg-[var(--surface-2)] mono-sm tnum text-text px-8 py-4 text-right w-[56px] focus:border-[var(--accent)] outline-none"
         aria-label="Quantity to build"
       />
-      <select
+      <Select
         name="warehouse_id"
         defaultValue={warehouses[0]?.id ?? ""}
-        className="hairline-subtle bg-[var(--surface-2)] mono-sm text-text px-8 py-4 focus:border-[var(--accent)] outline-none cursor-pointer max-w-[140px]"
-        aria-label="Build at facility"
-      >
-        {warehouses.map((w) => (
-          <option key={w.id} value={w.id}>
-            {w.name}
-          </option>
-        ))}
-      </select>
+        ariaLabel="Build at facility"
+        compact
+        className="max-w-[140px]"
+        options={warehouses.map((w) => ({ value: w.id, label: w.name }))}
+      />
       <CornerButton type="submit" variant="ghost" size="sm" loading={pending}>
         <Hammer size={11} strokeWidth={1.5} />
         Build

@@ -1,10 +1,12 @@
 "use client";
 
 import { useActionState, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { Plus, X } from "lucide-react";
 import { CornerButton } from "@/components/ui/CornerButton";
 import { Input } from "@/components/ui/Input";
+import { Select } from "@/components/ui/Select";
 import { createProduct } from "./actions";
 
 interface Category {
@@ -34,9 +36,13 @@ export function RegisterProductButton({
   initialBarcode,
 }: Props) {
   const [open, setOpen] = useState<boolean>(Boolean(initialBarcode));
+  // Portals can only target document.body after mount (SSR has no DOM).
+  const [mounted, setMounted] = useState(false);
   const [state, formAction, pending] = useActionState(createProduct, undefined);
   const formRef = useRef<HTMLFormElement>(null);
   const router = useRouter();
+
+  useEffect(() => setMounted(true), []);
 
   // On success: close modal + navigate to product detail
   useEffect(() => {
@@ -81,7 +87,9 @@ export function RegisterProductButton({
         <Plus size={12} strokeWidth={1.5} /> Register product
       </CornerButton>
 
-      {open && (
+      {open &&
+        mounted &&
+        createPortal(
         <div
           role="dialog"
           aria-modal="true"
@@ -163,22 +171,17 @@ export function RegisterProductButton({
                   autoComplete="off"
                 />
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
-                  <label className="field-shell block" data-filled="true">
-                    <span className="field-label">Category</span>
-                    <select
-                      name="category_id"
-                      defaultValue=""
-                      className="field-input cursor-pointer"
-                      aria-label="Category"
-                    >
-                      <option value="">Uncategorized</option>
-                      {categories.map((c) => (
-                        <option key={c.id} value={c.id}>
-                          {c.name}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
+                  <Select
+                    label="Category"
+                    name="category_id"
+                    defaultValue=""
+                    ariaLabel="Category"
+                    placeholder="Uncategorized"
+                    options={categories.map((c) => ({
+                      value: c.id,
+                      label: c.name,
+                    }))}
+                  />
                   <Input
                     label="Manufacturer"
                     name="manufacturer"
@@ -252,26 +255,20 @@ export function RegisterProductButton({
                     min={0}
                     placeholder="e.g. 14"
                   />
-                  <label className="field-shell block" data-filled="true">
-                    <span className="field-label">Preferred supplier</span>
-                    <select
-                      name="preferred_supplier_id"
-                      defaultValue=""
-                      className="field-input cursor-pointer"
-                      aria-label="Preferred supplier"
-                    >
-                      <option value="">
-                        {suppliers.length === 0
-                          ? "No suppliers yet"
-                          : "— Select —"}
-                      </option>
-                      {suppliers.map((s) => (
-                        <option key={s.id} value={s.id}>
-                          {s.name}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
+                  <Select
+                    label="Preferred supplier"
+                    name="preferred_supplier_id"
+                    defaultValue=""
+                    ariaLabel="Preferred supplier"
+                    placeholder={
+                      suppliers.length === 0 ? "No suppliers yet" : "— Select —"
+                    }
+                    disabled={suppliers.length === 0}
+                    options={suppliers.map((s) => ({
+                      value: s.id,
+                      label: s.name,
+                    }))}
+                  />
                 </div>
                 {suppliers.length === 0 && (
                   <p className="mono-sm text-text-dim">
@@ -320,8 +317,9 @@ export function RegisterProductButton({
               </div>
             </form>
           </div>
-        </div>
-      )}
+        </div>,
+          document.body
+        )}
     </>
   );
 }

@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, useTransition } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Search, X, Loader2, AlertTriangle } from "lucide-react";
+import { Select } from "@/components/ui/Select";
 
 interface Category {
   id: string;
@@ -133,19 +134,15 @@ export function InventoryToolbar({ categories }: Props) {
           )}
         </div>
 
-        <select
+        <Select
           value={activeCategory}
-          onChange={(e) => onCategoryChange(e.target.value)}
-          aria-label="Filter by category"
-          className="field-shell py-8 px-12 mono-sm"
-        >
-          <option value="">All categories</option>
-          {categories.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.name}
-            </option>
-          ))}
-        </select>
+          onChange={onCategoryChange}
+          ariaLabel="Filter by category"
+          compact
+          placeholder="All categories"
+          className="min-w-[180px]"
+          options={categories.map((c) => ({ value: c.id, label: c.name }))}
+        />
 
         <button
           type="button"

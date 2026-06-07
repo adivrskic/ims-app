@@ -2,6 +2,7 @@
 
 import { useActionState, useEffect, useRef } from "react";
 import { Input } from "@/components/ui/Input";
+import { Select } from "@/components/ui/Select";
 import { CornerButton } from "@/components/ui/CornerButton";
 import { createLot } from "./actions";
 
@@ -46,25 +47,17 @@ export function RegisterLotForm({ products, suppliers }: Props) {
       className="hairline bg-[var(--surface)] p-20 flex flex-col gap-14"
     >
       <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
-        <label className="field-shell block" data-filled="true">
-          <span className="field-label">Product</span>
-          <select
-            name="product_id"
-            required
-            className="field-input cursor-pointer"
-            aria-label="Product"
-            defaultValue=""
-          >
-            <option value="" disabled>
-              — Select —
-            </option>
-            {products.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name} · {p.barcode}
-              </option>
-            ))}
-          </select>
-        </label>
+        <Select
+          label="Product"
+          name="product_id"
+          required
+          ariaLabel="Product"
+          options={products.map((p) => ({
+            value: p.id,
+            label: p.name,
+            hint: p.barcode,
+          }))}
+        />
 
         <Input
           label="Lot / batch number"
@@ -75,22 +68,13 @@ export function RegisterLotForm({ products, suppliers }: Props) {
 
         <Input label="Expiry date (optional)" name="expires_at" type="date" />
 
-        <label className="field-shell block" data-filled="true">
-          <span className="field-label">Supplier (optional)</span>
-          <select
-            name="supplier_id"
-            defaultValue=""
-            className="field-input cursor-pointer"
-            aria-label="Supplier"
-          >
-            <option value="">— None —</option>
-            {suppliers.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name}
-              </option>
-            ))}
-          </select>
-        </label>
+        <Select
+          label="Supplier (optional)"
+          name="supplier_id"
+          placeholder="— None —"
+          ariaLabel="Supplier"
+          options={suppliers.map((s) => ({ value: s.id, label: s.name }))}
+        />
       </div>
 
       <label className="field-shell block">

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { AlertTriangle, Check, Loader2 } from "lucide-react";
 import { CornerButton } from "@/components/ui/CornerButton";
 import { Input } from "@/components/ui/Input";
+import { Select } from "@/components/ui/Select";
 import { PAYMENT_TERMS_OPTIONS, type PaymentTerms } from "../customers/types";
 import { createSupplier, updateSupplier } from "./actions";
 import type { Supplier, SupplierInput } from "./types";
@@ -193,26 +194,15 @@ export function SupplierForm({ mode, initialData }: Props) {
 
       <Section title="Commercial">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
-          <div>
-            <label
-              className="label-text text-text-muted mb-4 block"
-              htmlFor="payment-terms"
-            >
-              Payment terms
-            </label>
-            <select
-              id="payment-terms"
-              value={paymentTerms}
-              onChange={(e) => setPaymentTerms(e.target.value as PaymentTerms)}
-              className="field-input w-full"
-            >
-              {PAYMENT_TERMS_OPTIONS.map((opt) => (
-                <option key={opt.value} value={opt.value}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
-          </div>
+          <Select
+            label="Payment terms"
+            value={paymentTerms}
+            onChange={(v) => setPaymentTerms(v as PaymentTerms)}
+            options={PAYMENT_TERMS_OPTIONS.map((opt) => ({
+              value: opt.value,
+              label: opt.label,
+            }))}
+          />
           <Input
             label="Default lead time (days)"
             type="number"

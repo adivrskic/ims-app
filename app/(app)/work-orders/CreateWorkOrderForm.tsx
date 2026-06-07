@@ -4,6 +4,7 @@ import { useActionState } from "react";
 import { Hammer, AlertTriangle } from "lucide-react";
 import { CornerButton } from "@/components/ui/CornerButton";
 import { Input } from "@/components/ui/Input";
+import { Select } from "@/components/ui/Select";
 import { createWorkOrder } from "./actions";
 
 interface Props {
@@ -26,26 +27,20 @@ export function CreateWorkOrderForm({ kits, facilities }: Props) {
   return (
     <form action={action} className="flex flex-col gap-12">
       <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
-        <label className="field-shell block" data-filled="true">
-          <span className="field-label">Kit to build</span>
-          <select name="product_id" className="field-input w-full" required>
-            {kits.map((k) => (
-              <option key={k.id} value={k.id}>
-                {k.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="field-shell block" data-filled="true">
-          <span className="field-label">Facility</span>
-          <select name="warehouse_id" className="field-input w-full" required>
-            {facilities.map((f) => (
-              <option key={f.id} value={f.id}>
-                {f.name}
-              </option>
-            ))}
-          </select>
-        </label>
+        <Select
+          label="Kit to build"
+          name="product_id"
+          required
+          ariaLabel="Kit to build"
+          options={kits.map((k) => ({ value: k.id, label: k.name }))}
+        />
+        <Select
+          label="Facility"
+          name="warehouse_id"
+          required
+          ariaLabel="Facility"
+          options={facilities.map((f) => ({ value: f.id, label: f.name }))}
+        />
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
         <Input

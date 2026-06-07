@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { CornerButton } from "@/components/ui/CornerButton";
 import { Input } from "@/components/ui/Input";
+import { Select } from "@/components/ui/Select";
 import {
   searchProducts,
   placeLocation,
@@ -910,21 +911,18 @@ function LocationCard({
                 {parsed - (loc.quantity ?? 0)})
               </span>
               {reasons.length > 0 && (
-                <select
+                <Select
                   value={reasonCode}
                   disabled={busy}
-                  onChange={(e) => setReasonCode(e.target.value)}
-                  aria-label="Adjustment reason"
-                  className="hairline-subtle bg-[var(--surface-2)] px-6 py-4 text-text disabled:opacity-50 w-full"
-                  style={{ fontFamily: "var(--mono)", fontSize: 10 }}
-                >
-                  <option value="">Reason (optional)…</option>
-                  {reasons.map((r) => (
-                    <option key={r.code} value={r.code}>
-                      {r.label}
-                    </option>
-                  ))}
-                </select>
+                  onChange={setReasonCode}
+                  ariaLabel="Adjustment reason"
+                  compact
+                  placeholder="Reason (optional)…"
+                  options={reasons.map((r) => ({
+                    value: r.code,
+                    label: r.label,
+                  }))}
+                />
               )}
               <div className="flex items-center gap-6">
                 <button

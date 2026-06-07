@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { AlertTriangle, Check, Loader2, User, Building2 } from "lucide-react";
 import { CornerButton } from "@/components/ui/CornerButton";
 import { Input } from "@/components/ui/Input";
+import { Select } from "@/components/ui/Select";
 import { createCustomer, updateCustomer } from "./actions";
 import {
   PAYMENT_TERMS_OPTIONS,
@@ -210,26 +211,15 @@ export function CustomerForm({ mode, initialData }: Props) {
 
       <Section title="Commercial">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
-          <div>
-            <label
-              className="label-text text-text-muted mb-4 block"
-              htmlFor="payment-terms"
-            >
-              Payment terms
-            </label>
-            <select
-              id="payment-terms"
-              value={paymentTerms}
-              onChange={(e) => setPaymentTerms(e.target.value as PaymentTerms)}
-              className="field-input w-full"
-            >
-              {PAYMENT_TERMS_OPTIONS.map((opt) => (
-                <option key={opt.value} value={opt.value}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
-          </div>
+          <Select
+            label="Payment terms"
+            value={paymentTerms}
+            onChange={(v) => setPaymentTerms(v as PaymentTerms)}
+            options={PAYMENT_TERMS_OPTIONS.map((opt) => ({
+              value: opt.value,
+              label: opt.label,
+            }))}
+          />
           <Input
             label="Tax ID"
             type="text"

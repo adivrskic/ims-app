@@ -757,6 +757,29 @@ table,
   transition: color var(--dur-quick) var(--ease-out);
 }
 
+/* Date/time inputs: the native datetime-edit (e.g. "mm/dd/yyyy") is always
+   shown and can't be hidden via ::placeholder. Color it to match the theme,
+   and make the calendar picker indicator visible against the dark surface
+   (it ships near-black by default). */
+.field-input::-webkit-datetime-edit {
+  color: var(--text);
+}
+.field-input::-webkit-datetime-edit-fields-wrapper {
+  padding: 0;
+}
+.field-input::-webkit-calendar-picker-indicator {
+  cursor: pointer;
+  opacity: 0.55;
+  transition: opacity var(--dur-quick) var(--ease-out);
+  filter: var(--calendar-indicator-filter, invert(0.85));
+}
+.field-input::-webkit-calendar-picker-indicator:hover {
+  opacity: 1;
+}
+[data-theme="light"] .field-input::-webkit-calendar-picker-indicator {
+  filter: none;
+}
+
 /* ═══ SKELETON / LOADING ═══ */
 :root {
   --skeleton-from: rgba(255, 255, 255, 0.04);

@@ -45,12 +45,19 @@ export const Input = forwardRef<HTMLInputElement, Props>(function Input(
   const [filled, setFilled] = useState(Boolean(defaultValue || value));
   const hasIcon = Boolean(icon);
 
+  // Date/time inputs always render a native datetime-edit (e.g. "mm/dd/yyyy")
+  // that ::placeholder can't hide, so the resting label would sit on top of it.
+  // Treat them as always-filled so the label floats up out of the way.
+  const dateLike =
+    typeof props.type === "string" &&
+    ["date", "time", "datetime-local", "month", "week"].includes(props.type);
+
   return (
     <div className={className}>
       <label
         className="field-shell block"
         data-error={Boolean(error)}
-        data-filled={filled || Boolean(value)}
+        data-filled={filled || Boolean(value) || dateLike}
         data-with-icon={hasIcon || undefined}
       >
         {hasIcon && (

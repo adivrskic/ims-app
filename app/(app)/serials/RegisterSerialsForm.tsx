@@ -2,6 +2,7 @@
 
 import { useActionState, useEffect, useRef } from "react";
 import { CornerButton } from "@/components/ui/CornerButton";
+import { Select } from "@/components/ui/Select";
 import { registerSerials } from "./actions";
 
 interface ProductOption {
@@ -45,42 +46,28 @@ export function RegisterSerialsForm({ products, warehouses }: Props) {
       className="hairline bg-[var(--surface)] p-20 flex flex-col gap-14"
     >
       <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
-        <label className="field-shell block" data-filled="true">
-          <span className="field-label">Product</span>
-          <select
-            name="product_id"
-            required
-            defaultValue=""
-            className="field-input cursor-pointer"
-            aria-label="Product"
-          >
-            <option value="" disabled>
-              — Select —
-            </option>
-            {products.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name} · {p.barcode}
-              </option>
-            ))}
-          </select>
-        </label>
+        <Select
+          label="Product"
+          name="product_id"
+          required
+          defaultValue=""
+          ariaLabel="Product"
+          placeholder="— Select —"
+          options={products.map((p) => ({
+            value: p.id,
+            label: p.name,
+            hint: p.barcode,
+          }))}
+        />
 
-        <label className="field-shell block" data-filled="true">
-          <span className="field-label">Facility (optional)</span>
-          <select
-            name="warehouse_id"
-            defaultValue=""
-            className="field-input cursor-pointer"
-            aria-label="Facility"
-          >
-            <option value="">— None —</option>
-            {warehouses.map((w) => (
-              <option key={w.id} value={w.id}>
-                {w.name}
-              </option>
-            ))}
-          </select>
-        </label>
+        <Select
+          label="Facility (optional)"
+          name="warehouse_id"
+          defaultValue=""
+          ariaLabel="Facility"
+          placeholder="— None —"
+          options={warehouses.map((w) => ({ value: w.id, label: w.name }))}
+        />
       </div>
 
       <label className="field-shell block">

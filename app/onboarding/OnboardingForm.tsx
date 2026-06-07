@@ -4,6 +4,7 @@ import { useActionState, useState } from "react";
 import { AlertTriangle, ArrowRight } from "lucide-react";
 import { CornerButton } from "@/components/ui/CornerButton";
 import { Input } from "@/components/ui/Input";
+import { Select } from "@/components/ui/Select";
 import { AddressFields } from "@/components/ui/AddressFields";
 import { InviteLinks } from "@/components/invites/InviteLinks";
 import { INDUSTRIES } from "@/lib/industries";
@@ -94,22 +95,16 @@ export function OnboardingForm({ fullName, email }: Props) {
           />
 
           <div className="flex flex-col gap-6">
-            <label className="field-shell block" data-filled="true">
-              <span className="field-label">Industry</span>
-              <select
-                name="industry"
-                defaultValue=""
-                className="field-input cursor-pointer"
-                aria-label="Industry"
-              >
-                <option value="">— Select your industry —</option>
-                {INDUSTRIES.map((ind) => (
-                  <option key={ind.slug} value={ind.slug}>
-                    {ind.label}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <Select
+              label="Industry"
+              name="industry"
+              placeholder="— Select your industry —"
+              ariaLabel="Industry"
+              options={INDUSTRIES.map((ind) => ({
+                value: ind.slug,
+                label: ind.label,
+              }))}
+            />
             <p className="mono-sm text-text-dim" style={{ lineHeight: 1.6 }}>
               We&apos;ll tailor your dashboard — surfacing the tools that matter
               most for your industry. You can fine-tune this anytime in Settings.
