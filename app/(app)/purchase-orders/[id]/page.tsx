@@ -384,6 +384,14 @@ export default async function PurchaseOrderDetailPage({
             ) : undefined
           }
         />
+        {canReceive && (
+          <p className="mono-sm text-text-muted mb-12">
+            Recording a receipt logs the quantity and reconciles the PO — it
+            doesn&apos;t add on-hand. Put the received stock away into a location
+            on the facility floor to make it available. (QC holds land as
+            quarantined stock until cleared.)
+          </p>
+        )}
         {lines.length === 0 ? (
           <p className="mono-sm text-text-dim">This PO has no line items.</p>
         ) : (
@@ -423,11 +431,7 @@ export default async function PurchaseOrderDetailPage({
 
                     return (
                       <Fragment key={line.id}>
-                        <tr
-                          className={`hairline-b last:border-b-0 ${
-                            line.reasoning ? "" : ""
-                          }`}
-                        >
+                        <tr className="hairline-b last:border-b-0">
                           <Td>
                             <span className="mono-sm text-text-dim tnum">
                               {String(idx + 1).padStart(2, "0")}

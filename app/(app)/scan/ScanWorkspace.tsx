@@ -394,7 +394,7 @@ function ResultPanel({
           <MapPin size={11} strokeWidth={1.5} />
           Locate
         </CornerLink>
-        <CornerLink href="/orders/new" variant="ghost" size="sm">
+        <CornerLink href={`/orders/new?product=${p.id}`} variant="ghost" size="sm">
           <ClipboardList size={11} strokeWidth={1.5} />
           Pick
         </CornerLink>

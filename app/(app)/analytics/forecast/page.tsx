@@ -21,11 +21,11 @@ export default async function ForecastPage() {
     return <PageHeader eyebrow="Analytics" title="Forecast" description="No workspace." />;
   }
   const warehouseId = scope.mode === "single" ? scope.id : null;
-  const rows = await getForecastWorklist(ctx.orgId, warehouseId);
+  const { rows, totals } = await getForecastWorklist(ctx.orgId, warehouseId);
 
-  const raises = rows.filter((r) => r.reorderPointDelta > 0).length;
-  const lowers = rows.filter((r) => r.reorderPointDelta < 0).length;
-  const seasonal = rows.filter((r) => r.hasSeasonality).length;
+  // Headline counts span every drifted SKU; the table shows the top rows by impact.
+  const { raises, lowers, seasonal } = totals;
+  const truncated = totals.total > rows.length;
 
   return (
     <div className="flex flex-col gap-32">
@@ -39,7 +39,7 @@ export default async function ForecastPage() {
           single: (name) =>
             `Demand forecast vs current reorder settings at ${name}. Tune the reorder points that have drifted.`,
         })}
-        meta={[{ label: "To tune", value: String(rows.length), status: rows.length ? ("live" as const) : undefined }]}
+        meta={[{ label: "To tune", value: String(totals.total), status: totals.total ? ("live" as const) : undefined }]}
       />
 
       {rows.length === 0 ? (
@@ -63,7 +63,14 @@ export default async function ForecastPage() {
               numeral="01"
               eyebrow="Planning"
               title="Reorder points to tune"
-              action={<span className="label-text text-text-muted">90-day window · 95% service level</span>}
+              action={
+                <span className="label-text text-text-muted">
+                  {truncated
+                    ? `Top ${rows.length} of ${totals.total} by impact · `
+                    : ""}
+                  90-day window · 95% service level
+                </span>
+              }
             />
             <div className="hairline bg-[var(--surface)] overflow-hidden">
               <div className="overflow-x-auto">

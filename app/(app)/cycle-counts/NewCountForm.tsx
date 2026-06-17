@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useEffect, useState } from "react";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { CornerButton } from "@/components/ui/CornerButton";
@@ -60,11 +60,20 @@ export function NewCountForm({
   reasons,
   initialProductId,
 }: Props) {
-  const [, formAction] = useActionState(recordCycleCount, undefined);
+  const [state, formAction] = useActionState(recordCycleCount, undefined);
   const [productId, setProductId] = useState(initialProductId ?? "");
   const [locationId, setLocationId] = useState("");
   const [countedQty, setCountedQty] = useState("");
   const [reasonCode, setReasonCode] = useState("");
+
+  // On a successful record, clear the counted qty + reason so the next count
+  // starts clean (the revalidated location options reflect any adjustment).
+  useEffect(() => {
+    if (state?.success) {
+      setCountedQty("");
+      setReasonCode("");
+    }
+  }, [state]);
 
   const productLocations = locations.filter((l) => l.product_id === productId);
 
@@ -165,6 +174,23 @@ export function NewCountForm({
           aria-label="Notes about this count"
         />
       </div>
+
+      {state?.error && (
+        <p
+          role="alert"
+          className="hairline-subtle border-[rgba(239,68,68,0.45)] bg-[var(--danger-dim)] px-14 py-10 mono-sm text-[var(--danger)]"
+        >
+          {state.error}
+        </p>
+      )}
+      {state?.success && (
+        <p
+          role="status"
+          className="hairline-subtle border-[rgba(34,197,94,0.45)] bg-[var(--success-dim)] px-14 py-10 mono-sm text-[var(--success)]"
+        >
+          {state.success}
+        </p>
+      )}
     </form>
   );
 }

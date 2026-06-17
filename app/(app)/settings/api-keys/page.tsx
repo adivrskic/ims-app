@@ -30,6 +30,31 @@ function timeAgo(iso: string | null): string {
   return new Date(iso).toLocaleDateString();
 }
 
+function EndpointRow({
+  method,
+  path,
+  desc,
+}: {
+  method: string;
+  path: string;
+  desc: string;
+}) {
+  return (
+    <li className="flex items-center gap-10 flex-wrap">
+      <span
+        className="hairline-subtle px-6 py-2 label-text text-[var(--accent)]"
+        style={{ fontSize: 9 }}
+      >
+        {method}
+      </span>
+      <code className="mono-sm text-text-secondary" style={{ fontSize: 12 }}>
+        {path}
+      </code>
+      <span className="mono-sm text-text-dim">{desc}</span>
+    </li>
+  );
+}
+
 export default async function ApiKeysPage() {
   const supabase = await createClient();
   const { data: keys } = await supabase
@@ -114,6 +139,36 @@ export default async function ApiKeysPage() {
             ))}
           </ul>
         )}
+      </section>
+
+      <section aria-labelledby="endpoints">
+        <SectionTitle eyebrow="Reference" title="Endpoints" />
+        <div className="hairline bg-[var(--surface)] px-20 py-16 flex flex-col gap-10">
+          <p className="mono-sm text-text-muted">
+            Authenticate with{" "}
+            <code className="text-text-secondary">
+              Authorization: Bearer &lt;key&gt;
+            </code>
+            . A key acts with the permissions of the member who created it.
+          </p>
+          <ul className="flex flex-col gap-6">
+            <EndpointRow
+              method="GET"
+              path="/api/v1/products"
+              desc="List the catalog"
+            />
+            <EndpointRow
+              method="GET"
+              path="/api/v1/inventory"
+              desc="On-hand per product (?warehouse_id= optional)"
+            />
+            <EndpointRow
+              method="POST"
+              path="/api/v1/scans"
+              desc="Log a scan — requires inventory.adjust"
+            />
+          </ul>
+        </div>
       </section>
 
       {revoked.length > 0 && (

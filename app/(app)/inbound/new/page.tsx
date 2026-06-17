@@ -10,20 +10,26 @@ export default async function NewAsnPage() {
   if (!ctx) return <PageHeader eyebrow="Inbound" title="New ASN" description="No workspace." />;
   const supabase = await createClient();
 
-  const [{ data: suppliers }, { data: warehouses }] = await Promise.all([
-    supabase
-      .from("suppliers")
-      .select("id, name")
-      .eq("org_id", ctx.orgId)
-      .eq("is_active", true)
-      .order("name"),
-    supabase
-      .from("warehouses")
-      .select("id, name")
-      .eq("org_id", ctx.orgId)
-      .eq("is_active", true)
-      .order("name"),
-  ]);
+  const [{ data: suppliers }, { data: warehouses }, { data: products }] =
+    await Promise.all([
+      supabase
+        .from("suppliers")
+        .select("id, name")
+        .eq("org_id", ctx.orgId)
+        .eq("is_active", true)
+        .order("name"),
+      supabase
+        .from("warehouses")
+        .select("id, name")
+        .eq("org_id", ctx.orgId)
+        .eq("is_active", true)
+        .order("name"),
+      supabase
+        .from("products")
+        .select("id, name")
+        .eq("org_id", ctx.orgId)
+        .order("name"),
+    ]);
 
   return (
     <div className="flex flex-col gap-24 max-w-[760px]">
@@ -37,6 +43,7 @@ export default async function NewAsnPage() {
       <NewAsnForm
         suppliers={(suppliers ?? []) as Array<{ id: string; name: string }>}
         warehouses={(warehouses ?? []) as Array<{ id: string; name: string }>}
+        products={(products ?? []) as Array<{ id: string; name: string }>}
       />
     </div>
   );

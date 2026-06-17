@@ -49,7 +49,8 @@ export default async function SerialsPage() {
         )
         .eq("org_id", orgId)
         .order("created_at", { ascending: false })
-        .limit(500),
+        // One past the cap so we can tell the user the registry is truncated.
+        .limit(501),
       supabase
         .from("products")
         .select("id, name, barcode, track_serials")
@@ -73,7 +74,9 @@ export default async function SerialsPage() {
   };
   type ProductRow = { id: string; name: string; barcode: string; track_serials: boolean };
 
-  const serials = (serialsData ?? []) as SerialRow[];
+  const allSerials = (serialsData ?? []) as SerialRow[];
+  const serialsTruncated = allSerials.length > 500;
+  const serials = allSerials.slice(0, 500);
   const products = (productsData ?? []) as ProductRow[];
   const warehouses = (whData ?? []) as Array<{ id: string; name: string }>;
 
@@ -105,7 +108,18 @@ export default async function SerialsPage() {
 
       {/* Registry */}
       <section aria-labelledby="list">
-        <SectionTitle numeral="02" eyebrow="Registry" title={`Serials (${serials.length})`} />
+        <SectionTitle
+          numeral="02"
+          eyebrow="Registry"
+          title={`Serials (${serials.length})`}
+          action={
+            serialsTruncated ? (
+              <span className="label-text text-text-muted">
+                Showing the 500 most recent
+              </span>
+            ) : undefined
+          }
+        />
         {serials.length === 0 ? (
           <EmptyState
             title="No serials registered"

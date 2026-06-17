@@ -7,9 +7,9 @@ export const metadata = { title: "New order" };
 export default async function NewOrderPage({
   searchParams,
 }: {
-  searchParams: Promise<{ type?: string }>;
+  searchParams: Promise<{ type?: string; product?: string }>;
 }) {
-  const { type } = await searchParams;
+  const { type, product } = await searchParams;
   const supabase = await createClient();
 
   const [{ data: products }, { data: warehouses }] = await Promise.all([
@@ -38,6 +38,7 @@ export default async function NewOrderPage({
         products={products ?? []}
         warehouses={warehouses ?? []}
         initialType={type}
+        initialProductId={product}
       />
     </div>
   );

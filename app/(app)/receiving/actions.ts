@@ -18,13 +18,24 @@ export async function reviewQcLine(formData: FormData): Promise<void> {
   const poId = String(formData.get("po_id") ?? "");
   const decision = String(formData.get("decision") ?? "");
   const notes = String(formData.get("notes") ?? "").trim();
-  if (!lineId || (decision !== "pass" && decision !== "fail")) return;
+  if (!lineId || !poId || (decision !== "pass" && decision !== "fail")) return;
+
+  // Scope through the parent PO — po_line_items has no org column, so verify the
+  // PO belongs to this org and require the line to be on it before mutating.
+  const { data: parentPo } = await ctx.supabase
+    .from("purchase_orders")
+    .select("id")
+    .eq("id", poId)
+    .eq("org_id", ctx.orgId)
+    .maybeSingle();
+  if (!parentPo) return;
 
   // Only act on a line that's actually on hold (guards double-review).
   const { data: line } = await ctx.supabase
     .from("po_line_items")
     .select("id, qc_status")
     .eq("id", lineId)
+    .eq("po_id", poId)
     .maybeSingle();
   if (!line || (line as { qc_status: string }).qc_status !== "hold") return;
 

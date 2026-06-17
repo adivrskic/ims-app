@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { productVelocities } from "@/lib/data/velocity";
 import { daysToStockout } from "@/lib/replenishment";
+import { dispatchEvent } from "@/lib/integrations/dispatch";
 
 /**
  * Scheduled stockout-alert sweep (§2b).
@@ -146,6 +147,10 @@ async function processOrg(
     link: string;
   };
   const inserts: NotificationInsert[] = [];
+  // Track distinct products that triggered a NEW alert this run (post-cooldown),
+  // so the integration fan-out fires on the same cadence as the in-app alert
+  // rather than every sweep.
+  const newlyAlerted: AtRisk[] = [];
 
   for (const a of atRisk) {
     const link = `/inventory/${a.id}`;
@@ -153,6 +158,7 @@ async function processOrg(
       (uid) => !alreadyAlerted.has(`${uid}|${link}`)
     );
     if (targets.length === 0) continue;
+    newlyAlerted.push(a);
 
     const { title, body } = await copyFor(admin, a);
     for (const uid of targets) {
@@ -174,6 +180,48 @@ async function processOrg(
       insertErr
     );
     return 0;
+  }
+
+  // Fan the same alert out to connected integrations + webhooks subscribed to
+  // "low_stock". dispatchEvent only delivers to orgs that opted in, and swallows
+  // its own delivery errors, so this can't break the in-app alert path.
+  if (newlyAlerted.length > 0) {
+    const preview = newlyAlerted
+      .slice(0, 5)
+      .map(
+        (a) =>
+          `${a.name} — ~${a.dts <= 0 ? "<1" : a.dts}d to stockout (${a.onHand} on hand)`
+      )
+      .join("; ");
+    try {
+      await dispatchEvent({
+        type: "low_stock",
+        org_id: orgId,
+        title:
+          newlyAlerted.length === 1
+            ? `Low stock: ${newlyAlerted[0].name}`
+            : `${newlyAlerted.length} products low on stock`,
+        body:
+          preview +
+          (newlyAlerted.length > 5
+            ? `; +${newlyAlerted.length - 5} more`
+            : ""),
+        link:
+          newlyAlerted.length === 1
+            ? `/inventory/${newlyAlerted[0].id}`
+            : "/inventory?low=1",
+        data: {
+          products: newlyAlerted.map((a) => ({
+            id: a.id,
+            name: a.name,
+            onHand: a.onHand,
+            daysToStockout: a.dts,
+          })),
+        },
+      });
+    } catch (err) {
+      console.error(`[stockout-alerts] dispatch failed for org ${orgId}:`, err);
+    }
   }
 
   return inserts.length;

@@ -128,6 +128,7 @@ export async function getValuation(
   let totalValue = 0;
   let totalUnits = 0;
   let valuedSkus = 0;
+  let valuedUnits = 0; // on-hand units belonging to costed SKUs only
   let uncostedSkus = 0;
   let annualUsageValue = 0; // Σ velocity × 365 × cost → COGS proxy
 
@@ -152,6 +153,7 @@ export async function getValuation(
     const value = hasCost ? onHand * unitCost : 0;
     if (hasCost) {
       valuedSkus++;
+      valuedUnits += onHand;
       totalValue += value;
       byCategory.set(
         categoryName ?? "Uncategorized",
@@ -220,7 +222,9 @@ export async function getValuation(
     totalValue,
     totalUnits,
     valuedSkus,
-    avgUnitCost: valuedSkus > 0 ? totalValue / totalUnits : 0,
+    // Divide by valued units only — totalUnits includes uncosted SKUs, which
+    // would understate the average (denominator too large).
+    avgUnitCost: valuedUnits > 0 ? totalValue / valuedUnits : 0,
     uncostedSkus,
     byCategory: byCategoryArr,
     abc,

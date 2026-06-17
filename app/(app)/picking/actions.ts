@@ -112,11 +112,53 @@ export async function setWaveStatus(formData: FormData): Promise<void> {
   const status = String(formData.get("status") ?? "");
   if (!waveId || !(WAVE_STATUSES as readonly string[]).includes(status)) return;
 
-  await ctx.supabase
+  // Completion gate: don't let a wave be marked complete while it still has
+  // allocated units that haven't been picked — that would present the batch as
+  // done when stock was never pulled.
+  if (status === "complete") {
+    const { data: waveOrders } = await ctx.supabase
+      .from("orders")
+      .select("id")
+      .eq("pick_wave_id", waveId)
+      .eq("org_id", ctx.orgId);
+    const orderIds = (waveOrders ?? []).map((o: { id: string }) => o.id);
+    if (orderIds.length > 0) {
+      const { data: itemRows } = await ctx.supabase
+        .from("order_items")
+        .select("quantity_allocated, quantity_picked")
+        .in("order_id", orderIds);
+      const allocated = (itemRows ?? []).reduce(
+        (s: number, r: { quantity_allocated: number | null }) =>
+          s + (r.quantity_allocated ?? 0),
+        0
+      );
+      const picked = (itemRows ?? []).reduce(
+        (s: number, r: { quantity_picked: number | null }) =>
+          s + (r.quantity_picked ?? 0),
+        0
+      );
+      if (picked < allocated) {
+        redirect(
+          `/picking/${waveId}?error=${encodeURIComponent(
+            `Can't complete — ${picked} of ${allocated} allocated units picked.`
+          )}`
+        );
+      }
+    }
+  }
+
+  const { error } = await ctx.supabase
     .from("pick_waves")
     .update({ status })
     .eq("id", waveId)
     .eq("org_id", ctx.orgId);
+  if (error) {
+    redirect(
+      `/picking/${waveId}?error=${encodeURIComponent(
+        "Couldn't update the wave — please try again."
+      )}`
+    );
+  }
 
   // Cancelling a wave releases its orders back to the eligible pool.
   if (status === "cancelled") {

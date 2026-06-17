@@ -23,7 +23,8 @@ const TABS: Tab[] = [
   { href: "/settings/billing", label: "Billing" },
   { href: "/settings/api-keys", label: "API keys" },
   { href: "/settings/audit", label: "Audit log" },
-  { href: "/settings/webhooks", label: "Webhooks" },
+  // Webhooks management lives under Integrations (/integrations/webhooks) —
+  // the old /settings/webhooks page was a non-functional duplicate.
 ];
 
 /**

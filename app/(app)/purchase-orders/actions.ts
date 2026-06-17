@@ -6,6 +6,7 @@ import { getActionContext } from "@/lib/data/actionContext";
 import { narratePoDraft } from "@/lib/ai/narrate";
 import { draftReorderPOs } from "@/lib/data/reorderDraft";
 import { tags } from "@/lib/cache-tags";
+import { dispatchEvent } from "@/lib/integrations/dispatch";
 
 /**
  * Draft a reorder PO from products at or below their reorder point.
@@ -158,6 +159,18 @@ export async function createPurchaseOrder(
     return { error: "Supplier not found in this workspace" };
   }
 
+  // Validate the facility belongs to this org — don't trust the form to attach
+  // a PO to an arbitrary (possibly cross-org) warehouse id.
+  const { data: warehouse } = await ctx.supabase
+    .from("warehouses")
+    .select("id")
+    .eq("id", warehouseId)
+    .eq("org_id", ctx.orgId)
+    .maybeSingle();
+  if (!warehouse) {
+    return { error: "Facility not found in this workspace" };
+  }
+
   let items: PoLineInput[] = [];
   try {
     const parsed = JSON.parse(itemsJson);
@@ -181,6 +194,7 @@ export async function createPurchaseOrder(
   const { data: productsData } = await ctx.supabase
     .from("products")
     .select("id, name, barcode, unit_cost")
+    .eq("org_id", ctx.orgId)
     .in("id", productIds);
   const productMap = new Map(
     (
@@ -192,6 +206,13 @@ export async function createPurchaseOrder(
       }>
     ).map((p) => [p.id, p])
   );
+
+  // Reject any line whose product isn't in this org — don't silently snapshot
+  // an "Unknown product" row for a stray/cross-org id.
+  const unknownIds = productIds.filter((id) => !productMap.has(id));
+  if (unknownIds.length > 0) {
+    return { error: "One or more line items reference an unknown product" };
+  }
 
   // Next PO number — atomic per-org counter (no read-max race).
   const { data: poNumber } = await ctx.supabase.rpc("next_document_number", {
@@ -283,10 +304,22 @@ export async function receiveLineItem(
   const lotNumber = String(formData.get("lot_number") ?? "").trim();
   const lotExpiry = String(formData.get("lot_expiry") ?? "").trim();
 
+  // po_line_items has no org column, so scope through the parent PO: verify it
+  // belongs to this org, then require the line to belong to that PO. Prevents a
+  // member from receiving against another org's line by guessing its id.
+  const { data: parentPo } = await ctx.supabase
+    .from("purchase_orders")
+    .select("id, supplier_id, warehouse_id, po_number")
+    .eq("id", poId)
+    .eq("org_id", ctx.orgId)
+    .maybeSingle();
+  if (!parentPo) return { error: "Purchase order not found" };
+
   const { data: line } = await ctx.supabase
     .from("po_line_items")
     .select("quantity_expected, quantity_received, product_id")
     .eq("id", lineId)
+    .eq("po_id", poId)
     .maybeSingle();
   if (!line) return { error: "Line not found" };
 
@@ -343,13 +376,8 @@ export async function receiveLineItem(
   // and stamps the lot's expiry (so it surfaces in the Lots registry + alerts).
   const productId = (line as { product_id: string | null }).product_id;
   if (lotNumber && productId) {
-    const { data: po } = await ctx.supabase
-      .from("purchase_orders")
-      .select("supplier_id")
-      .eq("id", poId)
-      .maybeSingle();
     const supplierId =
-      (po as { supplier_id: string | null } | null)?.supplier_id ?? null;
+      (parentPo as { supplier_id: string | null }).supplier_id ?? null;
 
     const { data: existingLot } = await ctx.supabase
       .from("lots")
@@ -403,13 +431,8 @@ export async function receiveLineItem(
   // these units. Held goods are not put away normally — they sit in quarantine
   // until passed, so this doesn't double-count with a later putaway.
   if (qcHold && productId) {
-    const { data: po } = await ctx.supabase
-      .from("purchase_orders")
-      .select("warehouse_id")
-      .eq("id", poId)
-      .maybeSingle();
     const warehouseId =
-      (po as { warehouse_id: string | null } | null)?.warehouse_id ?? null;
+      (parentPo as { warehouse_id: string | null }).warehouse_id ?? null;
     if (warehouseId) {
       await ctx.supabase.from("locations").insert({
         org_id: ctx.orgId,
@@ -474,6 +497,32 @@ export async function receiveLineItem(
     .update(poUpdate)
     .eq("id", poId)
     .eq("org_id", ctx.orgId);
+
+  // Notify integrations subscribed to "po_received" (best-effort, opt-in).
+  const poNumber =
+    (parentPo as { po_number: string | null }).po_number ?? "PO";
+  try {
+    await dispatchEvent({
+      type: "po_received",
+      org_id: ctx.orgId,
+      title:
+        newStatus === "fully_received"
+          ? `${poNumber} fully received`
+          : `${poNumber} partially received`,
+      body: `Received ${qty} unit(s) on ${poNumber}.`,
+      link: `/purchase-orders/${poId}`,
+      data: {
+        poId,
+        poNumber,
+        lineId,
+        productId,
+        quantityReceived: qty,
+        poStatus: newStatus,
+      },
+    });
+  } catch {
+    // dispatch swallows its own delivery errors; ignore.
+  }
 
   revalidatePath(`/purchase-orders/${poId}`);
   revalidatePath("/purchase-orders");

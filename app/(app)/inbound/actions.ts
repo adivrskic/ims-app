@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath, revalidateTag } from "next/cache";
 import { getActionContext } from "@/lib/data/actionContext";
 import { tags } from "@/lib/cache-tags";
+import { dispatchEvent } from "@/lib/integrations/dispatch";
 
 /**
  * ASN (Advance Ship Notice) actions. Creating/cancelling an ASN is purchasing
@@ -98,6 +99,44 @@ export async function createAsn(
   }
   if (items.length === 0) return { error: "Add at least one line item" };
 
+  // Validate the optional supplier/facility belong to this org — don't trust
+  // the form to attach an ASN to an arbitrary (possibly cross-org) id.
+  if (supplierId) {
+    const { data: s } = await ctx.supabase
+      .from("suppliers")
+      .select("id")
+      .eq("id", supplierId)
+      .eq("org_id", ctx.orgId)
+      .maybeSingle();
+    if (!s) return { error: "Supplier not found in this workspace" };
+  }
+  if (warehouseId) {
+    const { data: w } = await ctx.supabase
+      .from("warehouses")
+      .select("id")
+      .eq("id", warehouseId)
+      .eq("org_id", ctx.orgId)
+      .maybeSingle();
+    if (!w) return { error: "Facility not found in this workspace" };
+  }
+
+  // Validate any product references on the lines belong to this org, then drop
+  // unknown ids back to null (free-text name still carries the line).
+  const lineProductIds = Array.from(
+    new Set(items.map((i) => i.product_id).filter((v): v is string => !!v))
+  );
+  let validProductIds = new Set<string>();
+  if (lineProductIds.length > 0) {
+    const { data: prods } = await ctx.supabase
+      .from("products")
+      .select("id")
+      .eq("org_id", ctx.orgId)
+      .in("id", lineProductIds);
+    validProductIds = new Set(
+      ((prods ?? []) as Array<{ id: string }>).map((p) => p.id)
+    );
+  }
+
   const { data: asnNumber } = await ctx.supabase.rpc("next_document_number", {
     p_org_id: ctx.orgId,
     p_kind: "ASN",
@@ -127,7 +166,8 @@ export async function createAsn(
   const lineRows = items.map((i) => ({
     org_id: ctx.orgId,
     asn_id: asn.id,
-    product_id: i.product_id || null,
+    product_id:
+      i.product_id && validProductIds.has(i.product_id) ? i.product_id : null,
     product_name: i.product_name || null,
     quantity_expected: i.quantity,
     lpn: i.lpn?.trim() || null,
@@ -290,9 +330,10 @@ async function receiveLines(
   }>;
 
   const poIds = new Set<string>();
+  let totalReceived = 0;
   const { data: asn } = await ctx.supabase
     .from("asns")
-    .select("warehouse_id, po_id")
+    .select("warehouse_id, po_id, asn_number")
     .eq("id", asnId)
     .eq("org_id", ctx.orgId)
     .maybeSingle();
@@ -308,6 +349,7 @@ async function receiveLines(
         : remaining;
     if (qty <= 0) continue;
     const newReceived = (l.quantity_received ?? 0) + qty;
+    totalReceived += qty;
 
     await ctx.supabase
       .from("asn_lines")
@@ -368,6 +410,32 @@ async function receiveLines(
     )
     .eq("id", asnId)
     .eq("org_id", ctx.orgId);
+
+  // Notify integrations subscribed to "po_received" when an ASN receipt
+  // reconciled against one or more POs (best-effort, opt-in).
+  if (poIds.size > 0 && totalReceived > 0) {
+    const asnNumber =
+      (asn as { asn_number: string | null } | null)?.asn_number ?? "ASN";
+    try {
+      await dispatchEvent({
+        type: "po_received",
+        org_id: ctx.orgId,
+        title: `${asnNumber} received`,
+        body: `Received ${totalReceived} unit(s) via ${asnNumber}, reconciled against ${
+          poIds.size
+        } purchase order${poIds.size === 1 ? "" : "s"}.`,
+        link: `/inbound/${asnId}`,
+        data: {
+          asnId,
+          asnNumber,
+          quantityReceived: totalReceived,
+          poIds: [...poIds],
+        },
+      });
+    } catch {
+      // dispatch swallows its own delivery errors; ignore.
+    }
+  }
 
   revalidateTag(tags.purchaseOrders(ctx.orgId));
   revalidatePath("/inbound");

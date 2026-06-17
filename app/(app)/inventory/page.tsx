@@ -11,6 +11,7 @@ import { getActiveScope, scopeDescription } from "@/lib/facilityScope";
 import { InventoryRealtime } from "@/components/realtime/PageRealtime";
 import { getCurrentOrgContext } from "@/lib/data/user";
 import { getCategories } from "@/lib/data/org";
+import { createClient } from "@/lib/supabase/server";
 import {
   getInventoryList,
   parseSort,
@@ -72,6 +73,21 @@ export default async function InventoryPage({
 
   // Categories (id + name) drive both the filter dropdown and the register form.
   const categories = ctx ? await getCategories(ctx.orgId) : [];
+
+  // Active suppliers feed the register modal's preferred-supplier picker. Without
+  // this the picker was permanently disabled ("Add suppliers under Settings…")
+  // even when the org had suppliers.
+  let suppliers: Array<{ id: string; name: string }> = [];
+  if (ctx) {
+    const supabase = await createClient();
+    const { data } = await supabase
+      .from("suppliers")
+      .select("id, name")
+      .eq("org_id", ctx.orgId)
+      .eq("is_active", true)
+      .order("name");
+    suppliers = (data ?? []) as Array<{ id: string; name: string }>;
+  }
 
   const data = ctx
     ? await getInventoryList(ctx.orgId, facilityId, {
@@ -156,6 +172,7 @@ export default async function InventoryPage({
             </ButtonLink>
             <RegisterProductButton
               categories={categories ?? []}
+              suppliers={suppliers}
               initialBarcode={register}
             />
           </div>

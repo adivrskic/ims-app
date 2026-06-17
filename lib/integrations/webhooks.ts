@@ -196,13 +196,13 @@ export async function deliverWebhook(
               last_delivered_at: new Date().toISOString(),
               last_error: null,
               total_deliveries:
-                (
+                ((
                   await admin
                     .from("webhook_endpoints")
                     .select("total_deliveries")
                     .eq("id", endpoint.id)
                     .single()
-                ).data?.total_deliveries ?? 0 + 1,
+                ).data?.total_deliveries ?? 0) + 1,
             })
             .eq("id", endpoint.id);
         }
@@ -213,13 +213,13 @@ export async function deliverWebhook(
       .update({
         last_error: error ?? `HTTP ${status}`,
         total_failures:
-          (
+          ((
             await admin
               .from("webhook_endpoints")
               .select("total_failures")
               .eq("id", endpoint.id)
               .single()
-          ).data?.total_failures ?? 0 + 1,
+          ).data?.total_failures ?? 0) + 1,
       })
       .eq("id", endpoint.id);
   }

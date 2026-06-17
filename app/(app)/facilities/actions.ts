@@ -67,7 +67,7 @@ export async function createWarehouse(
   }
 
   revalidateTag(tags.warehouses(ctx.orgId));
-  revalidatePath("/settings/facilities");
+  revalidatePath("/facilities");
   return { success: `${name} added` };
 }
 
@@ -82,7 +82,7 @@ export async function archiveWarehouse(formData: FormData): Promise<void> {
     .eq("id", id)
     .eq("org_id", ctx.orgId);
   revalidateTag(tags.warehouses(ctx.orgId));
-  revalidatePath("/settings/facilities");
+  revalidatePath("/facilities");
 }
 
 export async function restoreWarehouse(formData: FormData): Promise<void> {
@@ -96,7 +96,7 @@ export async function restoreWarehouse(formData: FormData): Promise<void> {
     .eq("id", id)
     .eq("org_id", ctx.orgId);
   revalidateTag(tags.warehouses(ctx.orgId));
-  revalidatePath("/settings/facilities");
+  revalidatePath("/facilities");
 }
 
 export async function createSection(
@@ -159,7 +159,8 @@ export async function createSection(
     return { error: error.message };
   }
   revalidateTag(tags.warehouses(ctx.orgId));
-  revalidatePath("/settings/facilities");
+  revalidatePath("/facilities");
+  revalidatePath(`/facilities/${warehouseId}`);
   return { success: `Section ${code} added` };
 }
 
@@ -180,5 +181,5 @@ export async function deleteSection(formData: FormData): Promise<void> {
     .eq("id", id)
     .eq("org_id", ctx.orgId);
   revalidateTag(tags.warehouses(ctx.orgId));
-  revalidatePath("/settings/facilities");
+  revalidatePath("/facilities");
 }

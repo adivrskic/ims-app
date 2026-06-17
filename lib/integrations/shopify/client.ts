@@ -1,16 +1,14 @@
-// TODO(stub): Real Shopify Admin API client. This module was referenced by
-// shopify/actions.ts, the OAuth callback route, and the webhook route but was
-// never implemented. The real implementation needs to:
-//   - Build an authenticated client from a stored IntegrationRecord
-//     (decrypt credentials via @/lib/integrations/crypto, read shop domain
-//     from config), returning either { client } or { error }.
-//   - ShopifyClient should hit the Shopify Admin REST/GraphQL API for
-//     getShopInfo / createWebhook / deleteWebhook.
-//   - verifyShopifyWebhook should HMAC-verify the raw request body against the
-//     app secret (base64 SHA-256) per Shopify's webhook signing spec.
-
+import "server-only";
+import { createHmac, timingSafeEqual } from "crypto";
+import { decrypt } from "@/lib/integrations/crypto";
 import type { IntegrationRecord } from "@/lib/integrations/types";
-import type { ShopifyWebhookTopic } from "@/lib/integrations/shopify/types";
+import type {
+  ShopifyConfig,
+  ShopifyWebhookTopic,
+} from "@/lib/integrations/shopify/types";
+
+/** Admin API version we target (matches the hand-written types). */
+export const SHOPIFY_API_VERSION = "2024-10";
 
 export interface ShopInfo {
   name: string;
@@ -25,32 +23,86 @@ export type CreateWebhookResult =
   | { ok: false; error: string };
 
 /**
- * TODO(stub): authenticated Shopify Admin API client. Every method is a
- * safe no-op default so callers type-check without performing real network IO.
+ * Authenticated Shopify Admin REST client. Holds the shop domain + access token
+ * and signs every request with the X-Shopify-Access-Token header.
  */
 export class ShopifyClient {
-  // TODO(stub): hold shop domain + access token once implemented.
   constructor(
     public readonly shopDomain: string,
     public readonly accessToken: string
   ) {}
 
-  // TODO(stub): fetch /admin/api/.../shop.json
+  private base(): string {
+    return `https://${this.shopDomain}/admin/api/${SHOPIFY_API_VERSION}`;
+  }
+
+  private async request(
+    path: string,
+    init?: RequestInit
+  ): Promise<{ ok: true; data: unknown } | { ok: false; error: string }> {
+    try {
+      const res = await fetch(`${this.base()}${path}`, {
+        ...init,
+        headers: {
+          "X-Shopify-Access-Token": this.accessToken,
+          "Content-Type": "application/json",
+          Accept: "application/json",
+          ...(init?.headers ?? {}),
+        },
+        cache: "no-store",
+      });
+      if (!res.ok) {
+        const body = await res.text().catch(() => "");
+        return {
+          ok: false,
+          error: `Shopify ${res.status}: ${body.slice(0, 200) || res.statusText}`,
+        };
+      }
+      // DELETE responses may be empty.
+      if (res.status === 204) return { ok: true, data: null };
+      const data = await res.json().catch(() => null);
+      return { ok: true, data };
+    } catch (err) {
+      return {
+        ok: false,
+        error: err instanceof Error ? err.message : "Shopify request failed",
+      };
+    }
+  }
+
+  /** GET /shop.json — used for "Test connection". */
   async getShopInfo(): Promise<GetShopInfoResult> {
-    return { ok: false, error: "ShopifyClient.getShopInfo not implemented" };
+    const r = await this.request("/shop.json");
+    if (!r.ok) return { ok: false, error: r.error };
+    const shop = (r.data as { shop?: { name?: string } } | null)?.shop;
+    if (!shop?.name) {
+      return { ok: false, error: "Unexpected shop.json response" };
+    }
+    return { ok: true, shop: { name: shop.name } };
   }
 
-  // TODO(stub): POST /admin/api/.../webhooks.json
+  /** POST /webhooks.json — subscribe to a topic. */
   async createWebhook(
-    _topic: ShopifyWebhookTopic,
-    _callbackUrl: string
+    topic: ShopifyWebhookTopic,
+    callbackUrl: string
   ): Promise<CreateWebhookResult> {
-    return { ok: false, error: "ShopifyClient.createWebhook not implemented" };
+    const r = await this.request("/webhooks.json", {
+      method: "POST",
+      body: JSON.stringify({
+        webhook: { topic, address: callbackUrl, format: "json" },
+      }),
+    });
+    if (!r.ok) return { ok: false, error: r.error };
+    const id = (r.data as { webhook?: { id?: number } } | null)?.webhook?.id;
+    if (typeof id !== "number") {
+      return { ok: false, error: "Webhook created but no id returned" };
+    }
+    return { ok: true, id };
   }
 
-  // TODO(stub): DELETE /admin/api/.../webhooks/{id}.json
-  async deleteWebhook(_id: number): Promise<void> {
-    return;
+  /** DELETE /webhooks/{id}.json — best-effort cleanup on disconnect. */
+  async deleteWebhook(id: number): Promise<void> {
+    await this.request(`/webhooks/${id}.json`, { method: "DELETE" });
   }
 }
 
@@ -59,24 +111,48 @@ export type ClientFromIntegrationResult =
   | { error: string };
 
 /**
- * TODO(stub): build a ShopifyClient from a stored integration row by decrypting
- * its credentials and reading the shop domain from config. Currently always
- * returns an error so disconnect/verify flows degrade gracefully.
+ * Build a ShopifyClient from a stored integration row: read the shop domain
+ * from config and decrypt the access token from credentials_encrypted.
  */
 export function clientFromIntegration(
-  _integration: IntegrationRecord
+  integration: IntegrationRecord
 ): ClientFromIntegrationResult {
-  return { error: "clientFromIntegration not implemented" };
+  const config = (integration.config ?? {}) as Partial<ShopifyConfig>;
+  const shopDomain = config.shop_domain;
+  if (!shopDomain) {
+    return { error: "Shopify integration is missing its shop domain" };
+  }
+  if (!integration.credentials_encrypted) {
+    return { error: "Shopify integration has no stored access token" };
+  }
+  let accessToken: string;
+  try {
+    accessToken = decrypt(integration.credentials_encrypted);
+  } catch {
+    return { error: "Could not decrypt the Shopify access token" };
+  }
+  return { client: new ShopifyClient(shopDomain, accessToken) };
 }
 
 /**
- * TODO(stub): verify a Shopify webhook HMAC. Returns false so unverified
- * payloads are rejected until the real HMAC check is implemented.
+ * Verify a Shopify webhook HMAC: base64(HMAC-SHA256(rawBody, apiSecret)) must
+ * equal the X-Shopify-Hmac-Sha256 header, compared in constant time.
  */
 export function verifyShopifyWebhook(
-  _rawBody: string,
-  _signature: string | null,
-  _apiSecret: string
+  rawBody: string,
+  signature: string | null,
+  apiSecret: string
 ): boolean {
-  return false;
+  if (!signature || !apiSecret) return false;
+  const digest = createHmac("sha256", apiSecret)
+    .update(rawBody, "utf8")
+    .digest("base64");
+  const a = Buffer.from(digest);
+  const b = Buffer.from(signature);
+  if (a.length !== b.length) return false;
+  try {
+    return timingSafeEqual(a, b);
+  } catch {
+    return false;
+  }
 }

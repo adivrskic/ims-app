@@ -89,10 +89,13 @@ const TIMELINE_LABEL: Record<OrderStatus, string> = {
 
 export default async function OrderDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ error?: string }>;
 }) {
   const { id } = await params;
+  const { error: actionError } = await searchParams;
   const supabase = await createClient();
 
   const { data: order } = await supabase
@@ -167,6 +170,16 @@ export default async function OrderDetailPage({
   return (
     <div className="flex flex-col gap-32">
       <OrderDetailRealtime orderId={id} />
+      {actionError && (
+        <div className="hairline border-[rgba(239,68,68,0.45)] bg-[var(--danger-dim)] px-16 py-12 flex items-start gap-12">
+          <X
+            size={14}
+            strokeWidth={1.5}
+            className="text-[var(--danger)] shrink-0 mt-2"
+          />
+          <p className="mono-sm text-[var(--danger)]">{actionError}</p>
+        </div>
+      )}
       <PageHeader
         backHref="/orders"
         backLabel="All orders"
@@ -241,6 +254,22 @@ export default async function OrderDetailPage({
         </div>
       ) : (
         <Timeline current={status} />
+      )}
+
+      {isTransfer && !isCancelled && (
+        <div className="hairline border-[var(--border-subtle)] bg-[var(--surface-2)] px-16 py-12 flex items-start gap-12">
+          <Waypoints
+            size={14}
+            strokeWidth={1.5}
+            className="text-text-muted shrink-0 mt-2"
+          />
+          <p className="mono-sm text-text-secondary">
+            Picking removes stock from {warehouse?.name ?? "the source"}. To
+            credit on-hand at {destination?.name ?? "the destination"}, place the
+            received units into a location there via the facility floor — transfers
+            don&apos;t move stock automatically.
+          </p>
+        </div>
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-24">

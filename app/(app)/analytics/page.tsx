@@ -114,6 +114,13 @@ export default async function AnalyticsPage() {
     scans14dQuery = scans14dQuery.eq("warehouse_id", scope.id);
   }
 
+  // Low-stock SKUs: products with a reorder point whose on-hand is at/below it.
+  // Workspace-wide, matching how the product count is treated on this page.
+  const lowStockQuery = supabase
+    .from("products")
+    .select("id, reorder_point, locations:locations ( quantity )")
+    .gt("reorder_point", 0);
+
   const [
     { count: totalProducts },
     { count: totalScans },
@@ -123,6 +130,7 @@ export default async function AnalyticsPage() {
     { data: scansForActions },
     { data: locationsForSections },
     { data: scans14d },
+    { data: lowStockProducts },
   ] = await Promise.all([
     totalProductsQuery,
     totalScansQuery,
@@ -132,7 +140,21 @@ export default async function AnalyticsPage() {
     scansForActionsQuery,
     locationsForSectionsQuery,
     scans14dQuery,
+    lowStockQuery,
   ]);
+
+  const lowStockCount = (
+    (lowStockProducts ?? []) as Array<{
+      reorder_point: number;
+      locations: Array<{ quantity: number | null }> | null;
+    }>
+  ).filter((p) => {
+    const onHand = (p.locations ?? []).reduce(
+      (s, l) => s + (l.quantity ?? 0),
+      0
+    );
+    return onHand <= p.reorder_point;
+  }).length;
 
   const totalStock = (locationsForStock ?? []).reduce(
     (sum: number, l: { quantity: number | null }) => sum + (l.quantity ?? 0),
@@ -237,7 +259,7 @@ export default async function AnalyticsPage() {
               scansToday: scansToday ?? 0,
               scansLast7: scansLast7 ?? 0,
               totalStock,
-              lowStockCount: 0,
+              lowStockCount,
               actionMix: actions.map(([action, count]) => ({
                 action: String(action),
                 count,
@@ -264,7 +286,9 @@ export default async function AnalyticsPage() {
           <KpiCard
             label={scope.mode === "single" ? "Units here" : "Units on hand"}
             value={totalStock.toLocaleString()}
-            spark={trend.map((v) => v * 1.2 + Math.min(50, totalStock) * 0.5)}
+            // Flat fill — we don't track historical on-hand, so don't fabricate a
+            // trend curve (matches the Products card above).
+            spark={new Array(14).fill(totalStock)}
           />
           <KpiCard
             label="Scans · today"

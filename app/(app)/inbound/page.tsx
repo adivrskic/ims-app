@@ -32,21 +32,26 @@ export default async function InboundPage() {
   const asns = await getAsns(supabase, ctx.orgId, warehouseId);
 
   // POs with stock still outstanding — candidates to raise an ASN against.
+  const OPEN_PO_LIMIT = 50;
   let poQ = supabase
     .from("purchase_orders")
     .select("id, po_number, supplier_name, status")
     .eq("org_id", ctx.orgId)
     .in("status", ["sent", "partially_received"])
     .order("created_at", { ascending: false })
-    .limit(25);
+    // Fetch one extra so we can tell the user when the list is truncated rather
+    // than silently hiding older open POs.
+    .limit(OPEN_PO_LIMIT + 1);
   if (warehouseId) poQ = poQ.eq("warehouse_id", warehouseId);
   const { data: pos } = await poQ;
-  const openPos = (pos ?? []) as Array<{
+  const allOpenPos = (pos ?? []) as Array<{
     id: string;
     po_number: string | null;
     supplier_name: string | null;
     status: string;
   }>;
+  const posTruncated = allOpenPos.length > OPEN_PO_LIMIT;
+  const openPos = allOpenPos.slice(0, OPEN_PO_LIMIT);
 
   const open = asns.filter((a) => a.status === "expected" || a.status === "in_transit");
   const expectedUnits = open.reduce((s, a) => s + (a.expectedUnits - a.receivedUnits), 0);
@@ -73,7 +78,18 @@ export default async function InboundPage() {
 
       {openPos.length > 0 && (
         <section>
-          <SectionTitle numeral="01" eyebrow="Create" title="Raise an ASN from a PO" />
+          <SectionTitle
+            numeral="01"
+            eyebrow="Create"
+            title="Raise an ASN from a PO"
+            action={
+              posTruncated ? (
+                <span className="label-text text-text-muted">
+                  Showing the {OPEN_PO_LIMIT} most recent open POs
+                </span>
+              ) : undefined
+            }
+          />
           <div className="hairline bg-[var(--surface)] divide-y divide-[var(--border-subtle)]">
             {openPos.map((po) => (
               <form

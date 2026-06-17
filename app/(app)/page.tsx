@@ -214,7 +214,10 @@ export default async function OverviewPage() {
           label: scope.mode === "single" ? "Facility" : "Facilities",
           value: scope.mode === "single" ? scope.name : warehouseCount ?? 0,
         },
-        { label: "Last sync", value: "Just now", status: "live" },
+        // Backed by the OverviewRealtime subscription below — the page refreshes
+        // on live changes, so report the live status rather than a fabricated
+        // "Just now" timestamp.
+        { label: "Status", value: "Live", status: "live" },
       ]}
       actions={
         <CornerLink href="/kiosk" variant="ghost" size="sm">
