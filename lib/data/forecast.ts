@@ -168,11 +168,18 @@ export interface ForecastWorklistRow {
  * facility + tuning params, tagged products/inventory so reorder-point edits and
  * new scans bust it, with a 30-min TTL so the rolling window stays fresh.
  */
+export interface ForecastWorklist {
+  /** Top rows by impact (capped at `limit`). */
+  rows: ForecastWorklistRow[];
+  /** Counts across ALL drifted SKUs (not just the displayed top-N). */
+  totals: { raises: number; lowers: number; seasonal: number; total: number };
+}
+
 export function getForecastWorklist(
   orgId: string,
   warehouseId: string | null,
   opts?: { serviceLevel?: number; minDelta?: number; limit?: number }
-): Promise<ForecastWorklistRow[]> {
+): Promise<ForecastWorklist> {
   const serviceLevel = opts?.serviceLevel ?? DEFAULT_SERVICE_LEVEL;
   const minDelta = opts?.minDelta ?? 1;
   const limit = opts?.limit ?? 50;
@@ -197,14 +204,15 @@ async function computeForecastWorklist(
   serviceLevel: number,
   minDelta: number,
   limit: number
-): Promise<ForecastWorklistRow[]> {
+): Promise<ForecastWorklist> {
   const days = FORECAST_WINDOW_DAYS;
   // Service-role client (bypasses RLS) — every query below filters org_id.
   const admin = createAdminClient() as unknown as Client;
 
+  const emptyTotals = { raises: 0, lowers: 0, seasonal: 0, total: 0 };
   const bundle = await getDailyDemandSeries(admin, orgId, null, days, warehouseId);
   const productIds = [...bundle.seriesByProduct.keys()];
-  if (productIds.length === 0) return [];
+  if (productIds.length === 0) return { rows: [], totals: emptyTotals };
 
   const { data: products } = await admin
     .from("products")
@@ -251,5 +259,15 @@ async function computeForecastWorklist(
   }
 
   rows.sort((a, b) => b.impact - a.impact);
-  return rows.slice(0, limit);
+
+  // Totals span EVERY drifted SKU so the headline counts don't silently cap at
+  // the display limit; only the returned rows are truncated to the top-N.
+  const totals = {
+    raises: rows.filter((r) => r.reorderPointDelta > 0).length,
+    lowers: rows.filter((r) => r.reorderPointDelta < 0).length,
+    seasonal: rows.filter((r) => r.hasSeasonality).length,
+    total: rows.length,
+  };
+
+  return { rows: rows.slice(0, limit), totals };
 }

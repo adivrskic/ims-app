@@ -11,20 +11,29 @@ interface Opt {
   name: string;
 }
 interface Line {
+  product_id: string;
   product_name: string;
   quantity: string;
   lpn: string;
   lot_number: string;
 }
 
-const blankLine = (): Line => ({ product_name: "", quantity: "1", lpn: "", lot_number: "" });
+const blankLine = (): Line => ({
+  product_id: "",
+  product_name: "",
+  quantity: "1",
+  lpn: "",
+  lot_number: "",
+});
 
 export function NewAsnForm({
   suppliers,
   warehouses,
+  products,
 }: {
   suppliers: Opt[];
   warehouses: Opt[];
+  products: Opt[];
 }) {
   const router = useRouter();
   const [lines, setLines] = useState<Line[]>([blankLine()]);
@@ -41,15 +50,15 @@ export function NewAsnForm({
     setError(null);
     const items = lines
       .map((l) => ({
-        product_id: null,
-        product_name: l.product_name.trim(),
+        product_id: l.product_id || null,
+        product_name: l.product_name.trim() || null,
         quantity: parseInt(l.quantity, 10) || 0,
         lpn: l.lpn.trim() || null,
         lot_number: l.lot_number.trim() || null,
       }))
-      .filter((l) => l.product_name && l.quantity > 0);
+      .filter((l) => (l.product_name || l.product_id) && l.quantity > 0);
     if (items.length === 0) {
-      setError("Add at least one line with a name and quantity");
+      setError("Add at least one line with a product (or name) and quantity");
       return;
     }
     formData.set("items", JSON.stringify(items));
@@ -122,8 +131,32 @@ export function NewAsnForm({
         <span className="label-text text-text-muted">Lines</span>
         {lines.map((l, i) => (
           <div key={i} className="flex items-end gap-8 flex-wrap">
+            <div className="flex flex-col gap-2 flex-1 min-w-[160px]">
+              <span className="mono-sm text-text-dim">Link product (optional)</span>
+              <Select
+                name={`__line_product_${i}`}
+                value={l.product_id}
+                onChange={(v) => {
+                  const picked = products.find((p) => p.id === v);
+                  // Link the product and, if the line has no description yet,
+                  // seed it with the product name so the line reconciles.
+                  update(i, {
+                    product_id: v,
+                    product_name:
+                      l.product_name.trim() || (picked?.name ?? l.product_name),
+                  });
+                }}
+                ariaLabel={`Link product for line ${i + 1}`}
+                compact
+                placeholder="— unlinked —"
+                options={[
+                  { value: "", label: "— unlinked —" },
+                  ...products.map((p) => ({ value: p.id, label: p.name })),
+                ]}
+              />
+            </div>
             <label className="flex flex-col gap-2 flex-1 min-w-[160px]">
-              <span className="mono-sm text-text-dim">Product</span>
+              <span className="mono-sm text-text-dim">Name / description</span>
               <input value={l.product_name} onChange={(e) => update(i, { product_name: e.target.value })} placeholder="Name or description" className={field} style={fieldStyle} />
             </label>
             <label className="flex flex-col gap-2 w-[72px]">

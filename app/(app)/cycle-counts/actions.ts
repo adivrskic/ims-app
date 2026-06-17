@@ -3,6 +3,8 @@
 import { revalidatePath, revalidateTag } from "next/cache";
 import { getActionContext } from "@/lib/data/actionContext";
 import { tags } from "@/lib/cache-tags";
+import { applyOrQueueAdjustment } from "@/lib/data/adjustments";
+import { dispatchEvent } from "@/lib/integrations/dispatch";
 
 /**
  * Record a cycle count.
@@ -95,78 +97,107 @@ export async function recordCycleCount(
     return { error: countErr?.message ?? "Failed to record count" };
   }
 
-  // 2. If there's a variance, apply the adjustment
+  // 2. If there's a variance, route it through the shared adjustment governance
+  //    (the same path the manual section-grid edit uses): it commits via the
+  //    drift-guarded RPC and writes the scan_history audit, OR queues the
+  //    adjustment for an admin when the delta exceeds the org threshold or the
+  //    chosen reason requires approval. This keeps cycle-count corrections under
+  //    the same approval rules as every other stock adjustment — previously this
+  //    path committed every variance immediately, bypassing approval entirely.
   if (variance !== 0) {
-    const { error: locUpdateErr } = await ctx.supabase
-      .from("locations")
-      .update({ quantity: countedQty })
-      .eq("id", locationId);
-
-    if (locUpdateErr) {
-      // We've recorded the count but couldn't apply the adjustment.
-      // Leave status='recorded' so an admin can investigate. The count
-      // row exists, so bust the cycleCounts tag; the location did NOT
-      // change, so leave the inventory tag alone.
-      revalidatePath("/cycle-counts");
-      revalidateTag(tags.cycleCounts(ctx.orgId));
-      return {
-        error: `Count recorded but adjustment failed: ${locUpdateErr.message}`,
-        id: count.id,
-      };
+    // Notify integrations subscribed to cycle-count variances (best-effort).
+    try {
+      await dispatchEvent({
+        type: "cycle_count_variance",
+        org_id: ctx.orgId,
+        title: `Cycle count variance: ${variance > 0 ? "+" : ""}${variance}`,
+        body: `Counted ${countedQty} vs expected ${expectedQty} (Δ ${
+          variance > 0 ? "+" : ""
+        }${variance}).`,
+        link: `/inventory/${productId}`,
+        data: {
+          productId,
+          locationId,
+          expectedQty,
+          countedQty,
+          variance,
+          reasonCode,
+        },
+      });
+    } catch {
+      // dispatch swallows its own delivery errors; ignore the rest.
     }
 
-    // Audit trail. quantity is the signed delta so downstream consumers
-    // (mobile app, analytics) can reconstruct what changed. The adjustment
-    // already applied, so a failed audit insert shouldn't roll anything back —
-    // but log it so a gap in the trail is visible rather than silent.
-    const { error: auditErr } = await ctx.supabase
-      .from("scan_history")
-      .insert({
-        org_id: ctx.orgId,
-        product_id: productId,
-        warehouse_id: location.warehouse_id,
-        scanned_by: ctx.user.id,
-        action: "adjust",
-        quantity: variance,
+    const result = await applyOrQueueAdjustment(
+      ctx.supabase,
+      { orgId: ctx.orgId, userId: ctx.user.id },
+      {
+        locationId,
+        warehouseId: location.warehouse_id,
+        productId,
+        currentQty: expectedQty,
+        requestedQty: countedQty,
+        reasonCode,
         notes:
           notes && notes.length > 0
             ? `Cycle count adjustment: ${notes}`
             : "Cycle count adjustment",
-      });
-    if (auditErr) {
-      console.error(
-        `[recordCycleCount] audit insert failed for count ${count.id}:`,
-        auditErr
-      );
+      }
+    );
+
+    if (result.error) {
+      // Count is recorded but the adjustment didn't apply (drift or insert
+      // error). Leave status='recorded' so an admin can investigate.
+      revalidatePath("/cycle-counts");
+      revalidateTag(tags.cycleCounts(ctx.orgId));
+      return {
+        error: `Count recorded but adjustment failed: ${result.error}`,
+        id: count.id,
+      };
     }
 
+    if (result.queued) {
+      // Over threshold / reason requires approval — the variance is pending an
+      // admin's decision and the location hasn't changed yet.
+      revalidatePath("/cycle-counts");
+      revalidateTag(tags.cycleCounts(ctx.orgId));
+      return {
+        success: `Count recorded — adjustment of ${
+          variance > 0 ? "+" : ""
+        }${variance} queued for approval`,
+        id: count.id,
+      };
+    }
+
+    // Committed: mark the count adjusted and bust the inventory cache.
     const { error: statusErr } = await ctx.supabase
       .from("cycle_counts")
       .update({ status: "adjusted" })
-      .eq("id", count.id);
+      .eq("id", count.id)
+      .eq("org_id", ctx.orgId);
     if (statusErr) {
       console.error(
         `[recordCycleCount] status update failed for count ${count.id}:`,
         statusErr
       );
     }
+
+    revalidatePath("/cycle-counts");
+    revalidatePath(`/inventory/${productId}`);
+    revalidateTag(tags.cycleCounts(ctx.orgId));
+    revalidateTag(tags.inventory(ctx.orgId));
+    return {
+      success: `Count recorded — adjusted by ${
+        variance > 0 ? "+" : ""
+      }${variance}`,
+      id: count.id,
+    };
   }
 
+  // No variance — record the count as evidence accuracy was verified.
   revalidatePath("/cycle-counts");
-  revalidatePath(`/inventory/${productId}`);
-  // Always bust cycleCounts (a count row was created). Bust inventory only
-  // when a variance actually changed a location's on-hand quantity.
   revalidateTag(tags.cycleCounts(ctx.orgId));
-  if (variance !== 0) {
-    revalidateTag(tags.inventory(ctx.orgId));
-  }
-  return {
-    success:
-      variance === 0
-        ? "Count recorded — no variance"
-        : `Count recorded — adjusted by ${variance > 0 ? "+" : ""}${variance}`,
-    id: count.id,
-  };
+  return { success: "Count recorded — no variance", id: count.id };
 }
 
 /**

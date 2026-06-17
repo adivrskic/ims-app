@@ -35,7 +35,15 @@ export default async function KitsPage() {
       .from("kit_components")
       .select("id, kit_product_id, component_product_id, quantity")
       .eq("org_id", orgId),
-    supabase.from("locations").select("product_id, quantity").eq("org_id", orgId),
+    // Only count stock the build can actually consume — assemble_kit pulls from
+    // is_active && !quarantined locations, so "Buildable now"/"On hand" here must
+    // use the same filter or it overstates what a build can do.
+    supabase
+      .from("locations")
+      .select("product_id, quantity")
+      .eq("org_id", orgId)
+      .eq("is_active", true)
+      .eq("quarantined", false),
     supabase
       .from("warehouses")
       .select("id, name")

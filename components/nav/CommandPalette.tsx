@@ -467,7 +467,7 @@ const ACTIONS: Action[] = [
     description: "Outbound event delivery",
     keywords: ["events", "outbound", "callback"],
     icon: Webhook,
-    href: "/settings/webhooks",
+    href: "/integrations/webhooks",
   },
 
   // ─── Help ───────────────────────────────────────────────────────────────

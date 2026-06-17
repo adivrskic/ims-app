@@ -57,15 +57,30 @@ export async function updateSession(request: NextRequest) {
 
   const path = request.nextUrl.pathname;
 
+  // Mint a stable device id cookie for authenticated browser sessions. Cookies
+  // can't be set during a server-component render, so the layout's session
+  // tracker relies on this being present. One-time per device.
+  if (user && !request.cookies.get("nb_device")) {
+    response.cookies.set("nb_device", crypto.randomUUID(), {
+      httpOnly: true,
+      sameSite: "lax",
+      secure: process.env.NODE_ENV === "production",
+      path: "/",
+      maxAge: 60 * 60 * 24 * 365,
+    });
+  }
+
   // Self-authenticating API routes carry no user session and must NOT be
   // redirected to /login: cron routes authenticate via the CRON_SECRET bearer
-  // token, webhooks via HMAC signature, and OAuth callbacks via state. They do
-  // their own auth in the route handler. (These live under app/api/*, distinct
-  // from the session-scoped user APIs under app/(app)/api/*.)
+  // token, webhooks via HMAC signature, OAuth callbacks via state, and the
+  // public /api/v1 surface via an API key. They do their own auth in the route
+  // handler. (These live under app/api/*, distinct from the session-scoped user
+  // APIs under app/(app)/api/*.)
   const isSelfAuthApi =
     path.startsWith("/api/cron") ||
     path.startsWith("/api/webhooks") ||
-    path.startsWith("/api/integrations");
+    path.startsWith("/api/integrations") ||
+    path.startsWith("/api/v1");
   if (isSelfAuthApi) {
     return response;
   }
@@ -84,7 +99,12 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  if (user && isAuthPath && path !== "/auth/callback") {
+  if (
+    user &&
+    isAuthPath &&
+    path !== "/auth/callback" &&
+    path !== "/auth/signout"
+  ) {
     const url = request.nextUrl.clone();
     url.pathname = "/";
     url.search = "";

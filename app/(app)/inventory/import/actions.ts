@@ -1,7 +1,8 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
+import { revalidatePath, revalidateTag } from "next/cache";
 import { getActionContext } from "@/lib/data/actionContext";
+import { tags } from "@/lib/cache-tags";
 
 export interface ImportError {
   row: number;
@@ -351,6 +352,11 @@ export async function importProductsCsv(
 
   if (imported > 0) {
     revalidatePath("/inventory");
+    // The Inventory list is served from unstable_cache keyed by these tags;
+    // the path revalidation alone won't refresh it, so imported products can
+    // stay hidden until the TTL. Bust the same tags createProduct does.
+    revalidateTag(tags.products(ctx.orgId));
+    revalidateTag(tags.inventory(ctx.orgId));
   }
 
   return { imported, skipped, errors };

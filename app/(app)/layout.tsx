@@ -18,6 +18,7 @@ import type { WorkspaceOption } from "@/components/nav/WorkspaceSwitcher";
 import type { NotificationItem } from "@/components/nav/NotificationsDropdown";
 import { ScannerProvider } from "@/components/scanner/ScannerProvider";
 import { PrinterProvider } from "@/components/print/PrinterProvider";
+import { recordDeviceSession } from "@/lib/deviceSession";
 import { Suspense } from "react";
 import { KioskGate } from "@/components/kiosk/KioskGate";
 
@@ -32,6 +33,11 @@ export default async function AppLayout({
   // or action that calls these within the same request reuses our results.
   const user = await getCurrentUser();
   if (!user) redirect("/login");
+
+  // Track this device's session + honor remote revocation (eventual sign-out).
+  // Fail-open: recordDeviceSession swallows its own errors.
+  const { revoked } = await recordDeviceSession();
+  if (revoked) redirect("/auth/signout?revoked=1");
 
   const cookieStore = await cookies();
   const initialCollapsed = cookieStore.get(SIDEBAR_COOKIE)?.value === "true";

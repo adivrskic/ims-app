@@ -23,6 +23,8 @@ interface Props {
   warehouses: WarehouseOption[];
   /** Preselect the order type (e.g. from /orders/new?type=internal_transfer). */
   initialType?: string;
+  /** Preselect the first line's product (e.g. from /scan → Pick). */
+  initialProductId?: string;
 }
 
 interface LineItem {
@@ -46,14 +48,25 @@ function newId(): string {
   return Math.random().toString(36).slice(2, 10);
 }
 
-export function CreateOrderForm({ products, warehouses, initialType }: Props) {
+export function CreateOrderForm({
+  products,
+  warehouses,
+  initialType,
+  initialProductId,
+}: Props) {
   const [orderType, setOrderType] = useState<string>(
     ORDER_TYPES.some((t) => t.value === initialType)
       ? (initialType as string)
       : "installer_job"
   );
   const [items, setItems] = useState<LineItem[]>([
-    { uid: newId(), product_id: "", quantity: 1 },
+    {
+      uid: newId(),
+      product_id: products.some((p) => p.id === initialProductId)
+        ? (initialProductId as string)
+        : "",
+      quantity: 1,
+    },
   ]);
   const [state, formAction, pending] = useActionState(createOrder, undefined);
 

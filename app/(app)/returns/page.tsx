@@ -7,6 +7,7 @@ import { getActiveScope, scopeDescription } from "@/lib/facilityScope";
 import { getCurrentOrgContext } from "@/lib/data/user";
 import { getReturnsList } from "@/lib/data/returns";
 import { ReturnsRealtime } from "@/components/realtime/PageRealtime";
+import { ReturnReviewForm } from "./ReturnReviewForm";
 
 export const metadata = { title: "Returns" };
 
@@ -194,7 +195,7 @@ export default async function ReturnsPage({
                 : "No returns yet"
               : `No ${activeFilter.label.toLowerCase()} returns`
           }
-          description="Returns are logged from the mobile app at the receiving dock. Each gets a disposition and routes automatically — restock items land back in their last-known section, damaged items are written off, and RMA items queue for supplier pickup."
+          description="Returns are logged from the mobile app at the receiving dock with an initial disposition. Review each one here to sign off or correct its disposition — restock, write-off, hold, or supplier RMA."
           icon={<RotateCcw size={20} strokeWidth={1.5} />}
         />
       ) : (
@@ -262,6 +263,18 @@ export default async function ReturnsPage({
                       <p className="mono-sm text-text-secondary mt-2">
                         {r.reason}
                       </p>
+                    )}
+                  </div>
+                  <div className="shrink-0 flex items-start">
+                    {reviewed ? (
+                      <span className="label-text text-text-dim inline-flex items-center gap-6">
+                        Reviewed {relTime(r.reviewed_at)}
+                      </span>
+                    ) : (
+                      <ReturnReviewForm
+                        returnId={r.id}
+                        currentDisposition={r.disposition}
+                      />
                     )}
                   </div>
                 </div>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useEffect, useState } from "react";
 import { Check, X } from "lucide-react";
 import { CornerButton } from "@/components/ui/CornerButton";
 import { receiveLineItem } from "../actions";
@@ -37,6 +37,13 @@ export function ReceiveLineForm({
     receiveLineItem,
     undefined
   );
+
+  // On a successful receipt the page revalidates with the new received qty;
+  // collapse the editor so reopening shows the refreshed "remaining" default
+  // rather than the now-stale one.
+  useEffect(() => {
+    if (state && "success" in state && state.success) setOpen(false);
+  }, [state]);
 
   if (!open) {
     return (

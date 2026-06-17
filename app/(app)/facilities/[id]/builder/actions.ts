@@ -1,6 +1,7 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
+import { revalidatePath, revalidateTag } from "next/cache";
+import { tags } from "@/lib/cache-tags";
 import { getActionContext } from "@/lib/data/actionContext";
 import type { SectionDraft, LayoutElementDraft, ElementKind } from "./types";
 
@@ -147,8 +148,13 @@ export async function saveLayout({
     if (error) return { error: `Insert elements failed: ${error.message}` };
   }
 
-  revalidatePath("/settings/facilities");
-  revalidatePath(`/settings/facilities/${warehouseId}/builder`);
+  // Bust the live routes (pages moved from /settings/facilities → /facilities)
+  // AND the warehouses tag, so a separate tab/session viewing the facility or
+  // its builder reflects the saved layout instead of a stale cached copy.
+  revalidatePath("/facilities");
+  revalidatePath(`/facilities/${warehouseId}`);
+  revalidatePath(`/facilities/${warehouseId}/builder`);
+  revalidateTag(tags.warehouses(ctx.orgId));
   return { success: "Layout saved" };
 }
 
@@ -178,7 +184,9 @@ export async function setFloorUnit(
     .eq("id", warehouseId)
     .eq("org_id", ctx.orgId);
   if (error) return { error: error.message };
-  revalidatePath(`/settings/facilities/${warehouseId}/builder`);
+  revalidatePath(`/facilities/${warehouseId}`);
+  revalidatePath(`/facilities/${warehouseId}/builder`);
+  revalidateTag(tags.warehouses(ctx.orgId));
   return { unit };
 }
 
@@ -475,8 +483,10 @@ export async function restoreSnapshot(
     if (error) return { error: `Cleanup elements failed: ${error.message}` };
   }
 
-  revalidatePath("/settings/facilities");
-  revalidatePath(`/settings/facilities/${warehouseId}/builder`);
+  revalidatePath("/facilities");
+  revalidatePath(`/facilities/${warehouseId}`);
+  revalidatePath(`/facilities/${warehouseId}/builder`);
+  revalidateTag(tags.warehouses(ctx.orgId));
 
   // ── 6. Hand the restored state back so the editor can refresh ────────
   return {

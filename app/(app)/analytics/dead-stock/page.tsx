@@ -65,7 +65,9 @@ export default async function DeadStockPage({
        locations:locations ( quantity, warehouse_id )`
     )
     .order("name", { ascending: true })
-    .limit(500); // hard cap so a huge catalog doesn't OOM us
+    // Hard cap so a huge catalog doesn't OOM us; fetch one extra to detect
+    // truncation accurately (the cap is on products FETCHED, not dead-stock rows).
+    .limit(501);
 
   // Recent picks (within threshold) — products that appear here are NOT
   // dead stock.
@@ -134,8 +136,12 @@ export default async function DeadStockPage({
     days_inactive: number; // 366 = "never within 365d"
   };
 
+  // The cap applies to products fetched from the catalog — track whether we hit
+  // it so the truncation notice reflects the real cause (not the filtered subset).
+  const productsTruncated = (products ?? []).length > 500;
+
   const rows: Row[] = (
-    (products ?? []) as Array<{
+    ((products ?? []).slice(0, 500)) as Array<{
       id: string;
       name: string;
       barcode: string;
@@ -452,11 +458,11 @@ export default async function DeadStockPage({
                 ))}
               </tbody>
             </table>
-            {rows.length === 500 && (
+            {productsTruncated && (
               <div className="px-20 py-10 hairline-t bg-[var(--bg-elevated)]">
                 <p className="label-text text-text-dim">
-                  Showing the first 500 — narrow with a warehouse filter or a
-                  shorter threshold to see the rest.
+                  Scanned the first 500 products — narrow with a warehouse filter
+                  or a shorter threshold to cover the rest of the catalog.
                 </p>
               </div>
             )}

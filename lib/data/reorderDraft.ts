@@ -188,19 +188,6 @@ export async function draftReorderPOs(opts: {
     }
   }
 
-  // PO numbering: read the latest PO-NNNN and increment. NOTE: po_number is a
-  // global sequence in this app (no org filter, matching the manual draft), and
-  // this read-then-increment is not concurrency-safe — see the `generate_po_number`
-  // DB function for an atomic alternative if collisions ever surface.
-  const { data: lastPO } = await supabase
-    .from("purchase_orders")
-    .select("po_number")
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  const lastNum = lastPO?.po_number?.match(/PO-(\d+)/)?.[1];
-  let nextNum = (lastNum ? parseInt(lastNum, 10) : 2048) + 1;
-
   const createdPoIds: string[] = [];
 
   for (const group of groups.values()) {
@@ -216,12 +203,25 @@ export async function draftReorderPOs(opts: {
     const truncationHint =
       group.lines.length > 3 ? ` (+${group.lines.length - 3} more)` : "";
 
+    // Atomic per-org PO number via the shared app.next_document_number RPC —
+    // the SAME counter (and params) the manual createPurchaseOrder path uses,
+    // so auto-drafts and manual POs can never mint colliding PO-#### values.
+    // Replaces the old read-max-then-increment, which was non-atomic, not
+    // org-scoped, and never advanced the org_number_sequences counter.
+    const { data: poNumber } = await supabase.rpc("next_document_number", {
+      p_org_id: orgId,
+      p_kind: "PO",
+      p_prefix: "PO",
+      p_pad: 0,
+      p_start: 2049,
+    });
+
     const { data: newPO, error: poErr } = await supabase
       .from("purchase_orders")
       .insert({
         org_id: orgId,
         warehouse_id: warehouse?.id,
-        po_number: `PO-${nextNum}`,
+        po_number: poNumber as string,
         supplier_id: group.supplierId,
         supplier_name: group.supplierName,
         status: "draft",
@@ -235,7 +235,6 @@ export async function draftReorderPOs(opts: {
 
     if (poErr || !newPO) continue;
     createdPoIds.push(newPO.id);
-    nextNum++;
 
     // AI narration is fail-open: a null return just means reasoning=null.
     const narrations = narrate

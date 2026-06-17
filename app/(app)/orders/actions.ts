@@ -233,11 +233,63 @@ export async function advanceOrderStatus(formData: FormData): Promise<void> {
   if (!ctx.can("orders.manage")) return;
 
   const id = String(formData.get("id") ?? "");
-  const currentStatus = String(
-    formData.get("current_status") ?? ""
-  ) as OrderStatus;
-  const next = NEXT_STATUS[currentStatus];
-  if (!next) return;
+  if (!id) return;
+
+  // Re-read the authoritative status server-side rather than trusting the
+  // hidden field — a stale tab (or a double click) could otherwise advance
+  // from the wrong base or skip a step.
+  const { data: order } = await ctx.supabase
+    .from("orders")
+    .select("status")
+    .eq("id", id)
+    .eq("org_id", ctx.orgId)
+    .maybeSingle();
+  if (!order) {
+    redirect(`/orders/${id}?error=${encodeURIComponent("Order not found.")}`);
+  }
+
+  const current = order.status as OrderStatus;
+  const next = NEXT_STATUS[current];
+  if (!next) {
+    redirect(
+      `/orders/${id}?error=${encodeURIComponent(
+        "This order can't be advanced from its current status."
+      )}`
+    );
+  }
+
+  // Pick-completion gate: an order can't be staged (or moved past it) until the
+  // allocated stock has actually been picked. Without this, an order can leave
+  // the pick flow with its reservation dropped — silently leaking promised
+  // stock back into ATP while nothing was physically picked.
+  if (current === "in_progress") {
+    const { data: itemRows } = await ctx.supabase
+      .from("order_items")
+      .select("quantity_allocated, quantity_picked")
+      .eq("order_id", id);
+    const allocated = (itemRows ?? []).reduce(
+      (s, r) => s + (r.quantity_allocated ?? 0),
+      0
+    );
+    const picked = (itemRows ?? []).reduce(
+      (s, r) => s + (r.quantity_picked ?? 0),
+      0
+    );
+    if (allocated <= 0) {
+      redirect(
+        `/orders/${id}?error=${encodeURIComponent(
+          "Nothing is allocated to pick yet — allocate stock before staging."
+        )}`
+      );
+    }
+    if (picked < allocated) {
+      redirect(
+        `/orders/${id}?error=${encodeURIComponent(
+          `Picking isn't complete — ${picked} of ${allocated} allocated units picked.`
+        )}`
+      );
+    }
+  }
 
   const update: Record<string, unknown> = { status: next };
   // When assigning the pick list, mark the current user as the assignee
@@ -245,11 +297,18 @@ export async function advanceOrderStatus(formData: FormData): Promise<void> {
     update.assigned_to = ctx.user.id;
   }
 
-  await ctx.supabase
+  const { error } = await ctx.supabase
     .from("orders")
     .update(update)
     .eq("id", id)
     .eq("org_id", ctx.orgId);
+  if (error) {
+    redirect(
+      `/orders/${id}?error=${encodeURIComponent(
+        "Couldn't update the order — please try again."
+      )}`
+    );
+  }
 
   revalidatePath(`/orders/${id}`);
   revalidatePath("/orders");
@@ -261,11 +320,19 @@ export async function cancelOrder(formData: FormData): Promise<void> {
   if ("error" in ctx) return;
   if (!ctx.can("orders.manage")) return;
   const id = String(formData.get("id") ?? "");
-  await ctx.supabase
+  if (!id) return;
+  const { error } = await ctx.supabase
     .from("orders")
     .update({ status: "cancelled" as OrderStatus })
     .eq("id", id)
     .eq("org_id", ctx.orgId);
+  if (error) {
+    redirect(
+      `/orders/${id}?error=${encodeURIComponent(
+        "Couldn't cancel the order — please try again."
+      )}`
+    );
+  }
   // Release the reservation so the unpicked stock returns to ATP for other
   // orders (already-picked units stay accounted for — see the internal).
   await releaseOrderAllocationInternal(ctx.supabase, ctx.orgId, id);

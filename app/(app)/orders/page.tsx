@@ -222,7 +222,7 @@ export default async function OrdersPage({
                 : "No orders yet"
               : `No ${activeFilter.label.toLowerCase()} orders`
           }
-          description="Orders flow in from the mobile pick app, Shopify, and direct CSV imports. They'll appear here ranked by delivery date."
+          description="Create an order here, or let them flow in from the mobile pick app. They'll appear ranked by delivery date."
           icon={<ClipboardList size={20} strokeWidth={1.5} />}
         />
       ) : (

@@ -6,8 +6,12 @@ export const dynamic = "force-dynamic";
 
 function csvCell(v: string | number | null): string {
   if (v == null) return "";
-  const s = String(v);
-  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  let s = String(v);
+  // Neutralize spreadsheet formula injection: Excel/Sheets evaluate a cell that
+  // begins with = + - @ (or a leading tab/CR). Prefix such values with an
+  // apostrophe so they render as literal text instead of executing.
+  if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
+  return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
 export async function GET(req: Request) {
