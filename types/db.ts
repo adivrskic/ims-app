@@ -234,6 +234,34 @@ export type ReturnDisposition =
   | "hold_for_inspection"
   | "supplier_return";
 
+export interface ReturnRow {
+  id: string;
+  org_id: string;
+  warehouse_id: string | null;
+  product_id: string | null;
+  order_id: string | null;
+  quantity: number;
+  disposition: ReturnDisposition;
+  reason: string | null;
+  photo_url: string | null;
+  received_by: string | null;
+  reviewed_by: string | null;
+  reviewed_at: string | null;
+  review_notes: string | null;
+  created_at: string | null;
+}
+
+export interface UserSessionRow {
+  id: string;
+  user_id: string;
+  device_id: string;
+  user_agent: string | null;
+  ip: string | null;
+  revoked_at: string | null;
+  created_at: string;
+  last_seen_at: string;
+}
+
 // ── Insert helper ─────────────────────────────────────────────────────────
 
 type WithGenerated<R, K extends keyof R> = Omit<R, K> & Partial<Pick<R, K>>;
@@ -375,7 +403,39 @@ export type Database = {
       order_items: StubTable;
       purchase_orders: StubTable;
       po_line_items: StubTable;
-      returns: StubTable;
+      returns: {
+        Row: ReturnRow;
+        Insert: WithGenerated<
+          ReturnRow,
+          | "id"
+          | "created_at"
+          | "warehouse_id"
+          | "product_id"
+          | "order_id"
+          | "reason"
+          | "photo_url"
+          | "received_by"
+          | "reviewed_by"
+          | "reviewed_at"
+          | "review_notes"
+        >;
+        Update: Partial<ReturnRow>;
+        Relationships: [];
+      };
+      user_sessions: {
+        Row: UserSessionRow;
+        Insert: WithGenerated<
+          UserSessionRow,
+          | "id"
+          | "created_at"
+          | "last_seen_at"
+          | "user_agent"
+          | "ip"
+          | "revoked_at"
+        >;
+        Update: Partial<UserSessionRow>;
+        Relationships: [];
+      };
       integrations: StubTable;
       sync_jobs: StubTable;
       api_keys: StubTable;
