@@ -3,6 +3,7 @@ import { SectionTitle } from "@/components/ui/SectionTitle";
 import { Badge } from "@/components/ui/Badge";
 import { CornerButton } from "@/components/ui/CornerButton";
 import { InviteForm } from "./InviteForm";
+import { BulkInviteButton } from "./BulkInviteButton";
 import { MemberPermissions } from "./MemberPermissions";
 import { removeMember, revokeInvite } from "../actions";
 import { effectivePermissions } from "@/lib/permissions";
@@ -42,13 +43,14 @@ export default async function MembersPage() {
       .order("created_at", { ascending: false }),
     supabase
       .from("org_members")
-      .select("role, permissions")
+      .select("role, permissions, org_id")
       .eq("user_id", user?.id ?? "")
       .limit(1)
       .maybeSingle(),
   ]);
 
   const currentRole = (currentMembership?.role ?? "member") as OrgRole;
+  const orgId = (currentMembership?.org_id as string | undefined) ?? undefined;
   const isAdmin = effectivePermissions(
     currentRole,
     (currentMembership?.permissions as string[] | null) ?? null
@@ -56,7 +58,21 @@ export default async function MembersPage() {
 
   return (
     <div className="flex flex-col gap-40">
-      {isAdmin && <InviteForm />}
+      {isAdmin && (
+        <section aria-labelledby="invite-heading" className="flex flex-col gap-14">
+          <div className="flex items-center justify-between">
+            <h2
+              id="invite-heading"
+              className="label-text"
+              style={{ color: "var(--text-muted)" }}
+            >
+              — Invite a teammate
+            </h2>
+            {orgId && <BulkInviteButton orgId={orgId} />}
+          </div>
+          <InviteForm />
+        </section>
+      )}
 
       <section aria-labelledby="members-heading">
         <SectionTitle

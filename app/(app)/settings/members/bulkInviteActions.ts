@@ -7,12 +7,13 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { sendInviteEmail } from "@/lib/email/invite";
 
+/**
+ * Bulk team invite — CSV preview + execute. Relocated from the retired
+ * /settings/team page so the feature is reachable from /settings/members.
+ */
+
 const VALID_ROLES = ["owner", "admin", "member"] as const;
 type Role = (typeof VALID_ROLES)[number];
-
-/* ============================================================
- * Helpers
- * ============================================================ */
 
 async function getCallerRole(orgId: string): Promise<{
   userId: string;
@@ -36,9 +37,9 @@ async function getCallerRole(orgId: string): Promise<{
 }
 
 /**
- * Minimal CSV parser — handles quoted cells, escaped quotes, and
- * commas inside quotes. Doesn't handle literal newlines inside
- * quoted cells (rare for our schema and would complicate ~50 LoC).
+ * Minimal CSV parser — handles quoted cells, escaped quotes, and commas inside
+ * quotes. Doesn't handle literal newlines inside quoted cells (rare for our
+ * schema and would complicate ~50 LoC).
  */
 function parseCsv(text: string): string[][] {
   const rows: string[][] = [];
@@ -96,198 +97,6 @@ function parseCsv(text: string): string[][] {
   return rows;
 }
 
-/* ============================================================
- * Single-invite + role management (unchanged from prior batch)
- * ============================================================ */
-
-export interface InviteResult {
-  error?: string;
-  success?: string;
-}
-
-export async function inviteMember(
-  _prev: InviteResult | undefined,
-  formData: FormData
-): Promise<InviteResult> {
-  const orgId = String(formData.get("org_id") ?? "");
-  const email = String(formData.get("email") ?? "")
-    .trim()
-    .toLowerCase();
-  const role = String(formData.get("role") ?? "member");
-
-  if (!orgId) return { error: "Missing org" };
-  if (!email) return { error: "Email is required" };
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    return { error: "Not a valid email address" };
-  }
-  if (!VALID_ROLES.includes(role as Role)) return { error: "Invalid role" };
-
-  const caller = await getCallerRole(orgId);
-  if (!caller) return { error: "Not a member of this workspace" };
-  if (caller.role !== "owner" && caller.role !== "admin") {
-    return { error: "Only owners and admins can invite members" };
-  }
-  if (caller.role === "admin" && role === "owner") {
-    return { error: "Only owners can invite new owners" };
-  }
-
-  const admin = createAdminClient();
-
-  const { data: existingProfile } = await admin
-    .from("profiles")
-    .select("id")
-    .eq("email", email)
-    .maybeSingle();
-
-  if (existingProfile) {
-    const { data: existingMembership } = await admin
-      .from("org_members")
-      .select("user_id")
-      .eq("org_id", orgId)
-      .eq("user_id", existingProfile.id)
-      .maybeSingle();
-
-    if (existingMembership) {
-      return { error: `${email} is already a member of this workspace` };
-    }
-
-    const { error: memberError } = await admin.from("org_members").insert({
-      org_id: orgId,
-      user_id: existingProfile.id,
-      role,
-    });
-    if (memberError) {
-      return { error: `Failed to add member: ${memberError.message}` };
-    }
-    revalidatePath("/settings/team");
-    return { success: `${email} added to the workspace as ${role}` };
-  }
-
-  // New user → token invite + email a join link. Unified with the rest of
-  // the app: no Supabase auth user is created up front; they sign up via the
-  // /invite/{token} link and acceptInvite() adds membership.
-  const token = randomBytes(16).toString("hex");
-  const expiresAtMs = Date.now() + 7 * 24 * 60 * 60 * 1000;
-  const expiresAt = new Date(expiresAtMs).toISOString();
-
-  const { error: inviteInsertError } = await admin.from("org_invites").insert({
-    org_id: orgId,
-    email,
-    role,
-    token,
-    invited_by: caller.userId,
-    expires_at: expiresAt,
-  });
-  if (inviteInsertError) {
-    return {
-      error: inviteInsertError.message.includes("duplicate")
-        ? `An invite for ${email} already exists`
-        : `Couldn't create the invite: ${inviteInsertError.message}`,
-    };
-  }
-
-  const [{ data: orgRow }, { data: inviterProfile }] = await Promise.all([
-    admin.from("orgs").select("name").eq("id", orgId).maybeSingle(),
-    admin
-      .from("profiles")
-      .select("full_name, email")
-      .eq("id", caller.userId)
-      .maybeSingle(),
-  ]);
-
-  const sent = await sendInviteEmail(orgId, {
-    inviterName:
-      inviterProfile?.full_name ?? inviterProfile?.email ?? "A teammate",
-    inviterEmail: inviterProfile?.email ?? "",
-    orgName: orgRow?.name ?? "the workspace",
-    role,
-    token,
-    recipientEmail: email,
-    expiresAt: new Date(expiresAtMs),
-  });
-
-  revalidatePath("/settings/team");
-  return {
-    success: sent.ok
-      ? `Invite emailed to ${email} as ${role}`
-      : `Invite created for ${email} — share the join link manually`,
-  };
-}
-
-export async function updateMemberRole(formData: FormData): Promise<void> {
-  const orgId = String(formData.get("org_id") ?? "");
-  const userId = String(formData.get("user_id") ?? "");
-  const role = String(formData.get("role") ?? "");
-
-  if (!orgId || !userId) return;
-  if (!VALID_ROLES.includes(role as Role)) return;
-
-  const caller = await getCallerRole(orgId);
-  if (!caller) return;
-  if (caller.role !== "owner") return;
-
-  const admin = createAdminClient();
-
-  if (role !== "owner") {
-    const { data: owners } = await admin
-      .from("org_members")
-      .select("user_id")
-      .eq("org_id", orgId)
-      .eq("role", "owner");
-    if ((owners ?? []).length === 1 && owners![0].user_id === userId) return;
-  }
-
-  await admin
-    .from("org_members")
-    .update({ role })
-    .eq("org_id", orgId)
-    .eq("user_id", userId);
-
-  revalidatePath("/settings/team");
-}
-
-export async function removeMember(formData: FormData): Promise<void> {
-  const orgId = String(formData.get("org_id") ?? "");
-  const userId = String(formData.get("user_id") ?? "");
-  if (!orgId || !userId) return;
-
-  const caller = await getCallerRole(orgId);
-  if (!caller) return;
-  if (caller.role !== "owner" && caller.role !== "admin") return;
-
-  const admin = createAdminClient();
-
-  const { data: target } = await admin
-    .from("org_members")
-    .select("role")
-    .eq("org_id", orgId)
-    .eq("user_id", userId)
-    .maybeSingle();
-  if (!target) return;
-  if (caller.role === "admin" && target.role === "owner") return;
-
-  if (target.role === "owner") {
-    const { data: owners } = await admin
-      .from("org_members")
-      .select("user_id")
-      .eq("org_id", orgId)
-      .eq("role", "owner");
-    if ((owners ?? []).length <= 1) return;
-  }
-
-  await admin
-    .from("org_members")
-    .delete()
-    .eq("org_id", orgId)
-    .eq("user_id", userId);
-
-  revalidatePath("/settings/team");
-}
-
-/* ============================================================
- * Bulk invite — preview + execute
- * ============================================================ */
-
 export type BulkRowStatus =
   | "new" // will create a token invite + email a join link
   | "existing_user" // already in Nautilus elsewhere; will add to this org (no email)
@@ -322,9 +131,9 @@ export interface BulkExecuteResult {
   added: number; // existing users added to this org
   failed: number;
   errors: Array<{ row: number; email: string; message: string }>;
-  /** /invite/{token} join links — for sales to copy-paste if any email
-   *  gets stuck. Same order as new-user rows in the input. (Field name kept
-   *  as magic_links for backward compatibility with the result UI.) */
+  /** /invite/{token} join links — for sales to copy-paste if any email gets
+   *  stuck. Same order as new-user rows in the input. (Field name kept as
+   *  magic_links for backward compatibility with the result UI.) */
   magic_links: Array<{ email: string; action_link: string | null }>;
 }
 
@@ -332,8 +141,8 @@ const MAX_BULK_ROWS = 200; // hard cap to avoid runaway calls
 const MAX_FILE_BYTES = 2 * 1024 * 1024; // 2MB
 
 /**
- * Parse + validate a team CSV. Returns per-row status without touching
- * the database. Pure read except for the existence checks against
+ * Parse + validate a team CSV. Returns per-row status without touching the
+ * database. Pure read except for the existence checks against
  * profiles/org_members.
  *
  * CSV columns (header-matched, any order):
@@ -566,10 +375,10 @@ export async function previewBulkInvite(
 }
 
 /**
- * Execute the bulk invite. Re-parses the file (so the user can't tamper
- * with rows between preview and execute), then provisions every row
- * with status `new` or `existing_user`. Errors and already-members are
- * skipped per their preview status.
+ * Execute the bulk invite. Re-parses the file (so the user can't tamper with
+ * rows between preview and execute), then provisions every row with status
+ * `new` or `existing_user`. Errors and already-members are skipped per their
+ * preview status.
  */
 export async function executeBulkInvite(
   formData: FormData
@@ -699,11 +508,11 @@ export async function executeBulkInvite(
 
         added++;
       } else {
-        // New user — token invite + email a join link. No auth user or
-        // profile is created up front; they sign up via /invite/{token}
-        // and acceptInvite() creates membership. (CSV full_name/phone/
-        // facility are NOT applied for new users — there's no profile yet;
-        // those are only applied to existing users above.)
+        // New user — token invite + email a join link. No auth user or profile
+        // is created up front; they sign up via /invite/{token} and
+        // acceptInvite() creates membership. (CSV full_name/phone/facility are
+        // NOT applied for new users — there's no profile yet; those are only
+        // applied to existing users above.)
         const token = randomBytes(16).toString("hex");
         const { error: inviteError } = await admin.from("org_invites").insert({
           org_id: orgId,
@@ -717,8 +526,8 @@ export async function executeBulkInvite(
         let linkToken = token;
         if (inviteError) {
           if (inviteError.message.includes("duplicate")) {
-            // A pending invite already exists — reuse its token so the run
-            // is idempotent and still yields a shareable link.
+            // A pending invite already exists — reuse its token so the run is
+            // idempotent and still yields a shareable link.
             const { data: existing } = await admin
               .from("org_invites")
               .select("token")
@@ -773,6 +582,6 @@ export async function executeBulkInvite(
     }
   }
 
-  revalidatePath("/settings/team");
+  revalidatePath("/settings/members");
   return { invited, added, failed, errors, magic_links: magicLinks };
 }

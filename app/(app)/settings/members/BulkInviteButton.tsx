@@ -18,7 +18,7 @@ import {
   type BulkPreviewResult,
   type BulkPreviewRow,
   type BulkExecuteResult,
-} from "./actions";
+} from "./bulkInviteActions";
 
 type Step = "idle" | "previewing" | "preview_ready" | "executing" | "done";
 
@@ -158,7 +158,7 @@ export function BulkInviteButton({ orgId }: Props) {
                   className="label-text mb-2"
                   style={{ color: "var(--text-muted)" }}
                 >
-                  Workspace · Team
+                  Workspace · Members
                 </p>
                 <h2
                   id="bulk-invite-title"
