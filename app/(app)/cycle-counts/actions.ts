@@ -3,31 +3,28 @@
 import { revalidatePath, revalidateTag } from "next/cache";
 import { getActionContext } from "@/lib/data/actionContext";
 import { tags } from "@/lib/cache-tags";
-import { applyOrQueueAdjustment } from "@/lib/data/adjustments";
+import { adjustmentNeedsApproval } from "@/lib/data/adjustments";
 import { dispatchEvent } from "@/lib/integrations/dispatch";
 
 /**
  * Record a cycle count.
  *
- * Flow:
- *   1. Read the target location to get current expected quantity
- *   2. Insert cycle_counts row (variance is generated server-side)
- *   3. If variance != 0:
- *        a. Update locations.quantity → counted_qty
- *        b. Write a scan_history row (action='adjust') for the audit trail
- *        c. Update cycle_counts.status='adjusted'
+ * The count row insert AND its stock correction happen in ONE transaction via
+ * the `app.record_cycle_count` RPC (under a row lock on the location), so a
+ * partial failure can't leave the count and on-hand diverged. The RPC reads the
+ * live expected qty under the lock — the intended "count against the current
+ * baseline" behavior, so two operators can't cancel each other out.
  *
- * If counted_qty equals current quantity, we still record the count (so we
- * have evidence accuracy was verified) but don't write an adjustment.
+ * Governance is unchanged and shared with the manual section-grid edit: a
+ * variance is committed immediately (via the RPC's drift-free write + a
+ * scan_history 'adjust' audit row), OR queued as a stock_adjustment_request when
+ * its magnitude exceeds the org threshold or the reason requires approval. The
+ * commit-vs-queue decision is computed here (adjustmentNeedsApproval) and passed
+ * into the RPC, keeping approval policy in one place.
  *
- * Important: we read the location's CURRENT qty (not whatever the user might
- * have eyeballed on a stale UI). This prevents two operators recording
- * counts on different baselines from cancelling each other out.
- *
- * Cache: this writes cycle_counts (→ cycleCounts tag) and, when there's a
- * variance, locations + scan_history (→ inventory tag). Busting the inventory
- * tag is what keeps the cached Inventory list correct after a count
- * adjustment — this is part of sealing Inventory's write path.
+ * Cache: writes cycle_counts (→ cycleCounts tag) and, on a committed variance,
+ * locations + scan_history (→ inventory tag) — busting inventory keeps the
+ * cached Inventory list correct after a count adjustment.
  */
 export async function recordCycleCount(
   _prev: unknown,
@@ -54,12 +51,11 @@ export async function recordCycleCount(
     return { error: "Counted quantity must be a non-negative integer" };
   }
 
-  // Fetch the current location state. Confirms the location exists,
-  // matches the product, and gives us the expected qty in a single
-  // race-free read.
+  // Read the current qty to size the adjustment for the approval-gating decision
+  // (the RPC re-reads authoritatively under lock for the actual write).
   const { data: location, error: locErr } = await ctx.supabase
     .from("locations")
-    .select("id, product_id, warehouse_id, quantity")
+    .select("product_id, quantity")
     .eq("id", locationId)
     .eq("org_id", ctx.orgId)
     .maybeSingle();
@@ -73,131 +69,84 @@ export async function recordCycleCount(
     };
   }
 
-  const expectedQty = location.quantity ?? 0;
-  const variance = countedQty - expectedQty;
+  const variance = countedQty - (location.quantity ?? 0);
+  const needsApproval =
+    variance !== 0 &&
+    (await adjustmentNeedsApproval(ctx.supabase, ctx.orgId, reasonCode, variance));
 
-  // 1. Insert the count
-  const { data: count, error: countErr } = await ctx.supabase
-    .from("cycle_counts")
-    .insert({
-      org_id: ctx.orgId,
-      product_id: productId,
-      location_id: locationId,
-      warehouse_id: location.warehouse_id,
-      expected_qty: expectedQty,
-      counted_qty: countedQty,
-      notes: notes || null,
-      reason_code: reasonCode,
-      counted_by: ctx.user.id,
-    })
-    .select("id")
-    .single();
+  // One atomic call: insert the count + (commit | queue) the adjustment.
+  const { data: rpcData, error: rpcErr } = await ctx.supabase.rpc(
+    "record_cycle_count",
+    {
+      p_org_id: ctx.orgId,
+      p_location_id: locationId,
+      p_product_id: productId,
+      p_counted_qty: countedQty,
+      p_notes: notes || null,
+      p_reason_code: reasonCode,
+      p_counted_by: ctx.user.id,
+      p_needs_approval: needsApproval,
+    }
+  );
+  if (rpcErr) return { error: rpcErr.message };
 
-  if (countErr || !count) {
-    return { error: countErr?.message ?? "Failed to record count" };
+  const res = (rpcData ?? {}) as {
+    countId?: string;
+    outcome?: "no_variance" | "queued" | "committed";
+    variance?: number;
+    expected?: number;
+    error?: string;
+  };
+  if (res.error) {
+    return {
+      error:
+        res.error === "product_mismatch"
+          ? "Selected location holds a different product. Refresh and try again."
+          : "Location not found",
+    };
   }
 
-  // 2. If there's a variance, route it through the shared adjustment governance
-  //    (the same path the manual section-grid edit uses): it commits via the
-  //    drift-guarded RPC and writes the scan_history audit, OR queues the
-  //    adjustment for an admin when the delta exceeds the org threshold or the
-  //    chosen reason requires approval. This keeps cycle-count corrections under
-  //    the same approval rules as every other stock adjustment — previously this
-  //    path committed every variance immediately, bypassing approval entirely.
-  if (variance !== 0) {
-    // Notify integrations subscribed to cycle-count variances (best-effort).
+  const v = res.variance ?? 0;
+  const sign = v > 0 ? "+" : "";
+
+  // Best-effort integration notification on a real variance.
+  if (res.outcome !== "no_variance") {
     try {
       await dispatchEvent({
         type: "cycle_count_variance",
         org_id: ctx.orgId,
-        title: `Cycle count variance: ${variance > 0 ? "+" : ""}${variance}`,
-        body: `Counted ${countedQty} vs expected ${expectedQty} (Δ ${
-          variance > 0 ? "+" : ""
-        }${variance}).`,
+        title: `Cycle count variance: ${sign}${v}`,
+        body: `Counted ${countedQty} vs expected ${res.expected ?? "?"} (Δ ${sign}${v}).`,
         link: `/inventory/${productId}`,
         data: {
           productId,
           locationId,
-          expectedQty,
+          expectedQty: res.expected,
           countedQty,
-          variance,
+          variance: v,
           reasonCode,
         },
       });
     } catch {
       // dispatch swallows its own delivery errors; ignore the rest.
     }
-
-    const result = await applyOrQueueAdjustment(
-      ctx.supabase,
-      { orgId: ctx.orgId, userId: ctx.user.id },
-      {
-        locationId,
-        warehouseId: location.warehouse_id,
-        productId,
-        currentQty: expectedQty,
-        requestedQty: countedQty,
-        reasonCode,
-        notes:
-          notes && notes.length > 0
-            ? `Cycle count adjustment: ${notes}`
-            : "Cycle count adjustment",
-      }
-    );
-
-    if (result.error) {
-      // Count is recorded but the adjustment didn't apply (drift or insert
-      // error). Leave status='recorded' so an admin can investigate.
-      revalidatePath("/cycle-counts");
-      revalidateTag(tags.cycleCounts(ctx.orgId));
-      return {
-        error: `Count recorded but adjustment failed: ${result.error}`,
-        id: count.id,
-      };
-    }
-
-    if (result.queued) {
-      // Over threshold / reason requires approval — the variance is pending an
-      // admin's decision and the location hasn't changed yet.
-      revalidatePath("/cycle-counts");
-      revalidateTag(tags.cycleCounts(ctx.orgId));
-      return {
-        success: `Count recorded — adjustment of ${
-          variance > 0 ? "+" : ""
-        }${variance} queued for approval`,
-        id: count.id,
-      };
-    }
-
-    // Committed: mark the count adjusted and bust the inventory cache.
-    const { error: statusErr } = await ctx.supabase
-      .from("cycle_counts")
-      .update({ status: "adjusted" })
-      .eq("id", count.id)
-      .eq("org_id", ctx.orgId);
-    if (statusErr) {
-      console.error(
-        `[recordCycleCount] status update failed for count ${count.id}:`,
-        statusErr
-      );
-    }
-
-    revalidatePath("/cycle-counts");
-    revalidatePath(`/inventory/${productId}`);
-    revalidateTag(tags.cycleCounts(ctx.orgId));
-    revalidateTag(tags.inventory(ctx.orgId));
-    return {
-      success: `Count recorded — adjusted by ${
-        variance > 0 ? "+" : ""
-      }${variance}`,
-      id: count.id,
-    };
   }
 
-  // No variance — record the count as evidence accuracy was verified.
   revalidatePath("/cycle-counts");
   revalidateTag(tags.cycleCounts(ctx.orgId));
-  return { success: "Count recorded — no variance", id: count.id };
+
+  if (res.outcome === "committed") {
+    revalidatePath(`/inventory/${productId}`);
+    revalidateTag(tags.inventory(ctx.orgId));
+    return { success: `Count recorded — adjusted by ${sign}${v}`, id: res.countId };
+  }
+  if (res.outcome === "queued") {
+    return {
+      success: `Count recorded — adjustment of ${sign}${v} queued for approval`,
+      id: res.countId,
+    };
+  }
+  return { success: "Count recorded — no variance", id: res.countId };
 }
 
 /**
