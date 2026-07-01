@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { headers } from "next/headers";
+import { safeNext } from "@/lib/auth/safe-redirect";
 
 /**
  * Common return shape for auth server actions used with useActionState.
@@ -79,7 +80,7 @@ export async function signInWithPassword(
 ): Promise<ActionState> {
   const email = String(formData.get("email") ?? "").trim();
   const password = String(formData.get("password") ?? "");
-  const next = String(formData.get("next") ?? "/") || "/";
+  const next = safeNext(String(formData.get("next") ?? "/"));
 
   if (!email) return { error: "Email is required" };
   if (!password) return { error: "Password is required" };
@@ -88,9 +89,9 @@ export async function signInWithPassword(
   const { error } = await supabase.auth.signInWithPassword({ email, password });
   if (error) return { error: friendlyAuthError(error) };
 
-  // Successful sign-in — redirect to wherever the user was headed.
-  // redirect() throws a special exception that Next.js catches, so this
-  // doesn't return — the function exits here.
+  // Successful sign-in — redirect to wherever the user was headed (validated
+  // same-origin path only). redirect() throws a special exception that Next.js
+  // catches, so this doesn't return — the function exits here.
   redirect(next);
 }
 
@@ -165,7 +166,7 @@ export async function sendMagicLink(
   formData: FormData
 ): Promise<ActionState> {
   const email = String(formData.get("email") ?? "").trim();
-  const next = String(formData.get("next") ?? "/") || "/";
+  const next = safeNext(String(formData.get("next") ?? "/"));
   if (!email) return { error: "Email is required" };
 
   const supabase = await createClient();
@@ -196,7 +197,7 @@ export async function sendMagicLink(
  * state. Form signature: (formData: FormData) => Promise<void>.
  */
 export async function signInWithGoogle(formData: FormData): Promise<void> {
-  const next = String(formData.get("next") ?? "/") || "/";
+  const next = safeNext(String(formData.get("next") ?? "/"));
   const supabase = await createClient();
   const h = await headers();
   const origin = h.get("origin") ?? "";
