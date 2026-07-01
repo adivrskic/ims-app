@@ -8,6 +8,7 @@ import {
   allocateOrderInternal,
   releaseOrderAllocationInternal,
   fillBackordersInternal,
+  OPEN_ORDER_STATUSES,
 } from "@/lib/data/allocation";
 
 type OrderStatus =
@@ -321,15 +322,28 @@ export async function cancelOrder(formData: FormData): Promise<void> {
   if (!ctx.can("orders.manage")) return;
   const id = String(formData.get("id") ?? "");
   if (!id) return;
-  const { error } = await ctx.supabase
+  // Only OPEN orders can be cancelled — never flip a completed/shipped (or
+  // already-cancelled) order, which would corrupt order history. The status
+  // filter makes the update a no-op for those; detect it via the returned row.
+  const { data: cancelled, error } = await ctx.supabase
     .from("orders")
     .update({ status: "cancelled" as OrderStatus })
     .eq("id", id)
-    .eq("org_id", ctx.orgId);
+    .eq("org_id", ctx.orgId)
+    .in("status", OPEN_ORDER_STATUSES as unknown as string[])
+    .select("id")
+    .maybeSingle();
   if (error) {
     redirect(
       `/orders/${id}?error=${encodeURIComponent(
         "Couldn't cancel the order — please try again."
+      )}`
+    );
+  }
+  if (!cancelled) {
+    redirect(
+      `/orders/${id}?error=${encodeURIComponent(
+        "This order can no longer be cancelled."
       )}`
     );
   }

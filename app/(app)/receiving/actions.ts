@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath, revalidateTag } from "next/cache";
+import { redirect } from "next/navigation";
 import { getActionContext } from "@/lib/data/actionContext";
 import { tags } from "@/lib/cache-tags";
 
@@ -39,7 +40,35 @@ export async function reviewQcLine(formData: FormData): Promise<void> {
     .maybeSingle();
   if (!line || (line as { qc_status: string }).qc_status !== "hold") return;
 
-  await ctx.supabase
+  // Resolve the quarantined on-hand this line landed (see receiveLineItem)
+  // FIRST, while the line is still on hold. If this fails, the line stays on
+  // hold and the review is retryable — the opposite order could leave a line
+  // marked "passed" while its stock stays invisibly quarantined.
+  //   pass → release it into available stock (clear the quarantine flag)
+  //   fail → remove it from on-hand (soft-delete; flagged for vendor return)
+  const { error: stockErr } =
+    decision === "pass"
+      ? await ctx.supabase
+          .from("locations")
+          .update({ quarantined: false })
+          .eq("po_line_id", lineId)
+          .eq("org_id", ctx.orgId)
+          .eq("quarantined", true)
+      : await ctx.supabase
+          .from("locations")
+          .update({ is_active: false })
+          .eq("po_line_id", lineId)
+          .eq("org_id", ctx.orgId)
+          .eq("quarantined", true);
+  if (stockErr) {
+    redirect(
+      `/receiving?error=${encodeURIComponent(
+        "Couldn't update the held stock — the line was left on hold, please retry."
+      )}`
+    );
+  }
+
+  const { error: lineErr } = await ctx.supabase
     .from("po_line_items")
     .update({
       qc_status: decision === "pass" ? "passed" : "failed",
@@ -48,24 +77,12 @@ export async function reviewQcLine(formData: FormData): Promise<void> {
       qc_by: ctx.user.id,
     })
     .eq("id", lineId);
-
-  // Resolve the quarantined on-hand this line landed (see receiveLineItem):
-  //   pass → release it into available stock (clear the quarantine flag)
-  //   fail → remove it from on-hand (soft-delete; flagged for vendor return)
-  if (decision === "pass") {
-    await ctx.supabase
-      .from("locations")
-      .update({ quarantined: false })
-      .eq("po_line_id", lineId)
-      .eq("org_id", ctx.orgId)
-      .eq("quarantined", true);
-  } else {
-    await ctx.supabase
-      .from("locations")
-      .update({ is_active: false })
-      .eq("po_line_id", lineId)
-      .eq("org_id", ctx.orgId)
-      .eq("quarantined", true);
+  if (lineErr) {
+    redirect(
+      `/receiving?error=${encodeURIComponent(
+        "Stock updated but the QC status didn't save — re-run the review to sync."
+      )}`
+    );
   }
 
   revalidatePath("/receiving");

@@ -56,6 +56,16 @@ export async function POST(req: Request) {
       status: 400,
     });
   }
+  // Bound the magnitude: velocity/forecast sum abs(quantity) over pick+adjust, so
+  // an unbounded value would let a caller arbitrarily inflate reorder points and
+  // auto-drafted POs. A single scan of >1e6 units is not a real movement.
+  const MAX_SCAN_QTY = 1_000_000;
+  if (Math.abs(quantity) > MAX_SCAN_QTY) {
+    return Response.json(
+      { error: `quantity out of range (±${MAX_SCAN_QTY})` },
+      { status: 400 }
+    );
+  }
 
   const admin = createAdminClient();
 
@@ -68,6 +78,20 @@ export async function POST(req: Request) {
     .maybeSingle();
   if (!product) {
     return Response.json({ error: "Product not found" }, { status: 404 });
+  }
+
+  // If a warehouse is supplied, it must belong to the key's org too — otherwise
+  // a caller could stamp another org's warehouse UUID onto their scan row.
+  if (warehouseId) {
+    const { data: wh } = await admin
+      .from("warehouses")
+      .select("id")
+      .eq("id", warehouseId)
+      .eq("org_id", auth.orgId)
+      .maybeSingle();
+    if (!wh) {
+      return Response.json({ error: "Warehouse not found" }, { status: 404 });
+    }
   }
 
   const { data: scan, error } = await admin
