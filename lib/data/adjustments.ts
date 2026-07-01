@@ -187,6 +187,47 @@ async function commitAdjustment(
 }
 
 /**
+ * Whether an adjustment of `delta` under `reasonCode` must be queued for admin
+ * approval — magnitude ≥ the org's `adjustment_approval_threshold`, or the
+ * reason itself requires approval. Shared by the manual-edit path
+ * (applyOrQueueAdjustment) and the cycle-count path so both apply identical
+ * governance. `>=` so a delta exactly at the threshold is gated, and threshold 0
+ * gates every nonzero adjustment.
+ */
+export async function adjustmentNeedsApproval(
+  supabase: Client,
+  orgId: string,
+  reasonCode: string | null,
+  delta: number
+): Promise<boolean> {
+  const [{ data: org }, reasonRow] = await Promise.all([
+    supabase
+      .from("orgs")
+      .select("adjustment_approval_threshold")
+      .eq("id", orgId)
+      .maybeSingle(),
+    reasonCode
+      ? supabase
+          .from("adjustment_reasons")
+          .select("requires_approval")
+          .eq("org_id", orgId)
+          .eq("code", reasonCode)
+          .maybeSingle()
+      : Promise.resolve({ data: null }),
+  ]);
+  const threshold =
+    (org as { adjustment_approval_threshold: number | null } | null)
+      ?.adjustment_approval_threshold ?? null;
+  const reasonRequiresApproval = Boolean(
+    (reasonRow as { data: { requires_approval: boolean } | null } | null)?.data
+      ?.requires_approval
+  );
+  return (
+    (threshold != null && Math.abs(delta) >= threshold) || reasonRequiresApproval
+  );
+}
+
+/**
  * Apply a manual adjustment, or queue it for approval when its magnitude
  * exceeds the org threshold or the chosen reason requires approval.
  */
@@ -198,35 +239,12 @@ export async function applyOrQueueAdjustment(
   const delta = a.requestedQty - a.currentQty;
   if (delta === 0) return { noop: true };
 
-  // Resolve gating inputs: org threshold + whether the reason requires approval.
-  const [{ data: org }, reasonRow] = await Promise.all([
-    supabase
-      .from("orgs")
-      .select("adjustment_approval_threshold")
-      .eq("id", ctx.orgId)
-      .maybeSingle(),
-    a.reasonCode
-      ? supabase
-          .from("adjustment_reasons")
-          .select("requires_approval")
-          .eq("org_id", ctx.orgId)
-          .eq("code", a.reasonCode)
-          .maybeSingle()
-      : Promise.resolve({ data: null }),
-  ]);
-  const threshold =
-    (org as { adjustment_approval_threshold: number | null } | null)
-      ?.adjustment_approval_threshold ?? null;
-  const reasonRequiresApproval = Boolean(
-    (reasonRow as { data: { requires_approval: boolean } | null } | null)?.data
-      ?.requires_approval
+  const needsApproval = await adjustmentNeedsApproval(
+    supabase,
+    ctx.orgId,
+    a.reasonCode,
+    delta
   );
-
-  // `>=` so a delta exactly at the threshold is gated (the boundary should
-  // require approval, not slip through), and so threshold 0 gates every nonzero
-  // adjustment (delta === 0 already returned as a no-op above).
-  const needsApproval =
-    (threshold != null && Math.abs(delta) >= threshold) || reasonRequiresApproval;
 
   if (needsApproval) {
     const { error } = await supabase.from("stock_adjustment_requests").insert({
