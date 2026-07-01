@@ -1,6 +1,7 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getDatasetMeta, type ReportConfig } from "@/lib/reports-meta";
+import { fetchAllPaged } from "@/lib/data/paginate";
 
 /**
  * Report dataset RUNNERS (server-only). Each builds a safe, parameterized query
@@ -23,31 +24,6 @@ type Row = Record<string, unknown>;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function oneOf(v: any): any {
   return Array.isArray(v) ? v[0] ?? null : v ?? null;
-}
-
-/**
- * Fetch every row of a query in 1000-row pages. PostgREST caps a single response
- * (~1000 rows), so a plain select silently truncates large tables — fatal for
- * aggregations like inventory on-hand. `build` must apply `.range(from, to)`.
- */
-const PAGE = 1000;
-async function fetchAllPaged<T>(
-  build: (from: number, to: number) => PromiseLike<{ data: T[] | null }>,
-  cap = 100_000
-): Promise<T[]> {
-  const out: T[] = [];
-  for (let from = 0; from < cap; from += PAGE) {
-    const to = Math.min(from + PAGE, cap) - 1;
-    const { data } = await build(from, to);
-    const rows = (data ?? []) as T[];
-    out.push(...rows);
-    if (rows.length < PAGE) break;
-    if (out.length >= cap) {
-      console.warn(`[reports] hit ${cap}-row cap; output truncated`);
-      break;
-    }
-  }
-  return out;
 }
 
 async function runInventory(

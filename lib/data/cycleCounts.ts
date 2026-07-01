@@ -1,6 +1,7 @@
 import "server-only";
 import { unstable_cache } from "next/cache";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { fetchAllPaged } from "@/lib/data/paginate";
 import { tags } from "@/lib/cache-tags";
 import { productVelocities } from "@/lib/data/velocity";
 import { cycleRiskScore, type CountRecord } from "@/lib/cycle-risk";
@@ -93,20 +94,33 @@ export function getCycleCountsPageData(
         { data: totalCountsRow, count: totalCounts },
         { data: rankingData },
       ] = await Promise.all([
-        admin
-          .from("products")
-          .select("id, name, barcode")
-          .eq("org_id", orgId)
-          .order("name", { ascending: true }),
-        admin
-          .from("locations")
-          .select(
-            `id, product_id, bay, level, quantity,
-             section:sections ( code ),
-             warehouse:warehouses ( name )`
-          )
-          .eq("org_id", orgId)
-          .not("product_id", "is", null),
+        (async () => ({
+          data: await fetchAllPaged<Record<string, unknown>>((from, to) =>
+            admin
+              .from("products")
+              .select("id, name, barcode")
+              .eq("org_id", orgId)
+              .order("id", { ascending: true })
+              .range(from, to)
+          ),
+        }))(),
+        (async () => ({
+          // Paginate: this feeds onHandByProduct — truncation understates the
+          // on-hand hints and the risk-prioritization on-hand column.
+          data: await fetchAllPaged<Record<string, unknown>>((from, to) =>
+            admin
+              .from("locations")
+              .select(
+                `id, product_id, bay, level, quantity,
+                 section:sections ( code ),
+                 warehouse:warehouses ( name )`
+              )
+              .eq("org_id", orgId)
+              .not("product_id", "is", null)
+              .order("id", { ascending: true })
+              .range(from, to)
+          ),
+        }))(),
         (() => {
           let q = admin
             .from("cycle_counts")
@@ -143,10 +157,12 @@ export function getCycleCountsPageData(
           .limit(2000),
       ]);
 
-      const products = (productsData ?? []) as CycleCountProductOption[];
+      const products = ((productsData ?? []) as unknown as CycleCountProductOption[])
+        .slice()
+        .sort((a, b) => (a.name ?? "").localeCompare(b.name ?? ""));
 
       const locations: CycleCountLocationOption[] = (
-        (locationsData ?? []) as Array<{
+        (locationsData ?? []) as unknown as Array<{
           id: string;
           product_id: string | null;
           bay: number | null;

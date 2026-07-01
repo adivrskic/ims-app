@@ -1,6 +1,7 @@
 import "server-only";
 import { unstable_cache } from "next/cache";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { fetchAllPaged } from "@/lib/data/paginate";
 import { tags } from "@/lib/cache-tags";
 
 /**
@@ -131,9 +132,19 @@ export function getOverviewData(
           .from("warehouses")
           .select("id", { count: "exact", head: true })
           .eq("org_id", orgId),
-        scoped(
-          admin.from("locations").select("quantity").eq("org_id", orgId)
-        ),
+        (async () => ({
+          // Paginate + exclude soft-deleted locations. A plain select caps at
+          // ~1000 rows, undercounting total stock in any real warehouse.
+          data: await fetchAllPaged<{ quantity: number | null }>((from, to) => {
+            let q = admin
+              .from("locations")
+              .select("quantity")
+              .eq("org_id", orgId)
+              .eq("is_active", true);
+            if (facilityId) q = q.eq("warehouse_id", facilityId);
+            return q.order("id", { ascending: true }).range(from, to);
+          }),
+        }))(),
         scoped(
           admin
             .from("scan_history")
@@ -141,13 +152,18 @@ export function getOverviewData(
             .eq("org_id", orgId)
             .gte("scanned_at", today.toISOString())
         ),
-        scoped(
-          admin
-            .from("scan_history")
-            .select("scanned_at")
-            .eq("org_id", orgId)
-            .gte("scanned_at", fourteenDaysAgo.toISOString())
-        ),
+        (async () => ({
+          // Paginate: >1000 scans in 14 days (busy org) would truncate the trend.
+          data: await fetchAllPaged<{ scanned_at: string | null }>((from, to) => {
+            let q = admin
+              .from("scan_history")
+              .select("scanned_at")
+              .eq("org_id", orgId)
+              .gte("scanned_at", fourteenDaysAgo.toISOString());
+            if (facilityId) q = q.eq("warehouse_id", facilityId);
+            return q.order("id", { ascending: true }).range(from, to);
+          }),
+        }))(),
         scoped(
           admin
             .from("scan_history")
@@ -158,13 +174,24 @@ export function getOverviewData(
             .order("scanned_at", { ascending: false })
             .limit(10)
         ),
-        admin
-          .from("products")
-          .select(
-            "id, name, barcode, reorder_point, category:categories ( name ), locations:locations ( quantity, section_id )"
-          )
-          .eq("org_id", orgId)
-          .gt("reorder_point", 0),
+        (async () => ({
+          // Low-stock detection: the embedded locations MUST exclude soft-deleted
+          // and QC-quarantined units, else a SKU that is actually below reorder
+          // point looks healthy. Paginate the parent products too.
+          data: await fetchAllPaged<OverviewStockByProduct>((from, to) =>
+            admin
+              .from("products")
+              .select(
+                "id, name, barcode, reorder_point, category:categories ( name ), locations:locations ( quantity, section_id )"
+              )
+              .eq("org_id", orgId)
+              .gt("reorder_point", 0)
+              .eq("locations.is_active", true)
+              .eq("locations.quarantined", false)
+              .order("id", { ascending: true })
+              .range(from, to)
+          ),
+        }))(),
       ]);
 
       return {

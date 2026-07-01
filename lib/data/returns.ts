@@ -1,6 +1,7 @@
 import "server-only";
 import { unstable_cache } from "next/cache";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { fetchAllPaged } from "@/lib/data/paginate";
 import { tags } from "@/lib/cache-tags";
 
 /**
@@ -80,15 +81,23 @@ export function getReturnsList(
       if (facilityId) listQuery = listQuery.eq("warehouse_id", facilityId);
       if (disposition) listQuery = listQuery.eq("disposition", disposition);
 
-      let countsQuery = admin
-        .from("returns")
-        .select("disposition, reviewed_at")
-        .eq("org_id", orgId);
-      if (facilityId) countsQuery = countsQuery.eq("warehouse_id", facilityId);
+      // Paginate: counting fetched rows truncates total/pendingReview at ~1000
+      // returns otherwise.
+      const countPromise = fetchAllPaged<{
+        disposition: string;
+        reviewed_at: string | null;
+      }>((from, to) => {
+        let q = admin
+          .from("returns")
+          .select("disposition, reviewed_at")
+          .eq("org_id", orgId);
+        if (facilityId) q = q.eq("warehouse_id", facilityId);
+        return q.order("id", { ascending: true }).range(from, to);
+      });
 
-      const [{ data: listData }, { data: countData }] = await Promise.all([
+      const [{ data: listData }, countData] = await Promise.all([
         listQuery,
-        countsQuery,
+        countPromise,
       ]);
 
       const counts: Record<string, number> = {};

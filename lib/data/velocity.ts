@@ -1,6 +1,7 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { dailyVelocity } from "@/lib/replenishment";
+import { fetchAllPaged } from "@/lib/data/paginate";
 
 /**
  * Lookback window (days) for per-product velocity from scan_history.
@@ -50,21 +51,25 @@ export async function productVelocities(
   sinceDate.setHours(0, 0, 0, 0);
   const since = sinceDate.toISOString();
 
-  const { data, error } = await supabase
-    .from("scan_history")
-    .select("product_id, quantity")
-    .in("product_id", productIds)
-    .in("action", ["pick", "adjust"])
-    .gte("scanned_at", since);
-
-  if (error || !data) return result;
+  // Paginate: a large product set over the window can exceed ~1000 scans and
+  // truncate, understating velocity (and every reorder point derived from it).
+  const data = await fetchAllPaged<{
+    product_id: string | null;
+    quantity: number | null;
+  }>((from, to) =>
+    supabase
+      .from("scan_history")
+      .select("product_id, quantity")
+      .in("product_id", productIds)
+      .in("action", ["pick", "adjust"])
+      .gte("scanned_at", since)
+      .order("id", { ascending: true })
+      .range(from, to)
+  );
 
   // Sum absolute consumed quantity per product.
   const totals = new Map<string, number>();
-  for (const row of data as Array<{
-    product_id: string | null;
-    quantity: number | null;
-  }>) {
+  for (const row of data) {
     if (!row.product_id) continue;
     totals.set(
       row.product_id,
