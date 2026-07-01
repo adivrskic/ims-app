@@ -154,21 +154,30 @@ export async function getWorkOrderDetail(
     }
   }
 
+  // Draw each line's requirement from a running pool per component so a product
+  // that appears on more than one line isn't counted as fully available for
+  // both. `onHand` stays the true stock figure (display); `short` reflects the
+  // netted draw, so `buildable` can't claim a WO is ready when the combined
+  // component demand exceeds stock.
+  const poolByComponent = new Map(onHandByProduct);
   const lines: WorkOrderLine[] = rows.map((r) => {
     const comp = oneOf(r.product) as
       | { name: string | null; internal_sku: string | null }
       | null;
+    const pid = r.component_product_id as string;
     const required = r.quantity_required as number;
-    const onHand = onHandByProduct.get(r.component_product_id as string) ?? 0;
+    const onHand = onHandByProduct.get(pid) ?? 0;
+    const avail = poolByComponent.get(pid) ?? 0;
+    poolByComponent.set(pid, Math.max(0, avail - required));
     return {
       id: r.id as string,
-      componentProductId: r.component_product_id as string,
+      componentProductId: pid,
       componentName: comp?.name ?? "Unknown product",
       sku: comp?.internal_sku ?? null,
       required,
       consumed: (r.quantity_consumed as number) ?? 0,
       onHand,
-      short: Math.max(0, required - onHand),
+      short: Math.max(0, required - avail),
     };
   });
 
