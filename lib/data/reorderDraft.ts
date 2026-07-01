@@ -101,6 +101,9 @@ export async function draftReorderPOs(opts: {
     .limit(1)
     .maybeSingle();
 
+  // Embedded locations MUST exclude soft-deleted + QC-quarantined units, else a
+  // SKU truly below its reorder point can look healthy and be skipped from the
+  // auto-reorder draft (understock). Matches the ATP/available-stock contract.
   const { data: products } = await supabase
     .from("products")
     .select(
@@ -112,7 +115,9 @@ export async function draftReorderPOs(opts: {
        )`
     )
     .eq("org_id", orgId)
-    .gt("reorder_point", 0);
+    .gt("reorder_point", 0)
+    .eq("locations.is_active", true)
+    .eq("locations.quarantined", false);
 
   const lowStock = ((products as ProductRow[]) ?? [])
     .map((p) => {

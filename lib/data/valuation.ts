@@ -1,6 +1,7 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { productVelocities } from "@/lib/data/velocity";
+import { fetchAllPaged } from "@/lib/data/paginate";
 
 /**
  * Inventory valuation + turnover + ABC + aging.
@@ -66,26 +67,8 @@ export async function getValuation(
   warehouseId: string | null
 ): Promise<ValuationReport> {
   // Catalog + categories (org-wide), on-hand (scope-filtered), last movement.
-  const productsP = supabase
-    .from("products")
-    .select("id, name, internal_sku, unit_cost, category:categories ( name )")
-    .eq("org_id", orgId);
-
-  let locationsQ = supabase
-    .from("locations")
-    .select("product_id, quantity")
-    .eq("org_id", orgId);
-  if (warehouseId) locationsQ = locationsQ.eq("warehouse_id", warehouseId);
-
-  let scansQ = supabase
-    .from("scan_history")
-    .select("product_id, scanned_at")
-    .eq("org_id", orgId);
-  if (warehouseId) scansQ = scansQ.eq("warehouse_id", warehouseId);
-
-  const [{ data: products }, { data: locs }, { data: scans }] =
-    await Promise.all([productsP, locationsQ, scansQ]);
-
+  // Paginate all three: a plain select caps at PostgREST's ~1000 rows, which
+  // would silently drop products/locations/scans and understate inventory value.
   type P = {
     id: string;
     name: string;
@@ -93,7 +76,36 @@ export async function getValuation(
     unit_cost: string | null;
     category: { name: string | null } | { name: string | null }[] | null;
   };
-  const prodRows = (products ?? []) as P[];
+  const [prodRows, locs, scans] = await Promise.all([
+    fetchAllPaged<P>((from, to) =>
+      supabase
+        .from("products")
+        .select("id, name, internal_sku, unit_cost, category:categories ( name )")
+        .eq("org_id", orgId)
+        .order("id", { ascending: true })
+        .range(from, to)
+    ),
+    fetchAllPaged<{ product_id: string | null; quantity: number | null }>(
+      (from, to) => {
+        let q = supabase
+          .from("locations")
+          .select("product_id, quantity")
+          .eq("org_id", orgId);
+        if (warehouseId) q = q.eq("warehouse_id", warehouseId);
+        return q.order("id", { ascending: true }).range(from, to);
+      }
+    ),
+    fetchAllPaged<{ product_id: string | null; scanned_at: string | null }>(
+      (from, to) => {
+        let q = supabase
+          .from("scan_history")
+          .select("product_id, scanned_at")
+          .eq("org_id", orgId);
+        if (warehouseId) q = q.eq("warehouse_id", warehouseId);
+        return q.order("id", { ascending: true }).range(from, to);
+      }
+    ),
+  ]);
 
   // On-hand per product (scope).
   const onHandByProduct = new Map<string, number>();

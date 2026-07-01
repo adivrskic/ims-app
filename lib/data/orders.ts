@@ -1,6 +1,7 @@
 import "server-only";
 import { unstable_cache } from "next/cache";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { fetchAllPaged } from "@/lib/data/paginate";
 import { tags } from "@/lib/cache-tags";
 
 /**
@@ -85,15 +86,17 @@ export function getOrdersList(
       if (statuses) listQuery = listQuery.in("status", statuses);
 
       // ── Chip counts (all statuses, same scope) ───────────────────
-      let countsQuery = admin
-        .from("orders")
-        .select("status")
-        .eq("org_id", orgId);
-      if (facilityId) countsQuery = countsQuery.eq("warehouse_id", facilityId);
+      // Paginate the status column: counting fetched rows truncates the totals
+      // at ~1000 orders otherwise (chip badges + total silently undercount).
+      const countPromise = fetchAllPaged<{ status: string }>((from, to) => {
+        let q = admin.from("orders").select("status").eq("org_id", orgId);
+        if (facilityId) q = q.eq("warehouse_id", facilityId);
+        return q.order("id", { ascending: true }).range(from, to);
+      });
 
-      const [{ data: listData }, { data: countData }] = await Promise.all([
+      const [{ data: listData }, countData] = await Promise.all([
         listQuery,
-        countsQuery,
+        countPromise,
       ]);
 
       const counts: Record<string, number> = {};

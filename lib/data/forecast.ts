@@ -3,6 +3,7 @@ import { unstable_cache } from "next/cache";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { buildForecast, type ForecastResult } from "@/lib/forecast";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { fetchAllPaged } from "@/lib/data/paginate";
 import { tags } from "@/lib/cache-tags";
 
 /**
@@ -43,15 +44,23 @@ async function getDailyDemandSeries(
   const start = windowStart(days);
   const startMs = start.getTime();
 
-  let q = supabase
-    .from("scan_history")
-    .select("product_id, quantity, scanned_at")
-    .eq("org_id", orgId)
-    .in("action", ["pick", "adjust"])
-    .gte("scanned_at", start.toISOString());
-  if (productIds && productIds.length) q = q.in("product_id", productIds);
-  if (warehouseId) q = q.eq("warehouse_id", warehouseId);
-  const { data } = await q;
+  // Paginate: >1000 pick/adjust scans in the window (routine for a busy org)
+  // would otherwise truncate the demand series and skew every forecast.
+  const data = await fetchAllPaged<{
+    product_id: string | null;
+    quantity: number | null;
+    scanned_at: string | null;
+  }>((from, to) => {
+    let q = supabase
+      .from("scan_history")
+      .select("product_id, quantity, scanned_at")
+      .eq("org_id", orgId)
+      .in("action", ["pick", "adjust"])
+      .gte("scanned_at", start.toISOString());
+    if (productIds && productIds.length) q = q.in("product_id", productIds);
+    if (warehouseId) q = q.eq("warehouse_id", warehouseId);
+    return q.order("id", { ascending: true }).range(from, to);
+  });
 
   const seriesByProduct = new Map<string, number[]>();
   const ensure = (pid: string) => {

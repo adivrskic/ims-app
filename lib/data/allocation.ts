@@ -1,5 +1,6 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { fetchAllPaged } from "@/lib/data/paginate";
 
 /**
  * Allocation / Available-to-Promise (ATP) / backorders.
@@ -68,66 +69,34 @@ export async function getStockAvailability(
   productIds?: string[]
 ): Promise<Map<string, StockAvailability>> {
   const out = new Map<string, StockAvailability>();
-  const limitIds = productIds && productIds.length ? new Set(productIds) : null;
+  const limitIds = productIds && productIds.length ? productIds : null;
 
-  // ── On-hand from active locations. ───────────────────────────────────────
-  let locQ = supabase
-    .from("locations")
-    .select("product_id, quantity")
-    .eq("org_id", orgId)
-    .eq("warehouse_id", warehouseId)
-    .eq("is_active", true)
-    .eq("quarantined", false); // QC-held stock is owned but not available
-  if (limitIds) locQ = locQ.in("product_id", [...limitIds]);
-  const { data: locs } = await locQ;
+  // Aggregate in Postgres (SUM over locations + open order_items) rather than
+  // pulling every row into JS. A plain select truncates at PostgREST's ~1000-row
+  // cap — which understates `reserved` and OVERSTATES ATP → oversell. Summing in
+  // SQL is both correct (no cap) and one round-trip instead of thousands of rows.
+  const { data, error } = await supabase.rpc("stock_availability", {
+    p_org_id: orgId,
+    p_warehouse_id: warehouseId,
+    p_product_ids: limitIds,
+  });
+  if (error || !data) return out;
 
-  for (const l of (locs ?? []) as Array<{
+  for (const r of data as Array<{
     product_id: string | null;
-    quantity: number | null;
+    on_hand: number | string | null;
+    reserved: number | string | null;
+    backordered: number | string | null;
   }>) {
-    if (!l.product_id) continue;
-    const cur = out.get(l.product_id) ?? { ...EMPTY };
-    cur.onHand += l.quantity ?? 0;
-    out.set(l.product_id, cur);
-  }
-
-  // ── Open orders in this facility → their line items. ─────────────────────
-  const { data: openOrders } = await supabase
-    .from("orders")
-    .select("id")
-    .eq("org_id", orgId)
-    .eq("warehouse_id", warehouseId)
-    .in("status", OPEN_ORDER_STATUSES as unknown as string[]);
-  const openIds = (openOrders ?? []).map((o) => (o as { id: string }).id);
-
-  if (openIds.length > 0) {
-    let itemQ = supabase
-      .from("order_items")
-      .select("product_id, quantity_requested, quantity_allocated, quantity_picked")
-      .in("order_id", openIds);
-    if (limitIds) itemQ = itemQ.in("product_id", [...limitIds]);
-    const { data: items } = await itemQ;
-
-    for (const it of (items ?? []) as Array<{
-      product_id: string | null;
-      quantity_requested: number | null;
-      quantity_allocated: number | null;
-      quantity_picked: number | null;
-    }>) {
-      if (!it.product_id) continue;
-      const cur = out.get(it.product_id) ?? { ...EMPTY };
-      const allocated = it.quantity_allocated ?? 0;
-      const picked = it.quantity_picked ?? 0;
-      const requested = it.quantity_requested ?? 0;
-      cur.allocated += Math.max(0, allocated - picked);
-      cur.backordered += Math.max(0, requested - allocated);
-      out.set(it.product_id, cur);
-    }
-  }
-
-  // ── Finalize ATP. ────────────────────────────────────────────────────────
-  for (const v of out.values()) {
-    v.atp = v.onHand - v.allocated;
+    if (!r.product_id) continue;
+    const onHand = Number(r.on_hand ?? 0);
+    const allocated = Number(r.reserved ?? 0);
+    out.set(r.product_id, {
+      onHand,
+      allocated,
+      atp: onHand - allocated,
+      backordered: Number(r.backordered ?? 0),
+    });
   }
   return out;
 }
@@ -142,31 +111,20 @@ export async function getProductAllocationOrgWide(
   orgId: string,
   productId: string
 ): Promise<{ allocated: number; backordered: number }> {
-  const { data: openOrders } = await supabase
-    .from("orders")
-    .select("id")
-    .eq("org_id", orgId)
-    .in("status", OPEN_ORDER_STATUSES as unknown as string[]);
-  const ids = (openOrders ?? []).map((o) => (o as { id: string }).id);
-  if (ids.length === 0) return { allocated: 0, backordered: 0 };
-
-  const { data: items } = await supabase
-    .from("order_items")
-    .select("quantity_requested, quantity_allocated, quantity_picked")
-    .eq("product_id", productId)
-    .in("order_id", ids);
-
-  let allocated = 0;
-  let backordered = 0;
-  for (const it of (items ?? []) as Array<{
-    quantity_requested: number | null;
-    quantity_allocated: number | null;
-    quantity_picked: number | null;
-  }>) {
-    allocated += Math.max(0, (it.quantity_allocated ?? 0) - (it.quantity_picked ?? 0));
-    backordered += Math.max(0, (it.quantity_requested ?? 0) - (it.quantity_allocated ?? 0));
-  }
-  return { allocated, backordered };
+  // Org-wide (all facilities) via the same SQL aggregate — null warehouse.
+  const { data } = await supabase.rpc("stock_availability", {
+    p_org_id: orgId,
+    p_warehouse_id: null,
+    p_product_ids: [productId],
+  });
+  const row = ((data ?? []) as Array<{
+    reserved: number | string | null;
+    backordered: number | string | null;
+  }>)[0];
+  return {
+    allocated: Number(row?.reserved ?? 0),
+    backordered: Number(row?.backordered ?? 0),
+  };
 }
 
 /** Single-product convenience. Returns zeros when there's no data. */
@@ -254,34 +212,29 @@ export async function getBackorders(
   orgId: string,
   warehouseId: string | null
 ): Promise<BackorderRow[]> {
-  let ordersQ = supabase
-    .from("orders")
-    .select("id, order_number, status, created_at, warehouse_id")
-    .eq("org_id", orgId)
-    .in("status", OPEN_ORDER_STATUSES as unknown as string[]);
-  if (warehouseId) ordersQ = ordersQ.eq("warehouse_id", warehouseId);
-  const { data: orders } = await ordersQ;
+  // Paginate: a workspace with >1000 open orders (or >1000 open lines) would
+  // otherwise silently drop the overflow and under-report backorders.
+  const orders = await fetchAllPaged<{
+    id: string;
+    order_number: string | null;
+    status: string;
+    created_at: string | null;
+    warehouse_id: string | null;
+  }>((from, to) => {
+    let q = supabase
+      .from("orders")
+      .select("id, order_number, status, created_at, warehouse_id")
+      .eq("org_id", orgId)
+      .in("status", OPEN_ORDER_STATUSES as unknown as string[]);
+    if (warehouseId) q = q.eq("warehouse_id", warehouseId);
+    return q.order("id", { ascending: true }).range(from, to);
+  });
 
-  const orderById = new Map(
-    ((orders ?? []) as Array<{
-      id: string;
-      order_number: string | null;
-      status: string;
-      created_at: string | null;
-      warehouse_id: string | null;
-    }>).map((o) => [o.id, o])
-  );
+  const orderById = new Map(orders.map((o) => [o.id, o]));
   if (orderById.size === 0) return [];
 
-  const { data: items } = await supabase
-    .from("order_items")
-    .select(
-      "id, order_id, product_id, quantity_requested, quantity_allocated, product:products ( name, internal_sku )"
-    )
-    .in("order_id", [...orderById.keys()]);
-
-  const rows: BackorderRow[] = [];
-  for (const it of (items ?? []) as Array<{
+  const orderIds = [...orderById.keys()];
+  const items = await fetchAllPaged<{
     id: string;
     order_id: string;
     product_id: string | null;
@@ -291,7 +244,19 @@ export async function getBackorders(
       | { name: string | null; internal_sku: string | null }
       | { name: string | null; internal_sku: string | null }[]
       | null;
-  }>) {
+  }>((from, to) =>
+    supabase
+      .from("order_items")
+      .select(
+        "id, order_id, product_id, quantity_requested, quantity_allocated, product:products ( name, internal_sku )"
+      )
+      .in("order_id", orderIds)
+      .order("id", { ascending: true })
+      .range(from, to)
+  );
+
+  const rows: BackorderRow[] = [];
+  for (const it of items) {
     const requested = it.quantity_requested ?? 0;
     const allocated = it.quantity_allocated ?? 0;
     const backordered = Math.max(0, requested - allocated);
@@ -429,42 +394,35 @@ export async function getFillableBackorders(
   return { productId, atp: avail.atp, backorderedUnits, fillableUnits, orderCount };
 }
 
-/** Allocate available stock to the oldest backordered orders for a product. */
+/**
+ * Allocate available stock to the oldest backordered orders for a product.
+ *
+ * Runs inside the `app.fill_backorders` RPC under the SAME per-facility advisory
+ * lock as `allocate_order`, computing ATP inside the lock and issuing
+ * column-relative UPDATEs. This closes the read-then-write race (two concurrent
+ * fills each draining the same pool → oversell) and the stale-snapshot clobber
+ * the previous JS loop had.
+ */
 export async function fillBackordersInternal(
   supabase: AllocClient,
   orgId: string,
   warehouseId: string,
   productId: string
 ): Promise<{ filledUnits: number; filledLines: number; orders: number }> {
-  const avail = await getProductAvailability(
-    supabase,
-    orgId,
-    warehouseId,
-    productId
-  );
-  let pool = Math.max(0, avail.atp);
-  if (pool <= 0) return { filledUnits: 0, filledLines: 0, orders: 0 };
-
-  const bos = (await getBackorders(supabase, orgId, warehouseId)).filter(
-    (b) => b.productId === productId
-  );
-
-  let filledUnits = 0;
-  let filledLines = 0;
-  const orderSet = new Set<string>();
-  for (const b of bos) {
-    if (pool <= 0) break;
-    const take = Math.min(b.backordered, pool);
-    if (take <= 0) continue;
-    const { error } = await supabase
-      .from("order_items")
-      .update({ quantity_allocated: b.allocated + take })
-      .eq("id", b.orderItemId);
-    if (error) continue;
-    pool -= take;
-    filledUnits += take;
-    filledLines++;
-    orderSet.add(b.orderId);
-  }
-  return { filledUnits, filledLines, orders: orderSet.size };
+  const { data, error } = await supabase.rpc("fill_backorders", {
+    p_org_id: orgId,
+    p_warehouse_id: warehouseId,
+    p_product_id: productId,
+  });
+  if (error || !data) return { filledUnits: 0, filledLines: 0, orders: 0 };
+  const r = data as {
+    filledUnits?: number;
+    filledLines?: number;
+    orders?: number;
+  };
+  return {
+    filledUnits: r.filledUnits ?? 0,
+    filledLines: r.filledLines ?? 0,
+    orders: r.orders ?? 0,
+  };
 }
