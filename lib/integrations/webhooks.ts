@@ -2,6 +2,7 @@ import "server-only";
 import { createHmac, randomBytes } from "crypto";
 import { decrypt, encrypt } from "./crypto";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { assertPublicHttpsUrl } from "@/lib/net/ssrf";
 import type { EventPayload } from "./types";
 
 /**
@@ -106,6 +107,26 @@ export async function deliverWebhook(
     return { ok: false, error: message };
   }
 
+  // Re-validate the destination at delivery time — DNS can rebind between when
+  // the endpoint was created and now (SSRF defense).
+  try {
+    await assertPublicHttpsUrl(url);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Blocked destination";
+    await logDelivery(admin, {
+      endpoint_id: endpoint.id,
+      org_id: endpoint.org_id,
+      event_type: event.type,
+      event_id: deliveryId,
+      body: "",
+      status: null,
+      response: `blocked: ${message}`,
+      duration: 0,
+      succeeded: false,
+    });
+    return { ok: false, error: message };
+  }
+
   // Build the payload
   const body = JSON.stringify({
     id: deliveryId,
@@ -144,6 +165,9 @@ export async function deliverWebhook(
       },
       body,
       signal: controller.signal,
+      // Never follow a redirect — a public host could 3xx to an internal one,
+      // re-opening the SSRF we just validated the original URL against.
+      redirect: "error",
     });
     status = res.status;
     // Truncate response body — some receivers stream entire HTML pages

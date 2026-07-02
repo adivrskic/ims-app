@@ -12,7 +12,13 @@ import { type NextRequest } from "next/server";
  */
 
 function csvCell(v: unknown): string {
-  const s = v == null ? "" : String(v);
+  let s = v == null ? "" : String(v);
+  // Neutralize spreadsheet formula injection: a cell beginning with = + - @ (or
+  // tab/CR) executes in Excel/Sheets. Customer name/notes are user-controlled.
+  // Prefix a single quote to force text, leaving plain numbers untouched.
+  if (/^[=+\-@\t\r]/.test(s) && !/^[-+]?\d+(\.\d+)?$/.test(s)) {
+    s = `'${s}`;
+  }
   if (s.includes(",") || s.includes('"') || s.includes("\n")) {
     return `"${s.replace(/"/g, '""')}"`;
   }

@@ -10,6 +10,7 @@ import {
   testEndpoint,
   type WebhookEndpointRecord,
 } from "@/lib/integrations/webhooks";
+import { assertPublicHttpsUrl } from "@/lib/net/ssrf";
 
 export interface CreateEndpointResult {
   error?: string;
@@ -41,14 +42,11 @@ export async function createWebhookEndpoint(
   if (!name) return { error: "Give the endpoint a name" };
   if (name.length > 80) return { error: "Name is too long (80 char max)" };
   if (!url) return { error: "Endpoint URL is required" };
-  if (!/^https:\/\//i.test(url)) {
-    return { error: "Endpoint must be an https:// URL" };
-  }
+  // SSRF guard: https-only + reject hosts that resolve to private/metadata IPs.
   try {
-    // Validate URL parses
-    new URL(url);
-  } catch {
-    return { error: "That URL isn't valid" };
+    await assertPublicHttpsUrl(url);
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "That URL isn't valid" };
   }
   if (events.length === 0) {
     return { error: "Select at least one event to subscribe to" };
@@ -165,6 +163,9 @@ export async function testWebhookEndpoint(
 ): Promise<{ ok: boolean; status?: number; error?: string }> {
   const ctx = await getCurrentOrgContext();
   if (!ctx) return { ok: false, error: "Not signed in" };
+  if (!ctx.can("integrations.manage")) {
+    return { ok: false, error: "Only admins can test endpoints" };
+  }
 
   const admin = createAdminClient();
   const { data: row } = await admin
