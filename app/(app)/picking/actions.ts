@@ -31,6 +31,15 @@ async function createWave(
   orderIds: string[]
 ): Promise<string | null> {
   if (orderIds.length === 0) return null;
+  // The warehouse id is client-supplied — confirm it belongs to this org before
+  // stamping a wave with it (covers both buildWave and autoBuildWave).
+  const { data: wh } = await supabase
+    .from("warehouses")
+    .select("id")
+    .eq("id", warehouseId)
+    .eq("org_id", orgId)
+    .maybeSingle();
+  if (!wh) return null;
   const code = await nextWaveCode(supabase, orgId);
   const { data: wave, error } = await supabase
     .from("pick_waves")

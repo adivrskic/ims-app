@@ -423,7 +423,24 @@ export async function receiveLineItem(
       .eq("org_id", ctx.orgId);
   }
 
-  await ctx.supabase.from("po_line_items").update(lineUpdate).eq("id", lineId);
+  // Optimistic-lock the receipt against the qty we read, so two concurrent
+  // receipts on the same line can't lose an update (last-writer-wins on
+  // quantity_received). If it changed under us, bail before landing any stock.
+  let lineUpd = ctx.supabase
+    .from("po_line_items")
+    .update(lineUpdate)
+    .eq("id", lineId);
+  lineUpd =
+    line.quantity_received == null
+      ? lineUpd.is("quantity_received", null)
+      : lineUpd.eq("quantity_received", line.quantity_received);
+  const { data: updatedLine } = await lineUpd.select("id");
+  if (!updatedLine || updatedLine.length === 0) {
+    return {
+      error:
+        "This line was just received by someone else — refresh and retry so the counts don't collide.",
+    };
+  }
 
   // QC hold → land the received units as QUARANTINED on-hand: real stock (counts
   // in valuation) that's held out of availability (ATP / pick / assembly) until
