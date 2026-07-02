@@ -63,6 +63,12 @@ export interface OverviewData {
   stockByProduct: OverviewStockByProduct[];
   /** Section ids at the active facility, or null when workspace-wide. */
   validSectionIds: string[] | null;
+  /** Financial signals (scope-aware): inventory value + dead-stock capital. */
+  financials: {
+    inventoryValue: number;
+    deadStockValue: number;
+    deadStockSkus: number;
+  };
 }
 
 /**
@@ -117,6 +123,7 @@ export function getOverviewData(
         { data: scans14d },
         { data: recentScans },
         { data: stockByProduct },
+        { data: finRows },
       ] = await Promise.all([
         admin
           .from("products")
@@ -192,6 +199,13 @@ export function getOverviewData(
               .range(from, to)
           ),
         }))(),
+        // Financial signals (inventory value + capital tied in dead stock),
+        // aggregated in Postgres so they can't truncate.
+        admin.rpc("overview_financials", {
+          p_org: orgId,
+          p_warehouse: facilityId,
+          p_dead_days: 90,
+        }),
       ]);
 
       return {
@@ -204,6 +218,20 @@ export function getOverviewData(
         recentScans: (recentScans ?? []) as OverviewRecentScan[],
         stockByProduct: (stockByProduct ?? []) as OverviewStockByProduct[],
         validSectionIds,
+        financials: (() => {
+          const r = (
+            (finRows ?? []) as Array<{
+              inventory_value: number | string | null;
+              dead_stock_value: number | string | null;
+              dead_stock_skus: number | string | null;
+            }>
+          )[0];
+          return {
+            inventoryValue: Number(r?.inventory_value ?? 0),
+            deadStockValue: Number(r?.dead_stock_value ?? 0),
+            deadStockSkus: Number(r?.dead_stock_skus ?? 0),
+          };
+        })(),
       };
     },
     ["overview", orgId, facilityId ?? "all"],
