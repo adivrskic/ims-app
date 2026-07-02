@@ -88,6 +88,7 @@ export async function inviteMember(_prev: unknown, formData: FormData) {
 export async function revokeInvite(formData: FormData) {
   const ctx = await getActionContext();
   if ("error" in ctx) return;
+  if (!ctx.can("members.manage")) return;
   const id = String(formData.get("id") ?? "");
   await ctx.supabase
     .from("org_invites")

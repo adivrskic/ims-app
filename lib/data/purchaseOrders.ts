@@ -1,6 +1,7 @@
 import "server-only";
 import { unstable_cache } from "next/cache";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { fetchAllPaged } from "@/lib/data/paginate";
 import { tags } from "@/lib/cache-tags";
 
 /**
@@ -60,33 +61,43 @@ export function getPurchaseOrdersList(
     async (): Promise<PurchaseOrdersListData> => {
       const admin = createAdminClient();
 
-      let listQuery = admin
-        .from("purchase_orders")
-        .select(PO_SELECT)
-        .eq("org_id", orgId)
-        .order("created_at", { ascending: false });
-      if (facilityId) listQuery = listQuery.eq("warehouse_id", facilityId);
-      if (statuses) listQuery = listQuery.in("status", statuses);
+      // Paginate both: a plain select caps at PostgREST's ~1000 rows, which
+      // truncates the list and undercounts the status chips / total past 1000 POs.
+      const listPromise = fetchAllPaged<PoListRow>((from, to) => {
+        let q = admin
+          .from("purchase_orders")
+          .select(PO_SELECT)
+          .eq("org_id", orgId)
+          .order("created_at", { ascending: false })
+          .order("id", { ascending: false });
+        if (facilityId) q = q.eq("warehouse_id", facilityId);
+        if (statuses) q = q.in("status", statuses);
+        return q.range(from, to);
+      });
 
-      let countsQuery = admin
-        .from("purchase_orders")
-        .select("status")
-        .eq("org_id", orgId);
-      if (facilityId) countsQuery = countsQuery.eq("warehouse_id", facilityId);
+      const countsPromise = fetchAllPaged<{ status: string }>((from, to) => {
+        let q = admin
+          .from("purchase_orders")
+          .select("status")
+          .eq("org_id", orgId)
+          .order("id", { ascending: false });
+        if (facilityId) q = q.eq("warehouse_id", facilityId);
+        return q.range(from, to);
+      });
 
-      const [{ data: listData }, { data: countData }] = await Promise.all([
-        listQuery,
-        countsQuery,
+      const [listData, countData] = await Promise.all([
+        listPromise,
+        countsPromise,
       ]);
 
       const counts: Record<string, number> = {};
       let total = 0;
-      for (const r of (countData ?? []) as Array<{ status: string }>) {
+      for (const r of countData) {
         counts[r.status] = (counts[r.status] ?? 0) + 1;
         total++;
       }
 
-      return { pos: (listData ?? []) as PoListRow[], counts, total };
+      return { pos: listData, counts, total };
     },
     ["purchase-orders-list", orgId, facilityId ?? "all", statusKey],
     { tags: [tags.purchaseOrders(orgId)], revalidate: 300 }
