@@ -1,5 +1,6 @@
 import { PageHeader } from "@/components/ui/PageHeader";
 import { GlowKpiGrid } from "@/components/dashboard/GlowKpiGrid";
+import { formatCurrency } from "@/lib/dashboard";
 import { SectionTitle } from "@/components/ui/SectionTitle";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { CornerLink } from "@/components/ui/CornerButton";
@@ -115,6 +116,10 @@ interface OverviewVM {
   posInTransit: KioskData["posInTransit"];
   topMovers: KioskData["topMovers"];
   lowStockCount: number;
+  // financial signals (getOverviewData → app.overview_financials)
+  inventoryValue: number;
+  deadStockValue: number;
+  deadStockSkus: number;
 }
 
 export default async function OverviewPage() {
@@ -198,6 +203,9 @@ export default async function OverviewPage() {
     posInTransit: kiosk?.posInTransit ?? [],
     topMovers: kiosk?.topMovers ?? [],
     lowStockCount: kiosk?.lowStockCount ?? lowStock.length,
+    inventoryValue: data?.financials.inventoryValue ?? 0,
+    deadStockValue: data?.financials.deadStockValue ?? 0,
+    deadStockSkus: data?.financials.deadStockSkus ?? 0,
   };
 
   return (
@@ -430,16 +438,35 @@ function OwnerOverview({ vm }: { vm: OverviewVM }) {
                 tone: vm.lowStockCount > 0 ? "bad" : "good",
               },
             },
+            {
+              label: "Inventory value",
+              value: formatCurrency(vm.inventoryValue),
+              spark: flat(vm.inventoryValue),
+              delta:
+                vm.inventoryValue === 0
+                  ? {
+                      value: "Set unit costs",
+                      direction: "flat",
+                      tone: "neutral",
+                    }
+                  : undefined,
+            },
+            {
+              label: "Capital in dead stock",
+              value: formatCurrency(vm.deadStockValue),
+              delta: {
+                value:
+                  vm.deadStockSkus > 0
+                    ? `${vm.deadStockSkus.toLocaleString()} dormant SKU${
+                        vm.deadStockSkus === 1 ? "" : "s"
+                      }`
+                    : "Nothing dormant",
+                direction: vm.deadStockValue > 0 ? "down" : "flat",
+                tone: vm.deadStockValue > 0 ? "bad" : "good",
+              },
+            },
           ]}
         />
-        {/*
-          TODO (financial signals): add "Inventory value" and "Capital in dead
-          stock" KPIs here. Both need product.unit_cost, which is NOT in
-          getOverviewData/getKioskData today. Extend getOverviewData to sum
-          quantity * unit_cost (value on hand) and reuse the dead-stock
-          threshold logic from analytics/dead-stock for tied-up capital, then
-          surface them as two more cards in this grid.
-        */}
       </section>
 
       <MoversSection topMovers={vm.topMovers} numeral="02" />
