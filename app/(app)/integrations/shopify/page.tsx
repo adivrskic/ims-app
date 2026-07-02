@@ -1,8 +1,11 @@
 import { redirect } from "next/navigation";
+import Link from "next/link";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { ProviderLogo } from "@/components/integrations/ProviderLogo";
 import { getCurrentOrgContext } from "@/lib/data/user";
+import { getUnmappedCount } from "@/lib/data/shopifyMapping";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { AlertTriangle, ChevronRight } from "lucide-react";
 import { PROVIDERS } from "../providers";
 import { ShopifyConfigClient } from "./ShopifyConfigClient";
 import type { ShopifyConfig } from "@/lib/integrations/shopify/types";
@@ -62,6 +65,7 @@ export default async function ShopifyPage({ searchParams }: PageProps) {
   const facilities = facilitiesResult.data ?? [];
   const recentOrders = recentOrdersResult.data ?? [];
   const recentLog = recentLogResult.data ?? [];
+  const unmappedCount = await getUnmappedCount(ctx.orgId);
 
   return (
     <div className="flex flex-col gap-32">
@@ -75,6 +79,37 @@ export default async function ShopifyPage({ searchParams }: PageProps) {
           description="Sync incoming orders from your storefront. New orders arrive in Nautilus within seconds; cancellations sync automatically. Outbound inventory updates and fulfillment marking are coming in v2."
         />
       </div>
+
+      {unmappedCount > 0 && (
+        <Link
+          href="/integrations/shopify/mapping"
+          className="hairline-subtle border-[rgba(245,181,69,0.45)] bg-[var(--warning-dim)] px-16 py-12 flex items-center gap-12 hover:border-[var(--warning)] transition-colors"
+        >
+          <AlertTriangle
+            size={16}
+            strokeWidth={1.5}
+            className="text-[var(--warning)] shrink-0"
+            aria-hidden
+          />
+          <div className="flex-1 min-w-0">
+            <p
+              className="text-text"
+              style={{ fontFamily: "var(--display)", fontSize: 13, fontWeight: 500 }}
+            >
+              {unmappedCount} order line{unmappedCount === 1 ? "" : "s"} need
+              product mapping
+            </p>
+            <p className="mono-sm text-text-secondary">
+              Imported SKUs that didn't match your catalog are parked on
+              placeholder products — resolve them so stock and reporting stay
+              accurate.
+            </p>
+          </div>
+          <span className="mono-sm text-[var(--warning)] inline-flex items-center gap-4 shrink-0">
+            Review <ChevronRight size={12} strokeWidth={1.5} />
+          </span>
+        </Link>
+      )}
 
       <ShopifyConfigClient
         integration={
