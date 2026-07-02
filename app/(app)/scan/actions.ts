@@ -61,6 +61,7 @@ export async function lookupBarcode(
     `
     )
     .eq("barcode", trimmed)
+    .limit(1)
     .maybeSingle();
 
   if (error) {

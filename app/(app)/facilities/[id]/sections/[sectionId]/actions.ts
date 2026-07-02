@@ -146,6 +146,27 @@ export async function placeLocation(args: PlaceArgs): Promise<{
   if (args.bay < 1) return { error: "Bay must be 1 or greater" };
   if (args.level < 1) return { error: "Level must be 1 or greater" };
 
+  // Validate the client-supplied section + product belong to this org (and the
+  // section to this facility) before writing. Stamping org_id on the row doesn't
+  // stop a member from attaching stock to another org's section/product id.
+  const [{ data: section }, { data: product }] = await Promise.all([
+    ctx.supabase
+      .from("sections")
+      .select("id")
+      .eq("id", args.sectionId)
+      .eq("org_id", ctx.orgId)
+      .eq("warehouse_id", args.warehouseId)
+      .maybeSingle(),
+    ctx.supabase
+      .from("products")
+      .select("id")
+      .eq("id", args.productId)
+      .eq("org_id", ctx.orgId)
+      .maybeSingle(),
+  ]);
+  if (!section) return { error: "That section isn't part of this facility" };
+  if (!product) return { error: "That product isn't in this workspace" };
+
   const { data: existing, error: existingErr } = await ctx.supabase
     .from("locations")
     .select("id, quantity")
