@@ -148,79 +148,35 @@ export async function setUpWorkspace(
   // Deduplicate
   const uniqueInvites = Array.from(new Set(inviteEmails));
 
-  // ── 4. Provision ─────────────────────────────────────────────────
+  // ── 4. Provision (atomic) ────────────────────────────────────────
+  // org + profile + owner membership + first facility in a single transaction
+  // via app.provision_workspace, so a mid-sequence failure can't orphan an org.
   const admin = createAdminClient();
 
-  // 4a. Slug — ensure uniqueness by appending a random suffix on collision.
-  let slug = slugify(workspaceName);
-  const { data: slugTaken } = await admin
-    .from("orgs")
-    .select("id")
-    .eq("slug", slug)
-    .maybeSingle();
-  if (slugTaken) {
-    slug = `${slug}-${randomBytes(2).toString("hex")}`;
-  }
-
-  // 4b. Create org
-  const { data: org, error: orgErr } = await admin
-    .from("orgs")
-    .insert({ name: workspaceName, slug, industry })
-    .select("id, name")
-    .single();
-  if (orgErr || !org) {
+  const { data: provisioned, error: provErr } = await admin.rpc(
+    "provision_workspace",
+    {
+      p_user_id: user.id,
+      p_user_email: user.email,
+      p_full_name:
+        (user.user_metadata?.full_name as string | undefined) ?? null,
+      p_name: workspaceName,
+      p_slug: slugify(workspaceName),
+      p_industry: industry,
+      p_facility_name: facilityName,
+      p_city: facilityCity || null,
+      p_state: facilityState || null,
+      p_zip: facilityZip || null,
+    }
+  );
+  if (provErr || !provisioned) {
     return {
       error: `Couldn't create the workspace (${
-        orgErr?.message ?? "unknown error"
+        provErr?.message ?? "unknown error"
       }). Try again.`,
     };
   }
-
-  // 4c. Upsert profile — signup creates auth.users but not profiles.
-  const { error: profileErr } = await admin.from("profiles").upsert(
-    {
-      id: user.id,
-      email: user.email,
-      full_name: (user.user_metadata?.full_name as string | undefined) ?? null,
-    },
-    { onConflict: "id" }
-  );
-  if (profileErr) {
-    await admin.from("orgs").delete().eq("id", org.id);
-    return {
-      error: `Couldn't create your profile (${profileErr.message}). Try again.`,
-    };
-  }
-
-  // 4d. Membership as owner
-  const { error: memberErr } = await admin.from("org_members").insert({
-    org_id: org.id,
-    user_id: user.id,
-    role: "owner",
-  });
-  if (memberErr) {
-    await admin.from("orgs").delete().eq("id", org.id);
-    return {
-      error: `Couldn't link you to the workspace (${memberErr.message}). Try again.`,
-    };
-  }
-
-  // 4e. First facility
-  const { error: facilityErr } = await admin.from("warehouses").insert({
-    org_id: org.id,
-    name: facilityName,
-    city: facilityCity || null,
-    state: facilityState || null,
-    zip: facilityZip || null,
-    owner_id: user.id,
-    is_active: true,
-  });
-  if (facilityErr) {
-    // Membership + org are now committed — leave them, but report.
-    return {
-      error: `Workspace created, but the first facility failed (${facilityErr.message}). Add one manually from Facilities.`,
-    };
-  }
+  const org = { id: (provisioned as { orgId: string }).orgId };
 
   // 4f. Optional invites — insert rows, email them, collect share links.
   let inviteLinks: { email: string; url: string }[] = [];

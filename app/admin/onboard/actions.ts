@@ -129,60 +129,32 @@ export async function createWorkspace(
 
   const newUser = inviteData.user;
 
-  // 7. Create the organization. If this fails, the auth user is orphaned
-  //    — see note in the file header about cleanup.
-  const { data: org, error: orgError } = await admin
-    .from("orgs")
-    .insert({
-      name,
-      slug,
-      tier,
-      onboarded_by: staff.id,
-      onboarded_at: new Date().toISOString(),
-      notes: notes || null,
-    })
-    .select("id, name")
-    .single();
+  // 7. Provision org + owner profile + membership in one transaction via
+  //    app.provision_workspace (no facility for staff-onboarded workspaces).
+  //    Atomic — no partial org/profile/membership state to clean up. If it
+  //    fails, only the auth user is orphaned (that step can't join the DB txn).
+  const { data: provisioned, error: provError } = await admin.rpc(
+    "provision_workspace",
+    {
+      p_user_id: newUser.id,
+      p_user_email: ownerEmail,
+      p_full_name: ownerFullName,
+      p_name: name,
+      p_slug: slug,
+      p_tier: tier,
+      p_onboarded_by: staff.id,
+      p_notes: notes || null,
+    }
+  );
 
-  if (orgError || !org) {
+  if (provError || !provisioned) {
     return {
-      error: `Workspace insert failed: ${
-        orgError?.message ?? "unknown error"
+      error: `Workspace provisioning failed: ${
+        provError?.message ?? "unknown error"
       }. The owner account was created but is orphaned — delete it from Supabase Auth before retrying.`,
     };
   }
-
-  // 8. Create the owner's profile row.
-  const { error: profileError } = await admin.from("profiles").insert({
-    id: newUser.id,
-    email: ownerEmail,
-    full_name: ownerFullName,
-    is_staff: false,
-  });
-
-  if (profileError) {
-    // Roll back the org so a retry doesn't trip the slug check
-    await admin.from("orgs").delete().eq("id", org.id);
-    return {
-      error: `Profile insert failed: ${profileError.message}. Rolled back the workspace; you can retry.`,
-    };
-  }
-
-  // 9. Link the user as owner of the org.
-  const { error: memberError } = await admin.from("org_members").insert({
-    org_id: org.id,
-    user_id: newUser.id,
-    role: "owner",
-  });
-
-  if (memberError) {
-    // Partial state — profile + org exist but no membership. Clean up.
-    await admin.from("profiles").delete().eq("id", newUser.id);
-    await admin.from("orgs").delete().eq("id", org.id);
-    return {
-      error: `Membership insert failed: ${memberError.message}. Rolled back; you can retry.`,
-    };
-  }
+  const org = { name };
 
   // 10. Refresh the admin dashboard so the new workspace appears.
   revalidatePath("/admin");
