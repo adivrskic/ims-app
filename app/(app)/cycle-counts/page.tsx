@@ -10,10 +10,12 @@ import { CycleCountsRealtime } from "@/components/realtime/PageRealtime";
 import { getCurrentOrgContext } from "@/lib/data/user";
 import { getCycleCountsPageData } from "@/lib/data/cycleCounts";
 import { CycleCountPriorityList } from "@/components/cycle-counts/CycleCountPriorityList";
+import { CountQueueList } from "@/components/cycle-counts/CountQueueList";
 import { createClient } from "@/lib/supabase/server";
 import { getReasons } from "@/lib/data/adjustments";
-import { CornerLink } from "@/components/ui/CornerButton";
-import { ShieldCheck } from "lucide-react";
+import { CornerButton, CornerLink } from "@/components/ui/CornerButton";
+import { ShieldCheck, CalendarClock } from "lucide-react";
+import { setAutoCycleCountsEnabled } from "./actions";
 export const metadata = { title: "Cycle counts" };
 
 interface SearchParams {
@@ -131,10 +133,39 @@ export default async function CycleCountsPage({
           },
         ]}
         actions={
-          <CornerLink href="/settings/adjustments" variant="ghost" size="sm">
-            <ShieldCheck size={11} strokeWidth={1.5} />
-            Reasons &amp; approvals
-          </CornerLink>
+          <div className="flex items-center gap-10">
+            <form action={setAutoCycleCountsEnabled}>
+              <input
+                type="hidden"
+                name="enabled"
+                value={(!(data?.autoQueueEnabled ?? false)).toString()}
+              />
+              <CornerButton
+                type="submit"
+                variant="ghost"
+                size="sm"
+                aria-pressed={data?.autoQueueEnabled ?? false}
+                title={
+                  data?.autoQueueEnabled
+                    ? "Weekly scheduled count queue is on — turn off"
+                    : "Turn on the weekly scheduled count queue (top risk-ranked SKUs, filed every Monday)"
+                }
+              >
+                <span
+                  className={
+                    data?.autoQueueEnabled ? "dot dot-live" : "dot dot-offline"
+                  }
+                  aria-hidden
+                />
+                <CalendarClock size={11} strokeWidth={1.5} />
+                Weekly queue · {data?.autoQueueEnabled ? "On" : "Off"}
+              </CornerButton>
+            </form>
+            <CornerLink href="/settings/adjustments" variant="ghost" size="sm">
+              <ShieldCheck size={11} strokeWidth={1.5} />
+              Reasons &amp; approvals
+            </CornerLink>
+          </div>
         }
       />
 
@@ -208,6 +239,8 @@ export default async function CycleCountsPage({
           />
         </div>
       </section>
+
+      <CountQueueList items={data?.queue ?? []} />
 
       <CycleCountPriorityList items={data?.prioritized ?? []} />
 

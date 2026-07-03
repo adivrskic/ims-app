@@ -13,6 +13,7 @@ import {
   User,
   FileText,
   Waypoints,
+  Printer,
 } from "lucide-react";
 import { advanceOrderStatus, cancelOrder, allocateOrder } from "../actions";
 import { OrderDetailRealtime } from "@/components/realtime/PageRealtime";
@@ -206,6 +207,16 @@ export default async function OrderDetailPage({
                 {pickWave.code}
               </Link>
             )}
+
+            <CornerLink
+              href={`/orders/${order.id}/packing-slip`}
+              variant="ghost"
+              size="sm"
+              ariaLabel="Print packing slip"
+            >
+              <Printer size={11} strokeWidth={1.5} />
+              Packing slip
+            </CornerLink>
 
             {nextStatusLabel && (
               <form action={advanceOrderStatus}>

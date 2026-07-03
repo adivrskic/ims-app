@@ -54,6 +54,18 @@ export interface PrioritizedCount {
   days_since_last_count: number | null;
 }
 
+/** A pending row in the scheduled count queue. */
+export interface CountQueueTask {
+  id: string;
+  product_id: string;
+  product_name: string;
+  barcode: string;
+  score: number;
+  reason: string | null;
+  due_date: string;
+  created_at: string | null;
+}
+
 export interface CycleCountsPageData {
   products: CycleCountProductOption[];
   locations: CycleCountLocationOption[];
@@ -65,6 +77,10 @@ export interface CycleCountsPageData {
   netUnits: number;
   /** Discrepancy-risk-ranked "count next" list (highest risk first). */
   prioritized: PrioritizedCount[];
+  /** Open tasks from the weekly scheduled queue, soonest due first. */
+  queue: CountQueueTask[];
+  /** orgs.auto_cycle_counts_enabled — drives the header toggle. */
+  autoQueueEnabled: boolean;
 }
 
 // How far back to look when scoring discrepancy risk, and how many SKUs to
@@ -93,6 +109,8 @@ export function getCycleCountsPageData(
         { data: counts },
         { data: totalCountsRow, count: totalCounts },
         { data: rankingData },
+        { data: queueData },
+        { data: orgRow },
       ] = await Promise.all([
         (async () => ({
           data: await fetchAllPaged<Record<string, unknown>>((from, to) =>
@@ -155,6 +173,22 @@ export function getCycleCountsPageData(
           .gte("counted_at", rankingSince.toISOString())
           .order("counted_at", { ascending: false })
           .limit(2000),
+        // Scheduled count queue (pending tasks, soonest due first).
+        admin
+          .from("cycle_count_tasks")
+          .select(
+            "id, product_id, score, reason, due_date, created_at, product:products ( name, barcode )"
+          )
+          .eq("org_id", orgId)
+          .eq("status", "pending")
+          .order("due_date", { ascending: true })
+          .order("score", { ascending: false })
+          .limit(50),
+        admin
+          .from("orgs")
+          .select("auto_cycle_counts_enabled")
+          .eq("id", orgId)
+          .maybeSingle(),
       ]);
 
       const products = ((productsData ?? []) as unknown as CycleCountProductOption[])
@@ -260,6 +294,33 @@ export function getCycleCountsPageData(
         .sort((a, b) => b.score - a.score)
         .slice(0, PRIORITIZED_LIMIT);
 
+      const queue: CountQueueTask[] = (
+        (queueData ?? []) as unknown as Array<{
+          id: string;
+          product_id: string;
+          score: number | string;
+          reason: string | null;
+          due_date: string;
+          created_at: string | null;
+          product:
+            | { name: string | null; barcode: string | null }
+            | { name: string | null; barcode: string | null }[]
+            | null;
+        }>
+      ).map((t) => {
+        const p = Array.isArray(t.product) ? t.product[0] : t.product;
+        return {
+          id: t.id,
+          product_id: t.product_id,
+          product_name: p?.name ?? "Unknown product",
+          barcode: p?.barcode ?? "",
+          score: Number(t.score),
+          reason: t.reason,
+          due_date: t.due_date,
+          created_at: t.created_at,
+        };
+      });
+
       return {
         products,
         locations,
@@ -269,9 +330,95 @@ export function getCycleCountsPageData(
         accuracyPct,
         netUnits,
         prioritized,
+        queue,
+        autoQueueEnabled:
+          (orgRow as { auto_cycle_counts_enabled?: boolean } | null)
+            ?.auto_cycle_counts_enabled ?? false,
       };
     },
     ["cycle-counts-page", orgId, productKey, varKey],
     { tags: [tags.cycleCounts(orgId), tags.inventory(orgId)], revalidate: 300 }
   )();
+}
+
+// ── Scheduled queue: risk ranking for the weekly cron ─────────────────────
+
+export interface CountPriority {
+  product_id: string;
+  score: number;
+  reason: string;
+}
+
+/**
+ * Rank the org's products by discrepancy risk for the scheduled count queue.
+ * Same scoring as the page's "count next" list, with one addition: products
+ * that have NEVER been counted but hold stock are candidates too (they score
+ * the never-counted baseline, weighted by velocity), so a fresh org's queue
+ * isn't empty just because it has no count history yet.
+ *
+ * Admin client (cron has no session); every query filters org_id.
+ */
+export async function rankCountPriorities(
+  orgId: string,
+  limit: number
+): Promise<CountPriority[]> {
+  const admin = createAdminClient();
+  const since = new Date();
+  since.setDate(since.getDate() - RANKING_LOOKBACK_DAYS);
+  since.setHours(0, 0, 0, 0);
+
+  const [{ data: history }, { data: movement }] = await Promise.all([
+    admin
+      .from("cycle_counts")
+      .select("product_id, variance, expected_qty, counted_at")
+      .eq("org_id", orgId)
+      .not("product_id", "is", null)
+      .gte("counted_at", since.toISOString())
+      .order("counted_at", { ascending: false })
+      .limit(2000),
+    admin.rpc("product_movement_stats", { p_org: orgId, p_warehouse: null }),
+  ]);
+
+  const historyByProduct = new Map<string, CountRecord[]>();
+  for (const r of (history ?? []) as Array<{
+    product_id: string | null;
+    variance: number | null;
+    expected_qty: number | null;
+    counted_at: string | null;
+  }>) {
+    if (!r.product_id || !r.counted_at) continue;
+    const rec: CountRecord = {
+      variance: r.variance ?? 0,
+      expectedQty: r.expected_qty ?? 0,
+      countedAt: r.counted_at,
+    };
+    const arr = historyByProduct.get(r.product_id);
+    if (arr) arr.push(rec);
+    else historyByProduct.set(r.product_id, [rec]);
+  }
+
+  // Candidates: counted before, or currently holding stock.
+  const candidates = new Set<string>(historyByProduct.keys());
+  for (const m of (movement ?? []) as Array<{
+    product_id: string;
+    on_hand: number;
+  }>) {
+    if (Number(m.on_hand) > 0) candidates.add(m.product_id);
+  }
+  if (candidates.size === 0) return [];
+
+  const ids = [...candidates];
+  const velocities = await productVelocities(admin, { productIds: ids });
+
+  return ids
+    .map((pid) => {
+      const risk = cycleRiskScore({
+        history: historyByProduct.get(pid) ?? [],
+        velocity: velocities.get(pid) ?? 0,
+      });
+      return { product_id: pid, score: risk.score, reason: risk.reason };
+    })
+    .filter((x) => x.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit);
 }

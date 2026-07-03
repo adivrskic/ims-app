@@ -139,6 +139,7 @@ async function processOrg(
 
   // Build notification rows (one per user per at-risk product, minus dedup).
   type NotificationInsert = {
+    org_id: string;
     user_id: string;
     kind: string;
     title: string;
@@ -180,6 +181,7 @@ async function processOrg(
     if (!copy) continue;
     for (const uid of targets) {
       inserts.push({
+        org_id: orgId,
         user_id: uid,
         kind: "stock_alert",
         title: copy.title,
@@ -191,9 +193,9 @@ async function processOrg(
 
   if (inserts.length === 0) return 0;
 
-  // NOTE: inserting only the columns the read path uses (user_id, kind, title,
-  // body, link); created_at/read_at default. If your notifications table has a
-  // NOT NULL org_id, add `org_id: orgId` to each row.
+  // org_id is NOT NULL on notifications — omitting it made this insert fail
+  // silently on real alert days (caught 2026-07-03 while building the
+  // cycle-count queue, which hit the same constraint).
   const { error: insertErr } = await admin
     .from("notifications")
     .insert(inserts);

@@ -11,9 +11,9 @@ import {
 import { PageHeader } from "@/components/ui/PageHeader";
 import { SectionTitle } from "@/components/ui/SectionTitle";
 import { Badge } from "@/components/ui/Badge";
-import { CornerButton } from "@/components/ui/CornerButton";
+import { CornerButton, CornerLink } from "@/components/ui/CornerButton";
 import { EmptyState } from "@/components/ui/EmptyState";
-import { MapPin, X, Waypoints } from "lucide-react";
+import { MapPin, X, Waypoints, Printer } from "lucide-react";
 
 export const metadata = { title: "Wave" };
 
@@ -75,6 +75,15 @@ export default async function WaveDetailPage({
             <Badge tone={WAVE_TONE[wave.status]} variant="filled">
               {wave.status}
             </Badge>
+            <CornerLink
+              href={`/picking/${wave.id}/pick-list`}
+              variant="ghost"
+              size="sm"
+              ariaLabel="Print pick list"
+            >
+              <Printer size={11} strokeWidth={1.5} />
+              Pick list
+            </CornerLink>
             {!isTerminal && (
               <form action={claimWave}>
                 <input type="hidden" name="wave_id" value={wave.id} />

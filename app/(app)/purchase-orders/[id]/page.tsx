@@ -1,7 +1,7 @@
 import { Fragment, type ReactNode } from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { FileText, Send, X as XIcon } from "lucide-react";
+import { FileText, Printer, Send, X as XIcon } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentOrgContext } from "@/lib/data/user";
 import { getSlottingSuggestions } from "@/lib/data/slotting";
@@ -9,7 +9,7 @@ import { getFillableBackorders } from "@/lib/data/allocation";
 import { fillBackorders } from "@/app/(app)/orders/actions";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { SectionTitle } from "@/components/ui/SectionTitle";
-import { CornerButton } from "@/components/ui/CornerButton";
+import { CornerButton, CornerLink } from "@/components/ui/CornerButton";
 import { ReceiveLineForm } from "./ReceiveLineForm";
 import { markPoSent, markPoCancelled } from "../actions";
 import { PurchaseOrderDetailRealtime } from "@/components/realtime/PageRealtime";
@@ -245,17 +245,26 @@ export default async function PurchaseOrderDetailPage({
           { label: "Received", value: formatDate(poData.received_at) },
         ]}
         actions={
-          canEdit ? (
-            <div className="flex items-center gap-10">
-              {canSend && (
-                <form action={markPoSent}>
-                  <input type="hidden" name="id" value={poData.id} />
-                  <CornerButton type="submit" variant="primary" size="sm">
-                    <Send size={11} strokeWidth={1.5} />
-                    Mark as sent
-                  </CornerButton>
-                </form>
-              )}
+          <div className="flex items-center gap-10">
+            <CornerLink
+              href={`/purchase-orders/${poData.id}/print`}
+              variant="ghost"
+              size="sm"
+              ariaLabel="Print purchase order"
+            >
+              <Printer size={11} strokeWidth={1.5} />
+              Print PO
+            </CornerLink>
+            {canSend && (
+              <form action={markPoSent}>
+                <input type="hidden" name="id" value={poData.id} />
+                <CornerButton type="submit" variant="primary" size="sm">
+                  <Send size={11} strokeWidth={1.5} />
+                  Mark as sent
+                </CornerButton>
+              </form>
+            )}
+            {canEdit && (
               <form action={markPoCancelled}>
                 <input type="hidden" name="id" value={poData.id} />
                 <CornerButton type="submit" variant="ghost" size="sm">
@@ -263,8 +272,8 @@ export default async function PurchaseOrderDetailPage({
                   Cancel PO
                 </CornerButton>
               </form>
-            </div>
-          ) : undefined
+            )}
+          </div>
         }
       />
 

@@ -28,6 +28,7 @@ const KIND_TONE: Record<string, string> = {
   scan_summary: "var(--info)",
   system: "var(--text-muted)",
   member: "var(--accent)",
+  cycle_count_queue: "var(--accent)",
 };
 
 function timeAgo(iso: string | null): string {

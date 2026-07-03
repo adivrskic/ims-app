@@ -132,6 +132,19 @@ export async function recordCycleCount(
     }
   }
 
+  // Counting a product completes its open scheduled-queue task (if any).
+  // Best-effort: a failure here never blocks the recorded count.
+  await ctx.supabase
+    .from("cycle_count_tasks")
+    .update({
+      status: "completed",
+      completed_at: new Date().toISOString(),
+      completed_by: ctx.user.id,
+    })
+    .eq("org_id", ctx.orgId)
+    .eq("product_id", productId)
+    .eq("status", "pending");
+
   revalidatePath("/cycle-counts");
   revalidateTag(tags.cycleCounts(ctx.orgId));
 
@@ -155,6 +168,51 @@ export async function recordCycleCount(
  * can record manually. This just marks the row as voided so it's
  * excluded from accuracy reports.
  */
+/**
+ * Toggle the workspace's scheduled count queue (drives the weekly
+ * /api/cron/cycle-count-queue sweep, which only processes opted-in orgs).
+ * Mirrors the auto-draft-PO toggle on the purchase-orders page.
+ */
+export async function setAutoCycleCountsEnabled(
+  formData: FormData
+): Promise<void> {
+  const ctx = await getActionContext();
+  if ("error" in ctx) return;
+  if (!ctx.can("settings.manage")) return;
+
+  const enabled = String(formData.get("enabled") ?? "") === "true";
+  await ctx.supabase
+    .from("orgs")
+    .update({ auto_cycle_counts_enabled: enabled })
+    .eq("id", ctx.orgId);
+
+  revalidatePath("/cycle-counts");
+  revalidateTag(tags.cycleCounts(ctx.orgId));
+}
+
+/** Dismiss a scheduled count task without counting (e.g. SKU being retired). */
+export async function dismissCountTask(formData: FormData): Promise<void> {
+  const ctx = await getActionContext();
+  if ("error" in ctx) return;
+  if (!ctx.can("inventory.adjust")) return;
+
+  const id = String(formData.get("id") ?? "");
+  if (!id) return;
+  await ctx.supabase
+    .from("cycle_count_tasks")
+    .update({
+      status: "dismissed",
+      completed_at: new Date().toISOString(),
+      completed_by: ctx.user.id,
+    })
+    .eq("id", id)
+    .eq("org_id", ctx.orgId)
+    .eq("status", "pending");
+
+  revalidatePath("/cycle-counts");
+  revalidateTag(tags.cycleCounts(ctx.orgId));
+}
+
 export async function voidCycleCount(formData: FormData): Promise<void> {
   const ctx = await getActionContext();
   if ("error" in ctx) return;

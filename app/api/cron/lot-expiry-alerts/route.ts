@@ -102,6 +102,7 @@ async function processOrg(
   );
 
   type NotificationInsert = {
+    org_id: string;
     user_id: string;
     kind: string;
     title: string;
@@ -135,7 +136,14 @@ async function processOrg(
     const body = `Lot ${lot.lot_number} ${runway}. Review and rotate or dispose.`;
 
     for (const uid of targets) {
-      inserts.push({ user_id: uid, kind: "lot_expiry", title, body, link });
+      inserts.push({
+        org_id: orgId,
+        user_id: uid,
+        kind: "lot_expiry",
+        title,
+        body,
+        link,
+      });
     }
   }
 
