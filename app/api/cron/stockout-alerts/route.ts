@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { isAuthorizedCronRequest } from "@/lib/cronAuth";
 import { productVelocities } from "@/lib/data/velocity";
 import { daysToStockout } from "@/lib/replenishment";
 import { dispatchEvent } from "@/lib/integrations/dispatch";
@@ -48,9 +49,7 @@ interface AtRisk {
 }
 
 export async function POST(req: Request) {
-  const secret = process.env.CRON_SECRET;
-  const auth = req.headers.get("authorization");
-  if (!secret || auth !== `Bearer ${secret}`) {
+  if (!isAuthorizedCronRequest(req)) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 

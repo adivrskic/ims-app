@@ -111,6 +111,9 @@ export async function disconnectSlack(): Promise<void> {
 export async function reTestSlack(): Promise<{ ok: boolean; error?: string }> {
   const ctx = await getCurrentOrgContext();
   if (!ctx) return { ok: false, error: "Not signed in" };
+  if (!ctx.can("integrations.manage")) {
+    return { ok: false, error: "Only admins can configure integrations" };
+  }
 
   const admin = createAdminClient();
   const { data: row } = await admin

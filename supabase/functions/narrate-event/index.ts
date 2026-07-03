@@ -53,6 +53,65 @@ interface PoDraftPayload {
 
 type Payload = ForecastPayload | AnomalyPayload | PoDraftPayload;
 
+// ───────── Rate limiting ─────────
+// Every cache miss bills an Anthropic request, so budget per user. The
+// platform (verify_jwt) has already validated the JWT — we only decode the
+// payload to identify the caller. Service-role calls (cron sweeps) are exempt.
+// Fail-open if the counter is unavailable; fail-closed (429) over budget.
+const RL_MAX = 30;
+const RL_WINDOW_SECONDS = 60;
+const RL_BUCKET_PREFIX = "fn:narrate:";
+
+function jwtPayload(req: Request): { sub?: string; role?: string } | null {
+  try {
+    const token = (req.headers.get("authorization") ?? "").replace(
+      /^Bearer\s+/i,
+      ""
+    );
+    const part = token.split(".")[1] ?? "";
+    const b64 = part.replace(/-/g, "+").replace(/_/g, "/");
+    return JSON.parse(atob(b64 + "=".repeat((4 - (b64.length % 4)) % 4)));
+  } catch {
+    return null;
+  }
+}
+
+async function rateLimitCheck(
+  req: Request
+): Promise<{ ok: boolean; retryAfter: number }> {
+  const claims = jwtPayload(req);
+  if (!claims?.sub || claims.role === "service_role") {
+    return { ok: true, retryAfter: 0 };
+  }
+  try {
+    const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const resp = await fetch(
+      `${Deno.env.get("SUPABASE_URL")}/rest/v1/rpc/rate_limit_hit`,
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          apikey: key,
+          authorization: `Bearer ${key}`,
+          "content-profile": "app",
+        },
+        body: JSON.stringify({
+          p_bucket: RL_BUCKET_PREFIX + claims.sub,
+          p_max: RL_MAX,
+          p_window_seconds: RL_WINDOW_SECONDS,
+        }),
+      }
+    );
+    if (!resp.ok) return { ok: true, retryAfter: 0 };
+    const data = await resp.json();
+    return data?.allowed === false
+      ? { ok: false, retryAfter: Number(data?.retry_after ?? 60) }
+      : { ok: true, retryAfter: 0 };
+  } catch {
+    return { ok: true, retryAfter: 0 };
+  }
+}
+
 // ───────── Handler ─────────
 
 Deno.serve(async (req) => {
@@ -63,6 +122,17 @@ Deno.serve(async (req) => {
   const authHeader = req.headers.get("Authorization");
   if (!authHeader) {
     return new Response("Unauthorized", { status: 401 });
+  }
+
+  const rl = await rateLimitCheck(req);
+  if (!rl.ok) {
+    return new Response(JSON.stringify({ error: "rate_limited" }), {
+      status: 429,
+      headers: {
+        "content-type": "application/json",
+        "retry-after": String(rl.retryAfter),
+      },
+    });
   }
 
   // Caller-scoped Supabase client. RLS enforces narration access.

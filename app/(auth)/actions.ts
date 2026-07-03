@@ -5,6 +5,33 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { headers } from "next/headers";
 import { safeNext } from "@/lib/auth/safe-redirect";
+import { rateLimit, clientIpFrom } from "@/lib/rateLimit";
+
+const RATE_LIMITED_MSG = "Too many attempts. Wait a minute and try again.";
+
+/**
+ * App-side throttle on the unauthenticated auth actions, per client IP (and
+ * per target email for the mail-sending flows, so one IP can't paper a
+ * mailbox). Defense-in-depth in front of Supabase's own auth rate limits;
+ * fails open if the counter is unavailable.
+ */
+async function authRateLimited(
+  action: string,
+  email: string | null,
+  max: number,
+  windowSeconds: number
+): Promise<boolean> {
+  const h = await headers();
+  const ip = clientIpFrom((name) => h.get(name));
+  const checks = [rateLimit(`auth:${action}:ip:${ip}`, max, windowSeconds)];
+  if (email) {
+    checks.push(
+      rateLimit(`auth:${action}:email:${email.toLowerCase()}`, 3, 900)
+    );
+  }
+  const results = await Promise.all(checks);
+  return results.some((r) => !r.allowed);
+}
 
 /**
  * Common return shape for auth server actions used with useActionState.
@@ -85,6 +112,10 @@ export async function signInWithPassword(
   if (!email) return { error: "Email is required" };
   if (!password) return { error: "Password is required" };
 
+  if (await authRateLimited("signin", null, 10, 300)) {
+    return { error: RATE_LIMITED_MSG };
+  }
+
   const supabase = await createClient();
   const { error } = await supabase.auth.signInWithPassword({ email, password });
   if (error) return { error: friendlyAuthError(error) };
@@ -107,6 +138,10 @@ export async function signUpWithPassword(
   if (!password) return { error: "Password is required" };
   if (password.length < 8) {
     return { error: "Password must be at least 8 characters" };
+  }
+
+  if (await authRateLimited("signup", null, 5, 600)) {
+    return { error: RATE_LIMITED_MSG };
   }
 
   const supabase = await createClient();
@@ -141,6 +176,10 @@ export async function sendPasswordReset(
   const email = String(formData.get("email") ?? "").trim();
   if (!email) return { error: "Email is required" };
 
+  if (await authRateLimited("reset", email, 10, 900)) {
+    return { error: RATE_LIMITED_MSG };
+  }
+
   const supabase = await createClient();
   const h = await headers();
   const origin = h.get("origin") ?? "";
@@ -168,6 +207,10 @@ export async function sendMagicLink(
   const email = String(formData.get("email") ?? "").trim();
   const next = safeNext(String(formData.get("next") ?? "/"));
   if (!email) return { error: "Email is required" };
+
+  if (await authRateLimited("magiclink", email, 10, 900)) {
+    return { error: RATE_LIMITED_MSG };
+  }
 
   const supabase = await createClient();
   const h = await headers();

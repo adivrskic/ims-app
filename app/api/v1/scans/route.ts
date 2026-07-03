@@ -3,7 +3,10 @@ import {
   authenticateApiKey,
   apiUnauthorized,
   apiForbidden,
+  apiRateLimited,
+  API_RATE_LIMIT,
 } from "@/lib/apiAuth";
+import { rateLimit } from "@/lib/rateLimit";
 
 export const dynamic = "force-dynamic";
 
@@ -30,6 +33,13 @@ export async function POST(req: Request) {
   const auth = await authenticateApiKey(req);
   if (!auth) return apiUnauthorized();
   if (!auth.can("inventory.adjust")) return apiForbidden("inventory.adjust");
+
+  const rl = await rateLimit(
+    `api:${auth.keyId}`,
+    API_RATE_LIMIT.max,
+    API_RATE_LIMIT.windowSeconds
+  );
+  if (!rl.allowed) return apiRateLimited(rl.retryAfter);
 
   let body: Record<string, unknown>;
   try {

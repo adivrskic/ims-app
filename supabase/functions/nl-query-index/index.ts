@@ -1,4 +1,4 @@
-// supabase/functions/nl-query/index.ts  (nimbus-edge-functions repo)
+// supabase/functions/nl-query-index/index.ts
 //
 // Parses a plain-English search query into a structured intent the dashboard's
 // nlSearch action turns into a whitelisted query. Mirrors narrate-event: it
@@ -8,7 +8,7 @@
 // The model returns intent ONLY — never SQL, never data. Entity + filters are
 // a fixed vocabulary the dashboard validates again before querying.
 //
-// Env: ANTHROPIC_API_KEY. Deploy with: supabase functions deploy nl-query
+// Env: ANTHROPIC_API_KEY. Deploy with: supabase functions deploy nl-query-index
 //
 // NOTE: reference implementation — untested in this environment. Adjust the
 // model string and CORS origins to your setup.
@@ -44,8 +44,92 @@ const cors = {
     "authorization, x-client-info, apikey, content-type",
 };
 
+// ───────── Rate limiting ─────────
+// Every call bills an Anthropic request, so budget per user. The platform
+// (verify_jwt) has already validated the JWT — we only decode the payload to
+// identify the caller. Service-role calls are exempt. Fail-open if the counter
+// is unavailable; fail-closed (429) when the budget is spent.
+const RL_MAX = 20;
+const RL_WINDOW_SECONDS = 60;
+const RL_BUCKET_PREFIX = "fn:nl-query:";
+
+function jwtPayload(req: Request): { sub?: string; role?: string } | null {
+  try {
+    const token = (req.headers.get("authorization") ?? "").replace(
+      /^Bearer\s+/i,
+      ""
+    );
+    const part = token.split(".")[1] ?? "";
+    const b64 = part.replace(/-/g, "+").replace(/_/g, "/");
+    return JSON.parse(atob(b64 + "=".repeat((4 - (b64.length % 4)) % 4)));
+  } catch {
+    return null;
+  }
+}
+
+async function rateLimitCheck(
+  req: Request
+): Promise<{ ok: boolean; status: number; retryAfter: number }> {
+  const claims = jwtPayload(req);
+  if (claims?.role === "service_role") {
+    return { ok: true, status: 200, retryAfter: 0 };
+  }
+  // verify_jwt accepts ANY valid project JWT — including the public anon key
+  // that ships in every client bundle. Require a real user identity so the
+  // anon key alone can't spend Anthropic budget.
+  if (!claims?.sub || claims.role !== "authenticated") {
+    return { ok: false, status: 401, retryAfter: 0 };
+  }
+  try {
+    const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const resp = await fetch(
+      `${Deno.env.get("SUPABASE_URL")}/rest/v1/rpc/rate_limit_hit`,
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          apikey: key,
+          authorization: `Bearer ${key}`,
+          "content-profile": "app",
+        },
+        body: JSON.stringify({
+          p_bucket: RL_BUCKET_PREFIX + claims.sub,
+          p_max: RL_MAX,
+          p_window_seconds: RL_WINDOW_SECONDS,
+        }),
+      }
+    );
+    if (!resp.ok) return { ok: true, status: 200, retryAfter: 0 };
+    const data = await resp.json();
+    return data?.allowed === false
+      ? { ok: false, status: 429, retryAfter: Number(data?.retry_after ?? 60) }
+      : { ok: true, status: 200, retryAfter: 0 };
+  } catch {
+    return { ok: true, status: 200, retryAfter: 0 };
+  }
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
+
+  const rl = await rateLimitCheck(req);
+  if (!rl.ok) {
+    return new Response(
+      JSON.stringify({
+        error: rl.status === 401 ? "unauthorized" : "rate_limited",
+      }),
+      {
+        status: rl.status,
+        headers: {
+          ...cors,
+          "content-type": "application/json",
+          ...(rl.status === 429
+            ? { "retry-after": String(rl.retryAfter) }
+            : {}),
+        },
+      }
+    );
+  }
 
   try {
     const { query } = await req.json();

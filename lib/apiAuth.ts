@@ -16,6 +16,8 @@ import { effectivePermissions, type Permission } from "@/lib/permissions";
  */
 
 export interface ApiKeyContext {
+  /** The api_keys row id — stable bucket key for rate limiting. */
+  keyId: string;
   orgId: string;
   /** The member who issued the key — the identity the key acts as. */
   userId: string;
@@ -74,11 +76,29 @@ export async function authenticateApiKey(
     .eq("id", k.id);
 
   return {
+    keyId: k.id,
     orgId: k.org_id,
     userId: k.created_by,
     scopes: k.scopes ?? [],
     can: (p: Permission) => perms.has(p),
   };
+}
+
+/** Per-key request budget for /api/v1/*. */
+export const API_RATE_LIMIT = { max: 120, windowSeconds: 60 };
+
+/** Standard 429 with Retry-After when a key exhausts its window. */
+export function apiRateLimited(retryAfter: number): Response {
+  return new Response(
+    JSON.stringify({ error: "Rate limit exceeded", retry_after: retryAfter }),
+    {
+      status: 429,
+      headers: {
+        "Content-Type": "application/json",
+        "Retry-After": String(retryAfter),
+      },
+    }
+  );
 }
 
 /** Standard 401 body for unauthenticated API requests. */

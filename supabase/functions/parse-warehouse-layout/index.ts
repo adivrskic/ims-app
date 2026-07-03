@@ -56,12 +56,100 @@ function clampInt(v: unknown, min: number, max: number, fallback: number): numbe
   return Math.max(min, Math.min(max, n));
 }
 
+// ───────── Rate limiting ─────────
+// Vision calls are the most expensive Anthropic requests in the product, so
+// the per-user budget is tight. The platform (verify_jwt) has already
+// validated the JWT — we only decode the payload to identify the caller.
+// Service-role calls are exempt. Fail-open if the counter is unavailable;
+// fail-closed (429) when the budget is spent.
+const RL_MAX = 5;
+const RL_WINDOW_SECONDS = 300;
+const RL_BUCKET_PREFIX = "fn:parse-layout:";
+
+function jwtPayload(req: Request): { sub?: string; role?: string } | null {
+  try {
+    const token = (req.headers.get("authorization") ?? "").replace(
+      /^Bearer\s+/i,
+      ""
+    );
+    const part = token.split(".")[1] ?? "";
+    const b64 = part.replace(/-/g, "+").replace(/_/g, "/");
+    return JSON.parse(atob(b64 + "=".repeat((4 - (b64.length % 4)) % 4)));
+  } catch {
+    return null;
+  }
+}
+
+async function rateLimitCheck(
+  req: Request
+): Promise<{ ok: boolean; status: number; retryAfter: number }> {
+  const claims = jwtPayload(req);
+  if (claims?.role === "service_role") {
+    return { ok: true, status: 200, retryAfter: 0 };
+  }
+  // verify_jwt accepts ANY valid project JWT — including the public anon key
+  // that ships in every client bundle. Require a real user identity so the
+  // anon key alone can't spend Anthropic budget.
+  if (!claims?.sub || claims.role !== "authenticated") {
+    return { ok: false, status: 401, retryAfter: 0 };
+  }
+  try {
+    const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const resp = await fetch(
+      `${Deno.env.get("SUPABASE_URL")}/rest/v1/rpc/rate_limit_hit`,
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          apikey: key,
+          authorization: `Bearer ${key}`,
+          "content-profile": "app",
+        },
+        body: JSON.stringify({
+          p_bucket: RL_BUCKET_PREFIX + claims.sub,
+          p_max: RL_MAX,
+          p_window_seconds: RL_WINDOW_SECONDS,
+        }),
+      }
+    );
+    if (!resp.ok) return { ok: true, status: 200, retryAfter: 0 };
+    const data = await resp.json();
+    return data?.allowed === false
+      ? { ok: false, status: 429, retryAfter: Number(data?.retry_after ?? 60) }
+      : { ok: true, status: 200, retryAfter: 0 };
+  } catch {
+    return { ok: true, status: 200, retryAfter: 0 };
+  }
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 204, headers: CORS_HEADERS });
   }
   if (req.method !== "POST") {
     return jsonResponse({ error: "Method not allowed" }, 405);
+  }
+
+  const rl = await rateLimitCheck(req);
+  if (!rl.ok) {
+    return new Response(
+      JSON.stringify({
+        error:
+          rl.status === 401
+            ? "Unauthorized"
+            : "Too many layout scans — wait a few minutes and try again.",
+      }),
+      {
+        status: rl.status,
+        headers: {
+          ...CORS_HEADERS,
+          "Content-Type": "application/json",
+          ...(rl.status === 429
+            ? { "Retry-After": String(rl.retryAfter) }
+            : {}),
+        },
+      }
+    );
   }
 
   const apiKey = Deno.env.get("ANTHROPIC_API_KEY");

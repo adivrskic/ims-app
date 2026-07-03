@@ -1,5 +1,11 @@
 import { createAdminClient } from "@/lib/supabase/admin";
-import { authenticateApiKey, apiUnauthorized } from "@/lib/apiAuth";
+import {
+  authenticateApiKey,
+  apiUnauthorized,
+  apiRateLimited,
+  API_RATE_LIMIT,
+} from "@/lib/apiAuth";
+import { rateLimit } from "@/lib/rateLimit";
 
 export const dynamic = "force-dynamic";
 
@@ -10,6 +16,13 @@ export const dynamic = "force-dynamic";
 export async function GET(req: Request) {
   const auth = await authenticateApiKey(req);
   if (!auth) return apiUnauthorized();
+
+  const rl = await rateLimit(
+    `api:${auth.keyId}`,
+    API_RATE_LIMIT.max,
+    API_RATE_LIMIT.windowSeconds
+  );
+  if (!rl.allowed) return apiRateLimited(rl.retryAfter);
 
   const url = new URL(req.url);
   const limit = Math.min(
