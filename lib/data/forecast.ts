@@ -3,7 +3,6 @@ import { unstable_cache } from "next/cache";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { buildForecast, type ForecastResult } from "@/lib/forecast";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { fetchAllPaged } from "@/lib/data/paginate";
 import { tags } from "@/lib/cache-tags";
 
 /**
@@ -42,25 +41,20 @@ async function getDailyDemandSeries(
   warehouseId: string | null
 ): Promise<SeriesBundle> {
   const start = windowStart(days);
-  const startMs = start.getTime();
 
-  // Paginate: >1000 pick/adjust scans in the window (routine for a busy org)
-  // would otherwise truncate the demand series and skew every forecast.
-  const data = await fetchAllPaged<{
-    product_id: string | null;
-    quantity: number | null;
-    scanned_at: string | null;
-  }>((from, to) => {
-    let q = supabase
-      .from("scan_history")
-      .select("product_id, quantity, scanned_at")
-      .eq("org_id", orgId)
-      .in("action", ["pick", "adjust"])
-      .gte("scanned_at", start.toISOString());
-    if (productIds && productIds.length) q = q.in("product_id", productIds);
-    if (warehouseId) q = q.eq("warehouse_id", warehouseId);
-    return q.order("id", { ascending: true }).range(from, to);
+  // Aggregated SQL-side: the raw pick/adjust rows for a 90-day window used to
+  // page through Node (100k scans = 100+ serial round trips); the RPC groups
+  // by (product, day offset) and returns at most days × products rows.
+  // Bucketing there is floor((scanned_at - start) / 24h) — monotonic across
+  // DST, same guarantee the old local-midnight rounding provided.
+  const { data, error } = await supabase.rpc("daily_demand_series", {
+    p_org: orgId,
+    p_start: start.toISOString(),
+    p_days: days,
+    p_warehouse: warehouseId,
+    p_products: productIds && productIds.length ? productIds : null,
   });
+  if (error) throw new Error(`daily_demand_series: ${error.message}`);
 
   const seriesByProduct = new Map<string, number[]>();
   const ensure = (pid: string) => {
@@ -73,20 +67,12 @@ async function getDailyDemandSeries(
   };
 
   for (const r of (data ?? []) as Array<{
-    product_id: string | null;
-    quantity: number | null;
-    scanned_at: string | null;
+    product_id: string;
+    day_offset: number;
+    qty: number;
   }>) {
-    if (!r.product_id || !r.scanned_at) continue;
-    const d = new Date(r.scanned_at);
-    d.setHours(0, 0, 0, 0);
-    // Round, not floor: both ends are LOCAL midnights, so across a DST boundary
-    // the gap between two midnights N days apart is N×24h ± 1h. Flooring the
-    // ms-division dropped a unit into the previous day's bucket near the
-    // transition; rounding to the nearest day is DST-safe.
-    const idx = Math.round((d.getTime() - startMs) / 86_400_000);
-    if (idx < 0 || idx >= days) continue;
-    ensure(r.product_id)[idx] += Math.abs(r.quantity ?? 0);
+    if (r.day_offset < 0 || r.day_offset >= days) continue;
+    ensure(r.product_id)[r.day_offset] += Number(r.qty);
   }
 
   return {

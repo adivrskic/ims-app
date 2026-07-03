@@ -1,6 +1,5 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { fetchAllPaged } from "@/lib/data/paginate";
 
 /**
  * Allocation / Available-to-Promise (ATP) / backorders.
@@ -212,81 +211,43 @@ export async function getBackorders(
   orgId: string,
   warehouseId: string | null
 ): Promise<BackorderRow[]> {
-  // Paginate: a workspace with >1000 open orders (or >1000 open lines) would
-  // otherwise silently drop the overflow and under-report backorders.
-  const orders = await fetchAllPaged<{
-    id: string;
+  // One RPC: PostgREST can't compare two columns, so the allocated < requested
+  // filter lives in app.backorder_lines. Returns only actual backorder lines
+  // (oldest order first) instead of the whole open-order book.
+  const { data, error } = await supabase.rpc("backorder_lines", {
+    p_org: orgId,
+    p_statuses: OPEN_ORDER_STATUSES as unknown as string[],
+    p_warehouse: warehouseId,
+  });
+  if (error) throw new Error(`backorder_lines: ${error.message}`);
+
+  return ((data ?? []) as Array<{
+    order_item_id: string;
+    order_id: string;
     order_number: string | null;
-    status: string;
+    order_status: string;
     created_at: string | null;
     warehouse_id: string | null;
-  }>((from, to) => {
-    let q = supabase
-      .from("orders")
-      .select("id, order_number, status, created_at, warehouse_id")
-      .eq("org_id", orgId)
-      .in("status", OPEN_ORDER_STATUSES as unknown as string[]);
-    if (warehouseId) q = q.eq("warehouse_id", warehouseId);
-    return q.order("id", { ascending: true }).range(from, to);
-  });
-
-  const orderById = new Map(orders.map((o) => [o.id, o]));
-  if (orderById.size === 0) return [];
-
-  const orderIds = [...orderById.keys()];
-  const items = await fetchAllPaged<{
-    id: string;
-    order_id: string;
     product_id: string | null;
-    quantity_requested: number | null;
-    quantity_allocated: number | null;
-    product:
-      | { name: string | null; internal_sku: string | null }
-      | { name: string | null; internal_sku: string | null }[]
-      | null;
-  }>((from, to) =>
-    supabase
-      .from("order_items")
-      .select(
-        "id, order_id, product_id, quantity_requested, quantity_allocated, product:products ( name, internal_sku )"
-      )
-      .in("order_id", orderIds)
-      .order("id", { ascending: true })
-      .range(from, to)
-  );
-
-  const rows: BackorderRow[] = [];
-  for (const it of items) {
-    const requested = it.quantity_requested ?? 0;
-    const allocated = it.quantity_allocated ?? 0;
-    const backordered = Math.max(0, requested - allocated);
-    if (backordered <= 0) continue;
-    const order = orderById.get(it.order_id);
-    if (!order) continue;
-    const prod = Array.isArray(it.product) ? it.product[0] : it.product;
-    rows.push({
-      orderItemId: it.id,
-      orderId: it.order_id,
-      orderNumber: order.order_number,
-      orderStatus: order.status,
-      createdAt: order.created_at,
-      warehouseId: order.warehouse_id,
-      productId: it.product_id,
-      productName: prod?.name ?? "Unknown product",
-      sku: prod?.internal_sku ?? null,
-      requested,
-      allocated,
-      backordered,
-    });
-  }
-
-  // Oldest order first — backorders age into priority.
-  rows.sort((a, b) => {
-    const ta = a.createdAt ? Date.parse(a.createdAt) : 0;
-    const tb = b.createdAt ? Date.parse(b.createdAt) : 0;
-    return ta - tb;
-  });
-  return rows;
+    product_name: string | null;
+    sku: string | null;
+    requested: number;
+    allocated: number;
+    backordered: number;
+  }>).map((r) => ({
+    orderItemId: r.order_item_id,
+    orderId: r.order_id,
+    orderNumber: r.order_number,
+    orderStatus: r.order_status,
+    createdAt: r.created_at,
+    warehouseId: r.warehouse_id,
+    productId: r.product_id,
+    productName: r.product_name ?? "Unknown product",
+    sku: r.sku,
+    requested: r.requested,
+    allocated: r.allocated,
+    backordered: r.backordered,
+  }));
 }
 
 // ── Mutations (called by server actions; take the client as a param) ───────

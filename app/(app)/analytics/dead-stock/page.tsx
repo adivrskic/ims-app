@@ -69,57 +69,39 @@ export default async function DeadStockPage({
     // truncation accurately (the cap is on products FETCHED, not dead-stock rows).
     .limit(501);
 
-  // Recent picks (within threshold) — products that appear here are NOT
-  // dead stock.
-  const recentPicksQ = supabase
-    .from("scan_history")
-    .select("product_id")
-    .eq("action", "pick")
-    .gte("scanned_at", thresholdDate.toISOString());
-
-  // Last-pick lookup — for products that ARE dead stock, we want to know
-  // how long it's been. Pull pick scans within a longer window (1 year)
-  // and find the most recent per product.
+  // Last pick per product over the past year, aggregated SQL-side (RLS scopes
+  // rows via the invoker client). One row per product replaces the two raw
+  // scan fetches this page used to make — the year-of-picks one silently
+  // truncated at PostgREST's 1000-row cap, which made results WRONG at scale.
   const oneYearAgo = new Date(today);
   oneYearAgo.setDate(today.getDate() - 365);
-  const olderPicksQ = supabase
-    .from("scan_history")
-    .select("product_id, scanned_at")
-    .eq("action", "pick")
-    .gte("scanned_at", oneYearAgo.toISOString())
-    .order("scanned_at", { ascending: false });
+  const lastPicksQ = supabase.rpc("last_pick_stats", {
+    p_since: oneYearAgo.toISOString(),
+  });
 
-  const [
-    { data: warehouses },
-    { data: products },
-    { data: recentPicks },
-    { data: olderPicks },
-  ] = await Promise.all([
-    supabase
-      .from("warehouses")
-      .select("id, name")
-      .eq("is_active", true)
-      .order("name", { ascending: true }),
-    productsQ,
-    recentPicksQ,
-    olderPicksQ,
-  ]);
+  const [{ data: warehouses }, { data: products }, { data: lastPicks }] =
+    await Promise.all([
+      supabase
+        .from("warehouses")
+        .select("id, name")
+        .eq("is_active", true)
+        .order("name", { ascending: true }),
+      productsQ,
+      lastPicksQ,
+    ]);
 
-  // Products that had at least one pick in the threshold window → active
+  // Products picked within the threshold window are active (not dead stock);
+  // the same rows give the last-pick date for everything else.
+  const thresholdMs = thresholdDate.getTime();
   const activeProductIds = new Set<string>();
-  for (const s of (recentPicks ?? []) as Array<{ product_id: string | null }>) {
-    if (s.product_id) activeProductIds.add(s.product_id);
-  }
-
-  // Last-pick map (within last 365 days). Already sorted desc so first
-  // occurrence wins.
   const lastPickByProduct = new Map<string, string>();
-  for (const s of (olderPicks ?? []) as Array<{
-    product_id: string | null;
-    scanned_at: string;
+  for (const s of (lastPicks ?? []) as Array<{
+    product_id: string;
+    last_pick_at: string;
   }>) {
-    if (s.product_id && !lastPickByProduct.has(s.product_id)) {
-      lastPickByProduct.set(s.product_id, s.scanned_at);
+    lastPickByProduct.set(s.product_id, s.last_pick_at);
+    if (new Date(s.last_pick_at).getTime() >= thresholdMs) {
+      activeProductIds.add(s.product_id);
     }
   }
 

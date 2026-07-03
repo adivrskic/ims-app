@@ -1,7 +1,6 @@
 import "server-only";
 import { unstable_cache } from "next/cache";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { fetchAllPaged } from "@/lib/data/paginate";
 import { tags } from "@/lib/cache-tags";
 
 /**
@@ -86,24 +85,25 @@ export function getOrdersList(
       if (statuses) listQuery = listQuery.in("status", statuses);
 
       // ── Chip counts (all statuses, same scope) ───────────────────
-      // Paginate the status column: counting fetched rows truncates the totals
-      // at ~1000 orders otherwise (chip badges + total silently undercount).
-      const countPromise = fetchAllPaged<{ status: string }>((from, to) => {
-        let q = admin.from("orders").select("status").eq("org_id", orgId);
-        if (facilityId) q = q.eq("warehouse_id", facilityId);
-        return q.order("id", { ascending: true }).range(from, to);
+      // One SQL GROUP BY instead of fetching every row's status.
+      const countPromise = admin.rpc("order_status_counts", {
+        p_org: orgId,
+        p_warehouse: facilityId,
       });
 
-      const [{ data: listData }, countData] = await Promise.all([
+      const [{ data: listData }, { data: countData }] = await Promise.all([
         listQuery,
         countPromise,
       ]);
 
       const counts: Record<string, number> = {};
       let total = 0;
-      for (const r of (countData ?? []) as Array<{ status: string }>) {
-        counts[r.status] = (counts[r.status] ?? 0) + 1;
-        total++;
+      for (const r of (countData ?? []) as Array<{
+        status: string;
+        count: number;
+      }>) {
+        counts[r.status] = Number(r.count);
+        total += Number(r.count);
       }
 
       return {

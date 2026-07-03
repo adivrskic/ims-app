@@ -75,26 +75,25 @@ export function getPurchaseOrdersList(
         return q.range(from, to);
       });
 
-      const countsPromise = fetchAllPaged<{ status: string }>((from, to) => {
-        let q = admin
-          .from("purchase_orders")
-          .select("status")
-          .eq("org_id", orgId)
-          .order("id", { ascending: false });
-        if (facilityId) q = q.eq("warehouse_id", facilityId);
-        return q.range(from, to);
+      // One SQL GROUP BY instead of fetching every row's status.
+      const countsPromise = admin.rpc("po_status_counts", {
+        p_org: orgId,
+        p_warehouse: facilityId,
       });
 
-      const [listData, countData] = await Promise.all([
+      const [listData, { data: countData }] = await Promise.all([
         listPromise,
         countsPromise,
       ]);
 
       const counts: Record<string, number> = {};
       let total = 0;
-      for (const r of countData) {
-        counts[r.status] = (counts[r.status] ?? 0) + 1;
-        total++;
+      for (const r of (countData ?? []) as Array<{
+        status: string;
+        count: number;
+      }>) {
+        counts[r.status] = Number(r.count);
+        total += Number(r.count);
       }
 
       return { pos: listData, counts, total };

@@ -1,4 +1,3 @@
-import { createClient } from "@/lib/supabase/server";
 import { getCurrentOrgContext } from "@/lib/data/user";
 import { getValuation } from "@/lib/data/valuation";
 
@@ -19,8 +18,7 @@ export async function GET(req: Request) {
   if (!ctx) return new Response("Unauthorized", { status: 401 });
 
   const facility = new URL(req.url).searchParams.get("facility");
-  const supabase = await createClient();
-  const r = await getValuation(supabase, ctx.orgId, facility || null);
+  const r = await getValuation(ctx.orgId, facility || null);
 
   const header = [
     "sku",

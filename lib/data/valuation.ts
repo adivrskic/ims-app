@@ -1,7 +1,10 @@
 import "server-only";
+import { unstable_cache } from "next/cache";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { productVelocities } from "@/lib/data/velocity";
 import { fetchAllPaged } from "@/lib/data/paginate";
+import { tags } from "@/lib/cache-tags";
 
 /**
  * Inventory valuation + turnover + ABC + aging.
@@ -61,14 +64,27 @@ const AGING_BUCKETS: Array<{ label: string; maxDays: number }> = [
   { label: "180+ days", maxDays: Infinity },
 ];
 
-export async function getValuation(
-  supabase: Client,
+export function getValuation(
   orgId: string,
   warehouseId: string | null
 ): Promise<ValuationReport> {
-  // Catalog + categories (org-wide), on-hand (scope-filtered), last movement.
-  // Paginate all three: a plain select caps at PostgREST's ~1000 rows, which
-  // would silently drop products/locations/scans and understate inventory value.
+  return unstable_cache(
+    () => computeValuation(orgId, warehouseId),
+    ["valuation", orgId, warehouseId ?? "all"],
+    { tags: [tags.inventory(orgId), tags.scans(orgId)], revalidate: 300 }
+  )();
+}
+
+async function computeValuation(
+  orgId: string,
+  warehouseId: string | null
+): Promise<ValuationReport> {
+  const supabase = createAdminClient() as unknown as Client;
+
+  // Catalog + categories (org-wide, paginated — a plain select caps at
+  // PostgREST's ~1000 rows), plus one aggregate RPC for on-hand and last
+  // movement per product (previously this fetched EVERY location and scan
+  // row to sum/max in JS).
   type P = {
     id: string;
     name: string;
@@ -76,7 +92,7 @@ export async function getValuation(
     unit_cost: string | null;
     category: { name: string | null } | { name: string | null }[] | null;
   };
-  const [prodRows, locs, scans] = await Promise.all([
+  const [prodRows, { data: movement }] = await Promise.all([
     fetchAllPaged<P>((from, to) =>
       supabase
         .from("products")
@@ -85,51 +101,23 @@ export async function getValuation(
         .order("id", { ascending: true })
         .range(from, to)
     ),
-    fetchAllPaged<{ product_id: string | null; quantity: number | null }>(
-      (from, to) => {
-        let q = supabase
-          .from("locations")
-          .select("product_id, quantity")
-          .eq("org_id", orgId);
-        if (warehouseId) q = q.eq("warehouse_id", warehouseId);
-        return q.order("id", { ascending: true }).range(from, to);
-      }
-    ),
-    fetchAllPaged<{ product_id: string | null; scanned_at: string | null }>(
-      (from, to) => {
-        let q = supabase
-          .from("scan_history")
-          .select("product_id, scanned_at")
-          .eq("org_id", orgId);
-        if (warehouseId) q = q.eq("warehouse_id", warehouseId);
-        return q.order("id", { ascending: true }).range(from, to);
-      }
-    ),
+    supabase.rpc("product_movement_stats", {
+      p_org: orgId,
+      p_warehouse: warehouseId,
+    }),
   ]);
 
-  // On-hand per product (scope).
   const onHandByProduct = new Map<string, number>();
-  for (const l of (locs ?? []) as Array<{
-    product_id: string | null;
-    quantity: number | null;
-  }>) {
-    if (!l.product_id) continue;
-    onHandByProduct.set(
-      l.product_id,
-      (onHandByProduct.get(l.product_id) ?? 0) + (l.quantity ?? 0)
-    );
-  }
-
-  // Last movement per product (max scanned_at) → aging.
   const lastMovedByProduct = new Map<string, number>();
-  for (const s of (scans ?? []) as Array<{
-    product_id: string | null;
-    scanned_at: string | null;
+  for (const m of (movement ?? []) as Array<{
+    product_id: string;
+    on_hand: number;
+    last_scanned_at: string | null;
   }>) {
-    if (!s.product_id || !s.scanned_at) continue;
-    const t = new Date(s.scanned_at).getTime();
-    const prev = lastMovedByProduct.get(s.product_id);
-    if (prev == null || t > prev) lastMovedByProduct.set(s.product_id, t);
+    onHandByProduct.set(m.product_id, Number(m.on_hand));
+    if (m.last_scanned_at) {
+      lastMovedByProduct.set(m.product_id, new Date(m.last_scanned_at).getTime());
+    }
   }
 
   // Velocity (org-wide, 60d) for turnover.

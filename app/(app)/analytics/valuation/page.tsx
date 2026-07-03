@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { createClient } from "@/lib/supabase/server";
 import { getCurrentOrgContext } from "@/lib/data/user";
 import { getActiveScope, scopeDescription } from "@/lib/facilityScope";
 import { getValuation, type AbcClass } from "@/lib/data/valuation";
@@ -32,9 +31,8 @@ export default async function ValuationPage() {
   if (!ctx) {
     return <PageHeader eyebrow="Analytics" title="Valuation" description="No workspace." />;
   }
-  const supabase = await createClient();
   const warehouseId = scope.mode === "single" ? scope.id : null;
-  const r = await getValuation(supabase, ctx.orgId, warehouseId);
+  const r = await getValuation(ctx.orgId, warehouseId);
 
   const empty = r.valuedSkus === 0 && r.totalUnits === 0;
   const maxCat = r.byCategory.reduce((m, c) => Math.max(m, c.value), 1);
