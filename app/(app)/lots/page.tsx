@@ -3,8 +3,19 @@ import { getCurrentOrgContext } from "@/lib/data/user";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { SectionTitle } from "@/components/ui/SectionTitle";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { ListPagination } from "@/components/ui/ListPagination";
 import { CalendarClock, Trash2 } from "lucide-react";
-import { expiryStatus, expiryLabel, type ExpiryStatus } from "@/lib/lots";
+import {
+  expiryStatus,
+  expiryLabel,
+  EXPIRY_SOON_DAYS,
+  type ExpiryStatus,
+} from "@/lib/lots";
+import {
+  parsePage,
+  parsePageSize,
+  PAGE_SIZE_OPTIONS,
+} from "@/lib/listParams";
 import { RegisterLotForm } from "./RegisterLotForm";
 import { deleteLot, setProductLotTracking } from "./actions";
 
@@ -22,7 +33,22 @@ function firstOf<T>(v: T | T[] | null | undefined): T | null {
   return v ?? null;
 }
 
-export default async function LotsPage() {
+/** Local YYYY-MM-DD (matches how expiryStatus interprets date-only strings). */
+function localDateStr(d: Date): string {
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${d.getFullYear()}-${m}-${day}`;
+}
+
+export default async function LotsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ page?: string; pageSize?: string }>;
+}) {
+  const { page: rawPage, pageSize: rawPageSize } = await searchParams;
+  const page = parsePage(rawPage);
+  const pageSize = parsePageSize(rawPageSize);
+
   const ctx = await getCurrentOrgContext();
   if (!ctx) {
     return (
@@ -32,28 +58,62 @@ export default async function LotsPage() {
   const supabase = await createClient();
   const orgId = ctx.orgId;
 
-  const [{ data: lotsData }, { data: productsData }, { data: suppliersData }] =
-    await Promise.all([
-      supabase
-        .from("lots")
-        .select(
-          `id, lot_number, expires_at, received_at, notes, product_id,
-           product:products ( name, barcode ),
-           supplier:suppliers ( name )`
-        )
-        .eq("org_id", orgId)
-        .order("expires_at", { ascending: true, nullsFirst: false }),
-      supabase
-        .from("products")
-        .select("id, name, barcode, track_lots")
-        .eq("org_id", orgId)
-        .order("name", { ascending: true }),
-      supabase
-        .from("suppliers")
-        .select("id, name")
-        .eq("org_id", orgId)
-        .order("name", { ascending: true }),
-    ]);
+  const now = new Date();
+  const today = new Date(now);
+  today.setHours(0, 0, 0, 0);
+  const todayStr = localDateStr(today);
+  const soonCutoff = new Date(today);
+  soonCutoff.setDate(soonCutoff.getDate() + EXPIRY_SOON_DAYS);
+  const soonStr = localDateStr(soonCutoff);
+
+  // Primary lots query: one page window with an exact total. The lot ledger
+  // below is scoped to just this page's lot ids.
+  const lotsCall = (offset: number) =>
+    supabase
+      .from("lots")
+      .select(
+        `id, lot_number, expires_at, received_at, notes, product_id,
+         product:products ( name, barcode ),
+         supplier:suppliers ( name )`,
+        { count: "exact" }
+      )
+      .eq("org_id", orgId)
+      .order("expires_at", { ascending: true, nullsFirst: false })
+      .order("id", { ascending: true }) // stable tiebreak across pages
+      .range(offset, offset + pageSize - 1);
+
+  const [
+    { data: lotsData, count: lotsCount },
+    { data: productsData },
+    { data: suppliersData },
+    // Whole-org expiry counts for the header — cheap head-only counts, so
+    // they stay accurate even though the table shows one page at a time.
+    { count: expiredCountRaw },
+    { count: soonCountRaw },
+  ] = await Promise.all([
+    lotsCall((page - 1) * pageSize),
+    supabase
+      .from("products")
+      .select("id, name, barcode, track_lots")
+      .eq("org_id", orgId)
+      .order("name", { ascending: true }),
+    supabase
+      .from("suppliers")
+      .select("id, name")
+      .eq("org_id", orgId)
+      .order("name", { ascending: true }),
+    supabase
+      .from("lots")
+      .select("id", { count: "exact", head: true })
+      .eq("org_id", orgId)
+      .lt("expires_at", todayStr),
+    supabase
+      .from("lots")
+      .select("id", { count: "exact", head: true })
+      .eq("org_id", orgId)
+      .gte("expires_at", todayStr)
+      .lte("expires_at", soonStr),
+  ]);
 
   type LotRowView = {
     id: string;
@@ -72,13 +132,26 @@ export default async function LotsPage() {
     track_lots: boolean;
   };
 
-  const lots = (lotsData ?? []) as LotRowView[];
+  const totalCount = lotsCount ?? 0;
+  const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
+
+  // If a stale ?page= overshot, re-fetch the last valid page.
+  let lots = (lotsData ?? []) as LotRowView[];
+  let servedPage = page;
+  if (lots.length === 0 && totalCount > 0 && page > totalPages) {
+    servedPage = totalPages;
+    const retry = await lotsCall((servedPage - 1) * pageSize);
+    lots = (retry.data ?? []) as LotRowView[];
+  }
+
   const products = (productsData ?? []) as ProductRowView[];
   const suppliers = (suppliersData ?? []) as Array<{ id: string; name: string }>;
+  const expiredCount = expiredCountRaw ?? 0;
+  const soonCount = soonCountRaw ?? 0;
 
   // Lot on-hand ledger: received-per-lot (po_line_items) − picked-per-lot
-  // (order_items), scoped to this org's lots via lot_id. Derived — never
-  // touches the location-level on-hand store.
+  // (order_items), scoped to the lots on THIS PAGE via lot_id. Derived —
+  // never touches the location-level on-hand store.
   const lotIds = lots.map((l) => l.id);
   const onHandByLot = new Map<string, number>();
   if (lotIds.length > 0) {
@@ -114,14 +187,6 @@ export default async function LotsPage() {
     }
   }
 
-  const now = new Date();
-  const expiredCount = lots.filter(
-    (l) => expiryStatus(l.expires_at, now) === "expired"
-  ).length;
-  const soonCount = lots.filter(
-    (l) => expiryStatus(l.expires_at, now) === "soon"
-  ).length;
-
   const trackedProducts = products.filter((p) => p.track_lots);
 
   return (
@@ -131,7 +196,7 @@ export default async function LotsPage() {
         title="Lots"
         description="Track lots / batches and expiry. Register lots for lot-tracked products and keep an eye on what's expiring."
         meta={[
-          { label: "Lots", value: lots.length },
+          { label: "Lots", value: totalCount },
           {
             label: "Expiring ≤30d",
             value: soonCount,
@@ -163,9 +228,9 @@ export default async function LotsPage() {
         <SectionTitle
           numeral="02"
           eyebrow="Registry"
-          title={`Lots (${lots.length})`}
+          title={`Lots (${totalCount})`}
         />
-        {lots.length === 0 ? (
+        {totalCount === 0 ? (
           <EmptyState
             title="No lots registered"
             description="Register a lot above for any lot-tracked product. Expiring and expired lots will surface here."
@@ -256,6 +321,17 @@ export default async function LotsPage() {
                 </tbody>
               </table>
             </div>
+            <ListPagination
+              basePath="/lots"
+              label="Lots pagination"
+              page={servedPage}
+              totalPages={totalPages}
+              pageSize={pageSize}
+              totalCount={totalCount}
+              shown={lots.length}
+              pageSizeOptions={PAGE_SIZE_OPTIONS}
+              baseParams={{ pageSize: String(pageSize) }}
+            />
           </div>
         )}
       </section>

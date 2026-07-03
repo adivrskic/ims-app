@@ -1,8 +1,8 @@
 import "server-only";
 import { unstable_cache } from "next/cache";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { fetchAllPaged } from "@/lib/data/paginate";
 import { tags } from "@/lib/cache-tags";
+import { clampPageSize } from "@/lib/listParams";
 
 /**
  * Cross-request cached fetcher for the Purchase Orders list page.
@@ -39,7 +39,13 @@ export interface PoListRow {
 export interface PurchaseOrdersListData {
   pos: PoListRow[];
   counts: Record<string, number>;
+  /** Overall total across every status (the "All" chip / header meta). */
   total: number;
+  /** Total matching the active status filter — drives pagination. */
+  filteredTotal: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
 }
 
 const PO_SELECT =
@@ -53,27 +59,31 @@ const PO_SELECT =
 export function getPurchaseOrdersList(
   orgId: string,
   facilityId: string | null,
-  statuses: string[] | null
+  statuses: string[] | null,
+  { page = 1, pageSize }: { page?: number; pageSize?: number } = {}
 ): Promise<PurchaseOrdersListData> {
   const statusKey = statuses && statuses.length ? statuses.join(",") : "all";
+  const size = clampPageSize(pageSize);
+  const requestedPage =
+    Number.isFinite(page) && page > 0 ? Math.floor(page) : 1;
 
   return unstable_cache(
     async (): Promise<PurchaseOrdersListData> => {
       const admin = createAdminClient();
 
-      // Paginate both: a plain select caps at PostgREST's ~1000 rows, which
-      // truncates the list and undercounts the status chips / total past 1000 POs.
-      const listPromise = fetchAllPaged<PoListRow>((from, to) => {
+      // One page window; the totals come from the counts RPC below, so no
+      // full-table fetch and no second count query.
+      const call = (offset: number) => {
         let q = admin
           .from("purchase_orders")
           .select(PO_SELECT)
           .eq("org_id", orgId)
           .order("created_at", { ascending: false })
-          .order("id", { ascending: false });
+          .order("id", { ascending: false }); // stable tiebreak across pages
         if (facilityId) q = q.eq("warehouse_id", facilityId);
         if (statuses) q = q.in("status", statuses);
-        return q.range(from, to);
-      });
+        return q.range(offset, offset + size - 1);
+      };
 
       // One SQL GROUP BY instead of fetching every row's status.
       const countsPromise = admin.rpc("po_status_counts", {
@@ -81,8 +91,8 @@ export function getPurchaseOrdersList(
         p_warehouse: facilityId,
       });
 
-      const [listData, { data: countData }] = await Promise.all([
-        listPromise,
+      const [{ data: listData }, { data: countData }] = await Promise.all([
+        call((requestedPage - 1) * size),
         countsPromise,
       ]);
 
@@ -96,9 +106,39 @@ export function getPurchaseOrdersList(
         total += Number(r.count);
       }
 
-      return { pos: listData, counts, total };
+      const filteredTotal = statuses
+        ? statuses.reduce((sum, s) => sum + (counts[s] ?? 0), 0)
+        : total;
+      const totalPages = Math.max(1, Math.ceil(filteredTotal / size));
+
+      // If a stale ?page= overshot after a filter change, the window came
+      // back empty — re-fetch the last valid page so the UI isn't blank.
+      let rows = (listData ?? []) as PoListRow[];
+      let servedPage = requestedPage;
+      if (rows.length === 0 && filteredTotal > 0 && requestedPage > totalPages) {
+        servedPage = totalPages;
+        const retry = await call((servedPage - 1) * size);
+        rows = (retry.data ?? []) as PoListRow[];
+      }
+
+      return {
+        pos: rows,
+        counts,
+        total,
+        filteredTotal,
+        page: servedPage,
+        pageSize: size,
+        totalPages,
+      };
     },
-    ["purchase-orders-list", orgId, facilityId ?? "all", statusKey],
+    [
+      "purchase-orders-list",
+      orgId,
+      facilityId ?? "all",
+      statusKey,
+      String(requestedPage),
+      String(size),
+    ],
     { tags: [tags.purchaseOrders(orgId)], revalidate: 300 }
   )();
 }

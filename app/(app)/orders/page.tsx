@@ -9,6 +9,13 @@ import { getActiveScope, scopeDescription } from "@/lib/facilityScope";
 import { OrdersRealtime } from "@/components/realtime/PageRealtime";
 import { getCurrentOrgContext } from "@/lib/data/user";
 import { getOrdersList } from "@/lib/data/orders";
+import { ListPagination } from "@/components/ui/ListPagination";
+import {
+  parsePage,
+  parsePageSize,
+  DEFAULT_PAGE_SIZE,
+  PAGE_SIZE_OPTIONS,
+} from "@/lib/listParams";
 
 export const metadata = { title: "Orders" };
 
@@ -114,24 +121,53 @@ function deliveryLabel(date: string | null, window: string | null): string {
 export default async function OrdersPage({
   searchParams,
 }: {
-  searchParams: Promise<{ status?: string }>;
+  searchParams: Promise<{ status?: string; page?: string; pageSize?: string }>;
 }) {
-  const { status: rawStatus } = await searchParams;
+  const {
+    status: rawStatus,
+    page: rawPage,
+    pageSize: rawPageSize,
+  } = await searchParams;
   const activeFilter = FILTERS.find((f) => f.key === rawStatus) ?? FILTERS[0];
+  const page = parsePage(rawPage);
+  const pageSize = parsePageSize(rawPageSize);
 
   const scope = await getActiveScope();
   const ctx = await getCurrentOrgContext();
   const facilityId = scope.mode === "single" ? scope.id : null;
 
   const data = ctx
-    ? await getOrdersList(ctx.orgId, facilityId, activeFilter.statuses)
+    ? await getOrdersList(ctx.orgId, facilityId, activeFilter.statuses, {
+        page,
+        pageSize,
+      })
     : null;
 
   const orders = (data?.orders ?? []) as OrderRow[];
   const total = data?.total ?? 0;
+  const filteredTotal = data?.filteredTotal ?? 0;
+  const totalPages = data?.totalPages ?? 1;
+  const servedPage = data?.page ?? 1;
+  const servedSize = data?.pageSize ?? pageSize;
   // Rebuild the Map the chip rendering already expects. The fetcher returns
   // a plain object because unstable_cache serializes its result to JSON.
   const countMap = new Map<string, number>(Object.entries(data?.counts ?? {}));
+
+  // Chip links reset page (no ?page=) but keep a non-default page size.
+  const chipHref = (key: string) => {
+    const sp = new URLSearchParams();
+    if (key !== "all") sp.set("status", key);
+    if (servedSize !== DEFAULT_PAGE_SIZE)
+      sp.set("pageSize", String(servedSize));
+    const qs = sp.toString();
+    return qs ? `/orders?${qs}` : "/orders";
+  };
+
+  // Everything except page/pageSize, for the pagination links.
+  const paginationBaseParams: Record<string, string> = {
+    ...(activeFilter.key !== "all" ? { status: activeFilter.key } : {}),
+    pageSize: String(servedSize),
+  };
 
   return (
     <div className="flex flex-col gap-32">
@@ -184,7 +220,7 @@ export default async function OrdersPage({
           return (
             <Link
               key={f.key}
-              href={f.key === "all" ? "/orders" : `/orders?status=${f.key}`}
+              href={chipHref(f.key)}
               className={`relative px-12 py-10 transition-colors whitespace-nowrap flex items-center gap-8 ${
                 isActive
                   ? "text-[var(--accent)]"
@@ -311,6 +347,17 @@ export default async function OrdersPage({
               </tbody>
             </table>
           </div>
+          <ListPagination
+            basePath="/orders"
+            label="Orders pagination"
+            page={servedPage}
+            totalPages={totalPages}
+            pageSize={servedSize}
+            totalCount={filteredTotal}
+            shown={orders.length}
+            pageSizeOptions={PAGE_SIZE_OPTIONS}
+            baseParams={paginationBaseParams}
+          />
         </div>
       )}
     </div>

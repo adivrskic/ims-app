@@ -2,7 +2,7 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { InventoryTable } from "@/components/inventory/InventoryTable";
 import { InventoryToolbar } from "@/components/inventory/InventoryToolbar";
-import { InventoryPagination } from "@/components/inventory/InventoryPagination";
+import { ListPagination } from "@/components/ui/ListPagination";
 import { CornerLink as ButtonLink } from "@/components/ui/CornerButton";
 import { BulkProductLabelButton } from "@/components/print/BulkProductLabelButton";
 import { RegisterProductButton } from "./RegisterProductButton";
@@ -201,7 +201,9 @@ export default async function InventoryPage({
             order={order}
             baseParams={tableBaseParams}
           />
-          <InventoryPagination
+          <ListPagination
+            basePath="/inventory"
+            label="Inventory pagination"
             page={servedPage}
             totalPages={totalPages}
             pageSize={servedSize}

@@ -2,6 +2,7 @@ import "server-only";
 import { unstable_cache } from "next/cache";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { tags } from "@/lib/cache-tags";
+import { clampPageSize } from "@/lib/listParams";
 
 /**
  * Cross-request cached fetcher for the Orders list page.
@@ -53,7 +54,13 @@ export interface OrdersListData {
   orders: OrderListRow[];
   /** status → count, scoped the same way as the listing. */
   counts: Record<string, number>;
+  /** Overall total across every status (the "All" chip / header meta). */
   total: number;
+  /** Total matching the active status filter — drives pagination. */
+  filteredTotal: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
 }
 
 const ORDERS_SELECT =
@@ -67,32 +74,42 @@ const ORDERS_SELECT =
 export function getOrdersList(
   orgId: string,
   facilityId: string | null,
-  statuses: string[] | null
+  statuses: string[] | null,
+  { page = 1, pageSize }: { page?: number; pageSize?: number } = {}
 ): Promise<OrdersListData> {
   const statusKey = statuses && statuses.length ? statuses.join(",") : "all";
+  const size = clampPageSize(pageSize);
+  const requestedPage =
+    Number.isFinite(page) && page > 0 ? Math.floor(page) : 1;
 
   return unstable_cache(
     async (): Promise<OrdersListData> => {
       const admin = createAdminClient();
 
-      // ── Listing ──────────────────────────────────────────────────
-      let listQuery = admin
-        .from("orders")
-        .select(ORDERS_SELECT)
-        .eq("org_id", orgId)
-        .order("created_at", { ascending: false });
-      if (facilityId) listQuery = listQuery.eq("warehouse_id", facilityId);
-      if (statuses) listQuery = listQuery.in("status", statuses);
+      // ── Listing (one page window; total comes from the counts RPC) ──
+      const call = (offset: number) => {
+        let q = admin
+          .from("orders")
+          .select(ORDERS_SELECT)
+          .eq("org_id", orgId)
+          .order("created_at", { ascending: false })
+          .order("id", { ascending: false }); // stable tiebreak across pages
+        if (facilityId) q = q.eq("warehouse_id", facilityId);
+        if (statuses) q = q.in("status", statuses);
+        return q.range(offset, offset + size - 1);
+      };
 
       // ── Chip counts (all statuses, same scope) ───────────────────
-      // One SQL GROUP BY instead of fetching every row's status.
+      // One SQL GROUP BY instead of fetching every row's status. The
+      // chip-filtered sum doubles as the pagination total — no second
+      // count query needed.
       const countPromise = admin.rpc("order_status_counts", {
         p_org: orgId,
         p_warehouse: facilityId,
       });
 
       const [{ data: listData }, { data: countData }] = await Promise.all([
-        listQuery,
+        call((requestedPage - 1) * size),
         countPromise,
       ]);
 
@@ -106,14 +123,40 @@ export function getOrdersList(
         total += Number(r.count);
       }
 
+      const filteredTotal = statuses
+        ? statuses.reduce((sum, s) => sum + (counts[s] ?? 0), 0)
+        : total;
+      const totalPages = Math.max(1, Math.ceil(filteredTotal / size));
+
+      // If a stale ?page= overshot after a filter change, the window came
+      // back empty — re-fetch the last valid page so the UI isn't blank.
+      let rows = (listData ?? []) as OrderListRow[];
+      let servedPage = requestedPage;
+      if (rows.length === 0 && filteredTotal > 0 && requestedPage > totalPages) {
+        servedPage = totalPages;
+        const retry = await call((servedPage - 1) * size);
+        rows = (retry.data ?? []) as OrderListRow[];
+      }
+
       return {
-        orders: (listData ?? []) as OrderListRow[],
+        orders: rows,
         counts,
         total,
+        filteredTotal,
+        page: servedPage,
+        pageSize: size,
+        totalPages,
       };
     },
-    // Cache key parts — distinct entry per workspace / facility / filter.
-    ["orders-list", orgId, facilityId ?? "all", statusKey],
+    // Cache key parts — distinct entry per workspace / facility / filter / page.
+    [
+      "orders-list",
+      orgId,
+      facilityId ?? "all",
+      statusKey,
+      String(requestedPage),
+      String(size),
+    ],
     { tags: [tags.orders(orgId)], revalidate: 300 }
   )();
 }
