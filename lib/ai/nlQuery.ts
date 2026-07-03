@@ -8,7 +8,7 @@ interface NlQueryResponse {
 
 /**
  * Turn a plain-English query into a structured search intent by invoking the
- * `nl-query` Supabase edge function (source in the nimbus-edge-functions repo).
+ * `nl-query-index` Supabase edge function (source in supabase/functions/).
  *
  * Mirrors lib/ai/narrate.ts exactly: returns null on any failure so the caller
  * falls back to the palette's normal command matching. The LLM being down must
@@ -18,7 +18,7 @@ export async function nlQuery(query: string): Promise<NlQueryIntent | null> {
   try {
     const supabase = await createClient();
     const { data, error } = await supabase.functions.invoke<NlQueryResponse>(
-      "nl-query",
+      "nl-query-index",
       { body: { query } }
     );
     if (error || !data?.intent) return null;
