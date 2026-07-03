@@ -2,7 +2,10 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentOrgContext } from "@/lib/data/user";
 import { getActiveScope, scopeDescription } from "@/lib/facilityScope";
-import { getSlottingHealth, type SlottingHealth } from "@/lib/data/slotting";
+import {
+  getSlottingHealthCached,
+  type SlottingHealth,
+} from "@/lib/data/slotting";
 import { ApplyMoveButton } from "./ApplyMoveButton";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { KpiCard } from "@/components/ui/KpiCard";
@@ -42,9 +45,7 @@ export default async function SlottingPage() {
   }
 
   const reports = await Promise.all(
-    facilities.map((f) =>
-      getSlottingHealth(supabase, ctx.orgId, f.id, f.name)
-    )
+    facilities.map((f) => getSlottingHealthCached(ctx.orgId, f.id, f.name))
   );
 
   const laidOut = reports.filter((r) => r.hasLayout);

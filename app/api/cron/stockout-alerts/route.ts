@@ -151,6 +151,11 @@ async function processOrg(
   // rather than every sweep.
   const newlyAlerted: AtRisk[] = [];
 
+  // Pick the products that need a fresh alert, then narrate them with bounded
+  // concurrency — the per-product LLM copy calls were previously sequential,
+  // so 20 at-risk SKUs stacked 20 serial network+LLM latencies against the
+  // route's maxDuration. copyFor already falls open to deterministic copy.
+  const pending: Array<{ a: AtRisk; targets: string[] }> = [];
   for (const a of atRisk) {
     const link = `/inventory/${a.id}`;
     const targets = userIds.filter(
@@ -158,10 +163,29 @@ async function processOrg(
     );
     if (targets.length === 0) continue;
     newlyAlerted.push(a);
+    pending.push({ a, targets });
+  }
 
-    const { title, body } = await copyFor(admin, a);
+  const NARRATE_CONCURRENCY = 5;
+  const copies = new Map<string, { title: string; body: string }>();
+  for (let i = 0; i < pending.length; i += NARRATE_CONCURRENCY) {
+    const chunk = pending.slice(i, i + NARRATE_CONCURRENCY);
+    const results = await Promise.all(chunk.map(({ a }) => copyFor(admin, a)));
+    chunk.forEach(({ a }, j) => copies.set(a.id, results[j]));
+  }
+
+  for (const { a, targets } of pending) {
+    const link = `/inventory/${a.id}`;
+    const copy = copies.get(a.id);
+    if (!copy) continue;
     for (const uid of targets) {
-      inserts.push({ user_id: uid, kind: "stock_alert", title, body, link });
+      inserts.push({
+        user_id: uid,
+        kind: "stock_alert",
+        title: copy.title,
+        body: copy.body,
+        link,
+      });
     }
   }
 

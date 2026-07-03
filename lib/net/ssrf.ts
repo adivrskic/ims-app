@@ -75,11 +75,22 @@ export function isPrivateAddress(ip: string): boolean {
   return true; // not a valid IP → unsafe
 }
 
+export interface PublicHttpsTarget {
+  url: URL;
+  /** A vetted public address of the host — connect to THIS, not a re-resolve. */
+  address: string;
+  family: 4 | 6;
+}
+
 /**
- * Throws with a user-safe message if `raw` is not a public https URL. Resolves
- * DNS and rejects if the host (or any resolved address) is non-public.
+ * Validates `raw` as a public https URL and returns one vetted address for
+ * the host. Callers making the request should PIN the connection to that
+ * address (node:https `lookup` option) — re-resolving at fetch time reopens
+ * the DNS-rebinding window between validation and connect.
  */
-export async function assertPublicHttpsUrl(raw: string): Promise<void> {
+export async function resolvePublicHttpsAddress(
+  raw: string
+): Promise<PublicHttpsTarget> {
   let u: URL;
   try {
     u = new URL(raw);
@@ -97,14 +108,15 @@ export async function assertPublicHttpsUrl(raw: string): Promise<void> {
   }
 
   const host = u.hostname;
-  if (isIP(host)) {
+  const literal = isIP(host);
+  if (literal) {
     if (isPrivateAddress(host)) {
       throw new Error("That URL points at a non-public address");
     }
-    return;
+    return { url: u, address: host, family: literal as 4 | 6 };
   }
 
-  let results: Array<{ address: string }>;
+  let results: Array<{ address: string; family: number }>;
   try {
     results = await lookup(host, { all: true, verbatim: true });
   } catch {
@@ -118,4 +130,17 @@ export async function assertPublicHttpsUrl(raw: string): Promise<void> {
       throw new Error("That URL resolves to a non-public address");
     }
   }
+  return {
+    url: u,
+    address: results[0].address,
+    family: results[0].family as 4 | 6,
+  };
+}
+
+/**
+ * Throws with a user-safe message if `raw` is not a public https URL. Resolves
+ * DNS and rejects if the host (or any resolved address) is non-public.
+ */
+export async function assertPublicHttpsUrl(raw: string): Promise<void> {
+  await resolvePublicHttpsAddress(raw);
 }

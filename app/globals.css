@@ -2,14 +2,9 @@
 @tailwind components;
 @tailwind utilities;
 
-/* ═══ FONTS ═══ */
-@font-face {
-  font-family: "Satoshi";
-  src: url("https://cdn.jsdelivr.net/gh/nicholasgillespie/fonts@main/satoshi/Satoshi-Variable.woff2")
-    format("woff2");
-  font-weight: 300 900;
-  font-display: swap;
-}
+/* ═══ FONTS ═══
+   Loaded via next/font in app/layout.tsx (self-hosted, preloaded):
+   Satoshi variable → --font-satoshi, JetBrains Mono → --font-jetbrains. */
 
 /* ═══ RESET ═══ */
 *,
@@ -73,8 +68,10 @@
   --glass-border: rgba(255, 255, 255, 0.06);
 
   /* Type */
-  --display: "Satoshi", -apple-system, "SF Pro Display", system-ui, sans-serif;
-  --mono: "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
+  --display: var(--font-satoshi, "Satoshi"), -apple-system, "SF Pro Display",
+    system-ui, sans-serif;
+  --mono: var(--font-jetbrains, "JetBrains Mono"), "SF Mono", Menlo, Consolas,
+    monospace;
 
   /* Motion */
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
@@ -343,6 +340,16 @@ table,
 .glow-card {
   position: relative;
   cursor: pointer;
+  /* Hover tilt driven by useGlowCards via --tilt-x/--tilt-y (was gsap). */
+  transform: perspective(800px) rotateX(var(--tilt-x, 0deg))
+    rotateY(var(--tilt-y, 0deg));
+  transition: transform 300ms var(--ease-out);
+}
+@media (prefers-reduced-motion: reduce) {
+  .glow-card {
+    transform: none;
+    transition: none;
+  }
 }
 .glow-card:hover::before {
   opacity: 1;

@@ -152,6 +152,11 @@ The `sections/*` ones are worst (write wrong `org_id` into `locations`/`scan_his
 
 ## Unfinished / not-built features
 
+> 2026-07-03 update: everything in this section has since SHIPPED — the Shopify
+> client is a real HMAC-verified HTTP client, multi-level builds auto-explode via
+> `app.consume_for_build`, QC quarantine holds stock out of availability, and
+> ASN/LPN receiving is live under /inbound. Kept for historical context.
+
 - **Shopify Admin API client** — still a stub (`lib/integrations/shopify/client.ts`); HMAC verify
   returns false, methods error. (See `memory/wip-stubs-to-implement.md`.)
 - **Multi-level BOM builds** — only direct-component consumption is implemented; `explodeBom`

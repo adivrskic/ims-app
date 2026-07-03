@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Package,
   Boxes,
@@ -98,6 +98,16 @@ export function SectionDetail({
 
   const levels = Array.from({ length: totalLevels }, (_, i) => totalLevels - i);
   const bays = Array.from({ length: totalBays }, (_, i) => i + 1);
+
+  // Stable handler shared by every SlotCell — cells receive (bay, level) as
+  // props and call back with them, so React.memo on SlotCell actually hits
+  // instead of being defeated by a fresh closure per render.
+  const handleSelect = useCallback((bay: number, level: number) => {
+    const k = slotKey(bay, level);
+    setSelected((cur) => (cur === k ? null : k));
+    setAdding(false);
+    setError(null);
+  }, []);
 
   // ── Mutations ────────────────────────────────────────────────────────
 
@@ -338,11 +348,7 @@ export function SectionDetail({
                             color={sectionColor}
                             capacity={slotCapacity}
                             selected={isSelected}
-                            onSelect={() => {
-                              setSelected((cur) => (cur === k ? null : k));
-                              setAdding(false);
-                              setError(null);
-                            }}
+                            onSelect={handleSelect}
                           />
                         </td>
                       );
@@ -488,7 +494,12 @@ export function SectionDetail({
 
 // ─── Slot cell ──────────────────────────────────────────────────────────
 
-function SlotCell({
+// Memoized: the grid renders totalBays × totalLevels of these, and panel
+// state changes (selection, errors, busy flags, add-form toggles) shouldn't
+// re-render every cell. All props are primitives except `locations`, whose
+// per-slot array identity is preserved by the useMemo'd slotMap above for
+// any render where `locations` state itself didn't change.
+const SlotCell = memo(function SlotCell({
   bay,
   level,
   locations,
@@ -503,7 +514,7 @@ function SlotCell({
   color: string;
   capacity: number | null;
   selected: boolean;
-  onSelect: () => void;
+  onSelect: (bay: number, level: number) => void;
 }) {
   const count = locations?.length ?? 0;
   const empty = count === 0;
@@ -520,7 +531,7 @@ function SlotCell({
   return (
     <button
       type="button"
-      onClick={onSelect}
+      onClick={() => onSelect(bay, level)}
       className={`relative w-full hairline-subtle transition-colors text-left ${
         selected
           ? "border-[var(--accent)] bg-[var(--accent-dim)]"
@@ -615,7 +626,7 @@ function SlotCell({
       </div>
     </button>
   );
-}
+});
 
 function MoveForm({
   fromBay,

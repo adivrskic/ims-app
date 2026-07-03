@@ -63,9 +63,18 @@ export function ViewerCanvas({
   viewportApi,
   onSectionClick,
 }: Props) {
-  const { viewport, zoomAt, panBy, spaceHeld } = viewportApi;
+  const {
+    viewport,
+    viewportRef,
+    sceneRef,
+    zoomAt,
+    panBy,
+    commitViewport,
+    spaceHeld,
+  } = viewportApi;
   const [panning, setPanning] = useState(false);
   const [hoverId, setHoverId] = useState<string | null>(null);
+  const [focusId, setFocusId] = useState<string | null>(null);
   const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
 
   // Mouse-down snapshot per section — used to suppress click if the user
@@ -88,7 +97,9 @@ export function ViewerCanvas({
     return () => ro.disconnect();
   }, [containerRef]);
 
-  // Wheel zoom/pan — same UX as the builder.
+  // Wheel zoom/pan — same UX as the builder. Zoom is read from the live
+  // viewport ref so this listener mounts once instead of detaching and
+  // re-attaching on every zoom tick.
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
@@ -99,7 +110,7 @@ export function ViewerCanvas({
       if (e.ctrlKey || e.metaKey) {
         e.preventDefault();
         const factor = Math.exp(-e.deltaY * 0.01);
-        zoomAt(viewport.zoom * factor, sx, sy);
+        zoomAt(viewportRef.current.zoom * factor, sx, sy);
         return;
       }
       e.preventDefault();
@@ -108,7 +119,7 @@ export function ViewerCanvas({
     };
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);
-  }, [containerRef, viewport.zoom, zoomAt, panBy]);
+  }, [containerRef, viewportRef, zoomAt, panBy]);
 
   // Touch: 1-finger pan, 2-finger pinch zoom. Matches the builder.
   useEffect(() => {
@@ -150,7 +161,7 @@ export function ViewerCanvas({
         const rect = el.getBoundingClientRect();
         panBy(mid.x - pinch.lastMid.x, mid.y - pinch.lastMid.y);
         zoomAt(
-          viewport.zoom * (dist / pinch.lastDist),
+          viewportRef.current.zoom * (dist / pinch.lastDist),
           mid.x - rect.left,
           mid.y - rect.top
         );
@@ -169,6 +180,8 @@ export function ViewerCanvas({
       active.delete(e.pointerId);
       if (singlePan?.pointerId === e.pointerId) singlePan = null;
       if (active.size < 2) pinch = null;
+      // Gesture fully ended — flush the live viewport into React state.
+      if (active.size === 0) commitViewport();
     };
     el.addEventListener("pointerdown", onPD);
     window.addEventListener("pointermove", onPM, { passive: true });
@@ -180,7 +193,7 @@ export function ViewerCanvas({
       window.removeEventListener("pointerup", onPU);
       window.removeEventListener("pointercancel", onPU);
     };
-  }, [containerRef, viewport.zoom, panBy, zoomAt]);
+  }, [containerRef, viewportRef, panBy, zoomAt, commitViewport]);
 
   // Mouse pan: middle-mouse or spacebar+left
   const onContainerPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
@@ -199,6 +212,7 @@ export function ViewerCanvas({
     };
     const onUp = () => {
       setPanning(false);
+      commitViewport();
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
     };
@@ -320,9 +334,9 @@ export function ViewerCanvas({
           </pattern>
         </defs>
 
-        <g
-          transform={`translate(${viewport.panX} ${viewport.panY}) scale(${viewport.zoom})`}
-        >
+        {/* Scene group — its pan/zoom transform is applied imperatively by
+            useViewport (ref + rAF) so gestures don't re-render the scene. */}
+        <g ref={sceneRef}>
           <rect
             x={0}
             y={0}
@@ -367,12 +381,25 @@ export function ViewerCanvas({
             const cx = s.floor_x + s.floor_width / 2;
             const cy = s.floor_y + s.floor_height / 2;
             const isHover = hoverId === s.id;
+            const isFocus = focusId === s.id;
             const occRatio = s.capacity > 0 ? s.occupied / s.capacity : 0;
             return (
               <g
                 key={s.id}
                 transform={`rotate(${s.rotation} ${cx} ${cy})`}
-                style={{ cursor: "pointer" }}
+                style={{ cursor: "pointer", outline: "none" }}
+                tabIndex={0}
+                role="button"
+                aria-label={`View section ${s.name} (${s.code})`}
+                onKeyDown={(e) => {
+                  if (e.key !== "Enter" && e.key !== " ") return;
+                  e.preventDefault();
+                  onSectionClick(s.id);
+                }}
+                onFocus={() => setFocusId(s.id)}
+                onBlur={() =>
+                  setFocusId((id) => (id === s.id ? null : id))
+                }
                 onPointerDown={(e) => {
                   if (panning || spaceHeld) return;
                   if (e.button !== 0) return;
@@ -399,10 +426,25 @@ export function ViewerCanvas({
                   width={s.floor_width}
                   height={s.floor_height}
                   fill={s.color}
-                  fillOpacity={isHover ? 0.36 : 0.16}
-                  stroke={isHover ? "var(--accent)" : s.color}
-                  strokeWidth={(isHover ? 1.6 : 1) * inv}
+                  fillOpacity={isHover || isFocus ? 0.36 : 0.16}
+                  stroke={isHover || isFocus ? "var(--accent)" : s.color}
+                  strokeWidth={(isHover || isFocus ? 1.6 : 1) * inv}
                 />
+                {/* Visible keyboard-focus ring — drawn in floor space so it
+                    tracks the shape through pan/zoom/rotation. */}
+                {isFocus && (
+                  <rect
+                    x={s.floor_x - 3 * inv}
+                    y={s.floor_y - 3 * inv}
+                    width={s.floor_width + 6 * inv}
+                    height={s.floor_height + 6 * inv}
+                    fill="none"
+                    stroke="var(--accent)"
+                    strokeWidth={2 * inv}
+                    strokeDasharray={`${4 * inv} ${3 * inv}`}
+                    pointerEvents="none"
+                  />
+                )}
                 {/* Occupancy fill bar at bottom — a thin meter that hints
                     at how full this section is without dominating. */}
                 {s.capacity > 0 && (

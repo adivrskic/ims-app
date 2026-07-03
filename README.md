@@ -350,12 +350,10 @@ A second Netlify site sharing the build profile with the marketing repo.
 
 **Stubbed / partial:**
 
-- **Workspace switching** — switcher renders but `getCurrentOrgContext` always returns `memberships[0]`; multi-org users see only their first org until the workspace-cookie wiring lands (`lib/data/user.ts` TODO). The _Create workspace_ button is disabled pending the same wiring.
 - **Integrations** — Square, WooCommerce, QuickBooks, Xero, Stripe, ShipStation, FedEx, Gmail, Zapier, HubSpot are "Not yet available" stubs.
 - **Shopify v2** — inventory write-back, fulfillment + tracking, multi-location routing, unknown-SKU mapping, reconciliation pull.
 - **3D builder** — only the viewer has a 2D/3D toggle; editing is 2D-only.
-- **Fonts** — Satoshi + JetBrains Mono woff2 not yet in `public/fonts/`; prod uses fallbacks.
-- **Tests** — no E2E suite; manual testing via the dev server.
+- **Tests** — Vitest unit suite over critical pure logic (`npm test`); no E2E suite yet.
 
 ---
 
@@ -368,7 +366,6 @@ A second Netlify site sharing the build profile with the marketing repo.
 
 ### Known sharp edges worth knowing before you touch them
 
-- **Workspace context is hardcoded.** `getCurrentOrgContext` always returns `memberships[0]` (`lib/data/user.ts` TODO). Don't build features assuming the active-workspace cookie exists yet — it doesn't.
-- **Onboarding is non-atomic.** `setUpWorkspace` runs org → profile → membership → facility as separate admin-client writes. A mid-sequence failure orphans the org; cleanup is currently manual SQL. The intended fix is a `SECURITY DEFINER` Postgres function.
 - **Admin client = no RLS.** The `lib/data/` cached fetchers use the service-role client, so an `org_id` filter is the _only_ thing isolating workspaces. Drop it and you leak cross-org data.
-- **No test suite.** Validate changes against the dev server manually until E2E lands.
+- **Workspace context is cookie-driven.** `getCurrentOrgContext` resolves the active workspace from a cookie validated against the user's real memberships (`lib/data/user.ts`); creating additional workspaces goes through the transactional `app.provision_workspace` RPC.
+- **No E2E suite.** `npm test` covers the pure logic (SSRF guard, redirect safety, RBAC math, allocation, forecasting, replenishment); anything touching the DB or browser still needs manual verification against the dev server.

@@ -1,8 +1,12 @@
 import "server-only";
 import { createHmac, randomBytes } from "crypto";
+import { request as httpsRequest } from "node:https";
 import { decrypt, encrypt } from "./crypto";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { assertPublicHttpsUrl } from "@/lib/net/ssrf";
+import {
+  resolvePublicHttpsAddress,
+  type PublicHttpsTarget,
+} from "@/lib/net/ssrf";
 import type { EventPayload } from "./types";
 
 /**
@@ -71,6 +75,63 @@ function signBody(secret: string, body: string): string {
 }
 
 /**
+ * POST to a validated target with the socket pinned to the vetted address:
+ * the custom `lookup` hands the connection the exact IP that passed the
+ * public-address check, closing the DNS-rebinding TOCTOU between validation
+ * and connect. `host`/`servername` stay on the hostname so SNI and
+ * certificate validation are unaffected.
+ */
+function postPinned(
+  target: PublicHttpsTarget,
+  opts: { headers: Record<string, string>; body: string; timeoutMs: number }
+): Promise<{ status: number; text: string }> {
+  const { url, address, family } = target;
+  return new Promise((resolve, reject) => {
+    const req = httpsRequest(
+      {
+        host: url.hostname,
+        servername: url.hostname,
+        port: 443,
+        path: `${url.pathname}${url.search}`,
+        method: "POST",
+        headers: opts.headers,
+        timeout: opts.timeoutMs,
+        lookup: (_hostname, lookupOpts, cb) => {
+          // Node may ask with { all: true } depending on internals.
+          if (
+            lookupOpts &&
+            typeof lookupOpts === "object" &&
+            "all" in lookupOpts &&
+            lookupOpts.all
+          ) {
+            (cb as unknown as (e: null, a: unknown) => void)(null, [
+              { address, family },
+            ]);
+          } else {
+            cb(null, address, family);
+          }
+        },
+      },
+      (res) => {
+        let text = "";
+        res.on("data", (chunk: Buffer) => {
+          // Truncate — some receivers stream entire HTML pages.
+          if (text.length < 2000) text += chunk.toString("utf8");
+        });
+        res.on("end", () =>
+          resolve({ status: res.statusCode ?? 0, text: text.slice(0, 2000) })
+        );
+        res.on("error", reject);
+      }
+    );
+    req.on("timeout", () => req.destroy(new Error("timeout")));
+    req.on("error", reject);
+    req.write(opts.body);
+    req.end();
+  });
+}
+
+/**
  * Deliver one event to one endpoint. Writes a row to webhook_deliveries
  * regardless of outcome, then updates the endpoint's counters + status.
  *
@@ -108,9 +169,12 @@ export async function deliverWebhook(
   }
 
   // Re-validate the destination at delivery time — DNS can rebind between when
-  // the endpoint was created and now (SSRF defense).
+  // the endpoint was created and now (SSRF defense). The resolved address is
+  // PINNED for the actual connection below, so the host can't return a public
+  // IP to this check and a private one to the socket.
+  let target: PublicHttpsTarget;
   try {
-    await assertPublicHttpsUrl(url);
+    target = await resolvePublicHttpsAddress(url);
   } catch (err) {
     const message = err instanceof Error ? err.message : "Blocked destination";
     await logDelivery(admin, {
@@ -142,9 +206,11 @@ export async function deliverWebhook(
 
   const signature = signBody(secret, body);
 
-  // POST with timeout
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 10_000);
+  // POST via node:https with the connection pinned to the vetted address
+  // (custom `lookup`), while TLS SNI + certificate validation still run
+  // against the hostname. Redirects are never followed — node:https doesn't
+  // follow them, so a 3xx is just a failed status (same effect as the old
+  // fetch redirect:"error", with better logging).
   const startedAt = Date.now();
 
   let status: number | null = null;
@@ -153,10 +219,10 @@ export async function deliverWebhook(
   let error: string | undefined;
 
   try {
-    const res = await fetch(url, {
-      method: "POST",
+    const res = await postPinned(target, {
       headers: {
         "Content-Type": "application/json",
+        "Content-Length": String(Buffer.byteLength(body)),
         "User-Agent": "Nautilus-Webhook/1.0",
         "X-Nautilus-Event": event.type,
         "X-Nautilus-Delivery": deliveryId,
@@ -164,26 +230,21 @@ export async function deliverWebhook(
         "X-Nautilus-Signature": signature,
       },
       body,
-      signal: controller.signal,
-      // Never follow a redirect — a public host could 3xx to an internal one,
-      // re-opening the SSRF we just validated the original URL against.
-      redirect: "error",
+      timeoutMs: 10_000,
     });
     status = res.status;
-    // Truncate response body — some receivers stream entire HTML pages
-    responseBody = (await res.text()).slice(0, 2000);
-    succeeded = res.ok;
+    responseBody = res.text;
+    succeeded = status >= 200 && status < 300;
     if (!succeeded) {
-      error = `HTTP ${res.status}: ${responseBody.slice(0, 200)}`;
+      error = `HTTP ${status}: ${responseBody.slice(0, 200)}`;
     }
   } catch (err) {
-    if (err instanceof Error && err.name === "AbortError") {
-      error = "Timed out after 10s";
-    } else {
-      error = err instanceof Error ? err.message : "Network error";
-    }
-  } finally {
-    clearTimeout(timeoutId);
+    error =
+      err instanceof Error && err.message === "timeout"
+        ? "Timed out after 10s"
+        : err instanceof Error
+          ? err.message
+          : "Network error";
   }
 
   const duration = Date.now() - startedAt;

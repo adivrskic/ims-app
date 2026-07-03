@@ -1,7 +1,8 @@
 # Putaway / Slotting Suggestions — Implementation Plan (Roadmap #8)
 
-> Status: **planned, not started.** Build the facility-builder polish (§0) FIRST,
-> then implement this. This doc is self-contained so a fresh session can execute it.
+> Status: **SHIPPED** — slotting suggestions, aisle-path distance (grid BFS in
+> `lib/data/floorPath.ts`), and the slotting-health analytics page are all live.
+> This doc is kept as the original design reference.
 
 ## What it is
 

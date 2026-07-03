@@ -1,7 +1,10 @@
 import "server-only";
+import { unstable_cache } from "next/cache";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { productVelocities } from "@/lib/data/velocity";
 import { sectionPathDistances, type Rect } from "@/lib/data/floorPath";
+import { tags } from "@/lib/cache-tags";
 
 /**
  * Directed putaway / slotting optimization (roadmap #8), Phase 1 — read-side.
@@ -567,6 +570,41 @@ function uniqueOnHandProductIds(ctx: FacilityCtx): string[] {
 }
 
 // ── Public: facility slotting-health report ───────────────────────────────
+
+/**
+ * Cached wrapper for the analytics page. The report scores every placement
+ * against every candidate slot (O(locations × slots) of scoreSlot calls), so
+ * recomputing per request for every facility is the most CPU-expensive read
+ * in the app. Every query inside filters org_id/warehouse_id explicitly, so
+ * the admin client is safe here (repo convention for cached fetchers).
+ */
+export function getSlottingHealthCached(
+  orgId: string,
+  warehouseId: string,
+  facilityName: string,
+  opts?: { limit?: number }
+): Promise<SlottingHealth> {
+  return unstable_cache(
+    () =>
+      getSlottingHealth(
+        createAdminClient() as unknown as Client,
+        orgId,
+        warehouseId,
+        facilityName,
+        opts
+      ),
+    [
+      "slotting-health",
+      orgId,
+      warehouseId,
+      String(opts?.limit ?? 25),
+    ],
+    {
+      tags: [tags.inventory(orgId), tags.sections(orgId)],
+      revalidate: 300,
+    }
+  )();
+}
 
 export async function getSlottingHealth(
   supabase: Client,

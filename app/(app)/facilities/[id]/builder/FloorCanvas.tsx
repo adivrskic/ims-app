@@ -83,7 +83,15 @@ export function FloorCanvas({
   gridSize,
   gridEnabled,
 }: Props) {
-  const { viewport, zoomAt, panBy, spaceHeld } = viewportApi;
+  const {
+    viewport,
+    viewportRef,
+    sceneRef,
+    zoomAt,
+    panBy,
+    commitViewport,
+    spaceHeld,
+  } = viewportApi;
   const svgRef = useRef<SVGSVGElement>(null);
   const [activeGuides, setActiveGuides] = useState<Guide[]>([]);
   const [panning, setPanning] = useState(false);
@@ -95,15 +103,6 @@ export function FloorCanvas({
   useEffect(() => {
     dataRef.current = { sections, elements, selection };
   }, [sections, elements, selection]);
-
-  // Synchronous refs so the touch-gesture closure always reads the latest
-  // viewport values without re-binding listeners on every frame.
-  const zoomRef = useRef(viewport.zoom);
-  const zoomAtRef = useRef(zoomAt);
-  const panByRef = useRef(panBy);
-  zoomRef.current = viewport.zoom;
-  zoomAtRef.current = zoomAt;
-  panByRef.current = panBy;
 
   // --- Track container size for the rulers ---
   useEffect(() => {
@@ -121,7 +120,8 @@ export function FloorCanvas({
     return () => ro.disconnect();
   }, [containerRef]);
 
-  // --- Wheel: ⌘/Ctrl = zoom, else pan ---
+  // --- Wheel: ⌘/Ctrl = zoom, else pan. Zoom is read from the live viewport
+  //     ref so this listener mounts once instead of re-binding per zoom tick.
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
@@ -132,7 +132,7 @@ export function FloorCanvas({
       if (e.ctrlKey || e.metaKey) {
         e.preventDefault();
         const factor = Math.exp(-e.deltaY * 0.01);
-        zoomAt(viewport.zoom * factor, sx, sy);
+        zoomAt(viewportRef.current.zoom * factor, sx, sy);
         return;
       }
       e.preventDefault();
@@ -144,7 +144,7 @@ export function FloorCanvas({
     };
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);
-  }, [containerRef, viewport.zoom, zoomAt, panBy]);
+  }, [containerRef, viewportRef, zoomAt, panBy]);
 
   // --- Touch gesture handling: 1-finger pan on empty canvas, 2-finger
   //     pinch zoom + midpoint pan. Mouse events are handled separately by
@@ -207,13 +207,13 @@ export function FloorCanvas({
         // Incremental: pan by midpoint delta, then zoom by distance ratio
         // at the local midpoint. The order matters — pan first so the
         // zoom pivot lands where the user's pinch center actually is.
-        panByRef.current(mid.x - pinch.lastMid.x, mid.y - pinch.lastMid.y);
+        panBy(mid.x - pinch.lastMid.x, mid.y - pinch.lastMid.y);
         const factor = dist / pinch.lastDist;
-        zoomAtRef.current(zoomRef.current * factor, midLocal.x, midLocal.y);
+        zoomAt(viewportRef.current.zoom * factor, midLocal.x, midLocal.y);
 
         pinch = { lastMid: mid, lastDist: dist };
       } else if (singlePan && e.pointerId === singlePan.pointerId) {
-        panByRef.current(e.clientX - singlePan.x, e.clientY - singlePan.y);
+        panBy(e.clientX - singlePan.x, e.clientY - singlePan.y);
         singlePan = {
           x: e.clientX,
           y: e.clientY,
@@ -227,6 +227,8 @@ export function FloorCanvas({
       active.delete(e.pointerId);
       if (singlePan?.pointerId === e.pointerId) singlePan = null;
       if (active.size < 2) pinch = null;
+      // Gesture fully ended — flush the live viewport into React state.
+      if (active.size === 0) commitViewport();
     };
 
     el.addEventListener("pointerdown", onPD);
@@ -239,7 +241,7 @@ export function FloorCanvas({
       window.removeEventListener("pointerup", onPU);
       window.removeEventListener("pointercancel", onPU);
     };
-  }, [containerRef]);
+  }, [containerRef, viewportRef, panBy, zoomAt, commitViewport]);
 
   // --- Mouse pan: middle-mouse OR spacebar+left ---
   const handleContainerPointerDown = (
@@ -260,6 +262,7 @@ export function FloorCanvas({
     };
     const onUp = () => {
       setPanning(false);
+      commitViewport();
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
     };
@@ -267,15 +270,18 @@ export function FloorCanvas({
     window.addEventListener("pointerup", onUp);
   };
 
+  // Reads the LIVE viewport (not committed state) so drag/marquee math stays
+  // accurate even mid-gesture, before the debounced React commit lands.
   const clientToFloor = (clientX: number, clientY: number) => {
     const container = containerRef.current;
     if (!container) return { x: 0, y: 0 };
     const rect = container.getBoundingClientRect();
     const sx = clientX - rect.left;
     const sy = clientY - rect.top;
+    const v = viewportRef.current;
     return {
-      x: (sx - viewport.panX) / viewport.zoom,
-      y: (sy - viewport.panY) / viewport.zoom,
+      x: (sx - v.panX) / v.zoom,
+      y: (sy - v.panY) / v.zoom,
     };
   };
 
@@ -581,9 +587,9 @@ export function FloorCanvas({
           </pattern>
         </defs>
 
-        <g
-          transform={`translate(${viewport.panX} ${viewport.panY}) scale(${viewport.zoom})`}
-        >
+        {/* Scene group — its pan/zoom transform is applied imperatively by
+            useViewport (ref + rAF) so gestures don't re-render the scene. */}
+        <g ref={sceneRef}>
           <rect
             x={0}
             y={0}
