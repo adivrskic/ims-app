@@ -142,7 +142,18 @@ export default async function WavePickListPage({
                     <td>
                       <span className="paper-sku">{t.sku ?? "—"}</span>
                     </td>
-                    <td>{t.productName}</td>
+                    <td>
+                      {t.productName}
+                      {t.fefoLot && (
+                        <span className="paper-sku">
+                          {" "}
+                          — lot {t.fefoLot.lotNumber}
+                          {t.fefoLot.expiresAt
+                            ? ` (exp ${t.fefoLot.expiresAt.slice(0, 10)})`
+                            : ""}
+                        </span>
+                      )}
+                    </td>
                     <td>
                       <span className="paper-sku">
                         {t.orderNumber ?? t.orderId.slice(0, 8)}

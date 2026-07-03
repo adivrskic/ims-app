@@ -1,6 +1,7 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { OPEN_ORDER_STATUSES } from "@/lib/data/allocation";
+import { fefoLotSuggestions, type FefoSuggestion } from "@/lib/data/fefo";
 
 /**
  * Wave / zone picking (planning + sequencing layer).
@@ -270,6 +271,8 @@ export interface PickTask {
   bay: number | null;
   level: number | null;
   distance: number;
+  /** FEFO guidance for lot-tracked products: draw from this lot first. */
+  fefoLot: FefoSuggestion | null;
 }
 
 export interface PickZoneGroup {
@@ -385,14 +388,11 @@ export async function getWaveDetail(
   );
   if (lines.length === 0) return base;
 
-  const [zones, locByProduct] = await Promise.all([
+  const lineProductIds = [...new Set(lines.map((l) => l.product_id as string))];
+  const [zones, locByProduct, fefoByProduct] = await Promise.all([
     getSectionZones(supabase, orgId, w.warehouse_id),
-    loadPickSlots(
-      supabase,
-      orgId,
-      w.warehouse_id,
-      [...new Set(lines.map((l) => l.product_id as string))]
-    ),
+    loadPickSlots(supabase, orgId, w.warehouse_id, lineProductIds),
+    fefoLotSuggestions(supabase, orgId, lineProductIds),
   ]);
 
   // Build a task per line, placed at the product's chosen pick slot.
@@ -417,6 +417,7 @@ export async function getWaveDetail(
       bay: slot?.bay ?? null,
       level: slot?.level ?? null,
       distance: slot?.distance ?? UNLOCATED_DISTANCE,
+      fefoLot: fefoByProduct.get(it.product_id as string) ?? null,
     });
   }
 

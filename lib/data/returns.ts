@@ -36,7 +36,10 @@ export interface ReturnListRow {
   disposition: Disposition;
   reason: string | null;
   reviewed_at: string | null;
+  restocked_at: string | null;
   created_at: string | null;
+  product_id: string | null;
+  warehouse_id: string | null;
   product:
     | { id: string; name: string; barcode: string }
     | { id: string; name: string; barcode: string }[]
@@ -55,7 +58,7 @@ export interface ReturnsListData {
 }
 
 const RETURNS_SELECT =
-  "id, quantity, disposition, reason, reviewed_at, created_at, product:products ( id, name, barcode ), received_by_profile:profiles!returns_received_by_fkey ( full_name, email )";
+  "id, quantity, disposition, reason, reviewed_at, restocked_at, created_at, product_id, warehouse_id, product:products ( id, name, barcode ), received_by_profile:profiles!returns_received_by_fkey ( full_name, email )";
 
 /**
  * @param orgId        resolved active workspace id (getCurrentOrgContext().orgId)

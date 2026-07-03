@@ -10,6 +10,7 @@ import {
   fillBackordersInternal,
   OPEN_ORDER_STATUSES,
 } from "@/lib/data/allocation";
+import { RETURN_REASONS } from "./returnReasons";
 
 type OrderStatus =
   | "created"
@@ -384,4 +385,127 @@ export async function fillBackorders(formData: FormData): Promise<void> {
   revalidatePath("/orders");
   revalidateTag(tags.orders(ctx.orgId));
   revalidateTag(tags.inventory(ctx.orgId));
+}
+
+/**
+ * Create a return from an order line at the desk.
+ *
+ * Historically returns were only logged at the receiving dock (mobile app);
+ * this gives the desk the same entry point, anchored to the order. The row
+ * lands in the returns queue as "Pending review" (reviewed_at null) with an
+ * initial hold_for_inspection disposition — the standard desk review then
+ * signs off restock / write-off / supplier RMA, and a signed-off restock is
+ * credited back to on-hand via restockReturn (returns/actions.ts).
+ *
+ * Quantity is capped at units actually picked (what physically left the
+ * building) minus what's already been returned against the same line.
+ * Creating a return NEVER moves stock — that's the explicit restock step.
+ */
+export async function createReturnFromOrder(
+  _prev: unknown,
+  formData: FormData
+): Promise<{ error?: string; success?: string }> {
+  const ctx = await getActionContext();
+  if ("error" in ctx) return { error: ctx.error };
+  if (!ctx.can("orders.manage")) {
+    return { error: "You don't have permission to manage orders" };
+  }
+
+  const orderId = String(formData.get("order_id") ?? "").trim();
+  const orderItemId = String(formData.get("order_item_id") ?? "").trim();
+  const qtyRaw = String(formData.get("quantity") ?? "").trim();
+  const reasonKey = String(formData.get("reason") ?? "").trim();
+  const notes = String(formData.get("notes") ?? "").trim();
+
+  if (!orderId || !orderItemId) return { error: "Pick a line item" };
+  const reason = RETURN_REASONS.find((r) => r.value === reasonKey);
+  if (!reason) return { error: "Pick a reason" };
+  const qty = parseInt(qtyRaw, 10);
+  if (Number.isNaN(qty) || qty <= 0) {
+    return { error: "Quantity must be a positive integer" };
+  }
+
+  // Order + line must be in this org; returns come off PICKED units.
+  const { data: order } = await ctx.supabase
+    .from("orders")
+    .select("id, status, warehouse_id")
+    .eq("id", orderId)
+    .eq("org_id", ctx.orgId)
+    .maybeSingle();
+  if (!order) return { error: "Order not found" };
+  if (order.status === "cancelled") {
+    return { error: "Cancelled orders can't have returns" };
+  }
+
+  const { data: item } = await ctx.supabase
+    .from("order_items")
+    .select("id, product_id, quantity_picked")
+    .eq("id", orderItemId)
+    .eq("order_id", orderId)
+    .maybeSingle();
+  if (!item || !item.product_id) return { error: "Line item not found" };
+
+  const picked = item.quantity_picked ?? 0;
+  if (picked <= 0) {
+    return { error: "Nothing has been picked on that line yet" };
+  }
+
+  // Cap at picked minus previously returned against this line.
+  const { data: prior } = await ctx.supabase
+    .from("returns")
+    .select("quantity")
+    .eq("org_id", ctx.orgId)
+    .eq("order_item_id", orderItemId);
+  const alreadyReturned = (prior ?? []).reduce(
+    (s, r) => s + ((r as { quantity: number | null }).quantity ?? 0),
+    0
+  );
+  const returnable = picked - alreadyReturned;
+  if (qty > returnable) {
+    return {
+      error:
+        returnable <= 0
+          ? "That line has already been fully returned"
+          : `Only ${returnable} of ${picked} picked unit${
+              picked === 1 ? "" : "s"
+            } can still be returned on that line`,
+    };
+  }
+
+  const { error: insErr } = await ctx.supabase.from("returns").insert({
+    org_id: ctx.orgId,
+    warehouse_id: order.warehouse_id,
+    product_id: item.product_id,
+    order_id: orderId,
+    order_item_id: orderItemId,
+    quantity: qty,
+    // Pending-review queue state: disposition is provisional until the desk
+    // review signs it off; hold_for_inspection is the safe initial value.
+    disposition: "hold_for_inspection",
+    reason: notes ? `${reason.label} — ${notes}` : reason.label,
+    received_by: ctx.user.id,
+  });
+  if (insErr) return { error: insErr.message };
+
+  // Audit trail, matching the dock's 'return' scan rows.
+  await ctx.supabase.from("scan_history").insert({
+    org_id: ctx.orgId,
+    product_id: item.product_id,
+    warehouse_id: order.warehouse_id,
+    scanned_by: ctx.user.id,
+    action: "return",
+    quantity: qty,
+    notes: `Return logged at desk from order (${reason.label})`,
+  });
+
+  revalidatePath(`/orders/${orderId}`);
+  revalidatePath("/returns");
+  revalidateTag(tags.returns(ctx.orgId));
+  revalidateTag(tags.scans(ctx.orgId));
+
+  return {
+    success: `Return logged — ${qty} unit${
+      qty === 1 ? "" : "s"
+    } now pending review on the Returns page`,
+  };
 }

@@ -6,8 +6,10 @@ import { RotateCcw } from "lucide-react";
 import { getActiveScope, scopeDescription } from "@/lib/facilityScope";
 import { getCurrentOrgContext } from "@/lib/data/user";
 import { getReturnsList } from "@/lib/data/returns";
+import { createClient } from "@/lib/supabase/server";
 import { ReturnsRealtime } from "@/components/realtime/PageRealtime";
 import { ReturnReviewForm } from "./ReturnReviewForm";
+import { RestockForm } from "./RestockForm";
 
 export const metadata = { title: "Returns" };
 
@@ -23,7 +25,10 @@ interface ReturnRow {
   disposition: Disposition;
   reason: string | null;
   reviewed_at: string | null;
+  restocked_at: string | null;
   created_at: string | null;
+  product_id: string | null;
+  warehouse_id: string | null;
   product:
     | { id: string; name: string; barcode: string }
     | { id: string; name: string; barcode: string }[]
@@ -32,6 +37,32 @@ interface ReturnRow {
     | { full_name: string | null; email: string }
     | { full_name: string | null; email: string }[]
     | null;
+}
+
+interface LocationRow {
+  id: string;
+  product_id: string | null;
+  warehouse_id: string | null;
+  quantity: number | null;
+  bay: number | null;
+  level: number | null;
+  section: { code: string | null } | { code: string | null }[] | null;
+}
+
+function locationOption(l: LocationRow) {
+  const section = Array.isArray(l.section) ? l.section[0] : l.section;
+  return {
+    value: l.id,
+    label: `${section?.code ?? "Unassigned"} · Bay ${l.bay ?? "?"} · L${
+      l.level ?? "?"
+    }`,
+    hint:
+      l.product_id == null
+        ? "empty"
+        : l.quantity != null
+        ? `on hand: ${l.quantity}`
+        : undefined,
+  };
 }
 
 const DISPOSITION_CONFIG: Record<
@@ -112,6 +143,58 @@ export default async function ReturnsPage({
     : null;
 
   const rows = (data?.rows ?? []) as ReturnRow[];
+
+  // Destination options for the Restock control: reviewed "restock" returns
+  // that haven't been credited back yet. One query for locations already
+  // holding those products + one for empty locations (fallback when a product
+  // has nowhere to go). RLS-scoped client; only run when something is eligible.
+  const canAdjust = ctx?.can("inventory.adjust") ?? false;
+  const restockable = rows.filter(
+    (r) =>
+      !!r.reviewed_at &&
+      r.disposition === "restock" &&
+      !r.restocked_at &&
+      !!r.product_id
+  );
+  let productLocations: LocationRow[] = [];
+  let emptyLocations: LocationRow[] = [];
+  if (canAdjust && restockable.length > 0) {
+    const supabase = await createClient();
+    const productIds = [...new Set(restockable.map((r) => r.product_id!))];
+    const LOC_SELECT =
+      "id, product_id, warehouse_id, quantity, bay, level, section:sections ( code )";
+    const [{ data: held }, { data: empty }] = await Promise.all([
+      supabase
+        .from("locations")
+        .select(LOC_SELECT)
+        .eq("org_id", ctx!.orgId)
+        .eq("is_active", true)
+        .eq("quarantined", false)
+        .in("product_id", productIds),
+      supabase
+        .from("locations")
+        .select(LOC_SELECT)
+        .eq("org_id", ctx!.orgId)
+        .eq("is_active", true)
+        .eq("quarantined", false)
+        .is("product_id", null)
+        .limit(100),
+    ]);
+    productLocations = (held ?? []) as LocationRow[];
+    emptyLocations = (empty ?? []) as LocationRow[];
+  }
+
+  /** Options for one return: same-product locations first, else empty ones. */
+  function restockOptions(r: ReturnRow) {
+    const inWarehouse = (l: LocationRow) =>
+      !r.warehouse_id || l.warehouse_id === r.warehouse_id;
+    const held = productLocations.filter(
+      (l) => l.product_id === r.product_id && inWarehouse(l)
+    );
+    const pool = held.length > 0 ? held : emptyLocations.filter(inWarehouse);
+    return pool.map(locationOption);
+  }
+
   const total = data?.total ?? 0;
   const pendingReview = data?.pendingReview ?? 0;
   // Rebuild the Map the chip rendering expects. The fetcher returns a plain
@@ -245,6 +328,11 @@ export default async function ReturnsPage({
                           Pending review
                         </Badge>
                       )}
+                      {r.restocked_at && (
+                        <Badge tone="success" variant="outline">
+                          Restocked
+                        </Badge>
+                      )}
                     </div>
                     <div className="flex items-center gap-14 flex-wrap mono-sm text-text-muted">
                       {product && <span>{product.barcode}</span>}
@@ -266,15 +354,26 @@ export default async function ReturnsPage({
                     )}
                   </div>
                   <div className="shrink-0 flex items-start">
-                    {reviewed ? (
-                      <span className="label-text text-text-dim inline-flex items-center gap-6">
-                        Reviewed {relTime(r.reviewed_at)}
-                      </span>
-                    ) : (
+                    {!reviewed ? (
                       <ReturnReviewForm
                         returnId={r.id}
                         currentDisposition={r.disposition}
                       />
+                    ) : r.disposition === "restock" &&
+                      !r.restocked_at &&
+                      canAdjust &&
+                      r.product_id ? (
+                      <RestockForm
+                        returnId={r.id}
+                        quantity={r.quantity}
+                        locations={restockOptions(r)}
+                      />
+                    ) : (
+                      <span className="label-text text-text-dim inline-flex items-center gap-6">
+                        {r.restocked_at
+                          ? `Restocked ${relTime(r.restocked_at)}`
+                          : `Reviewed ${relTime(r.reviewed_at)}`}
+                      </span>
                     )}
                   </div>
                 </div>

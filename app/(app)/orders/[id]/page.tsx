@@ -17,6 +17,8 @@ import {
 } from "lucide-react";
 import { advanceOrderStatus, cancelOrder, allocateOrder } from "../actions";
 import { OrderDetailRealtime } from "@/components/realtime/PageRealtime";
+import { getCurrentOrgContext } from "@/lib/data/user";
+import { CreateReturnForm, type ReturnableItem } from "./CreateReturnForm";
 
 export const metadata = { title: "Order detail" };
 
@@ -167,6 +169,29 @@ export default async function OrderDetailPage({
 
   const nextStatusLabel = NEXT_LABEL[status];
   const canCancel = status !== "complete" && status !== "cancelled";
+
+  // Desk-side returns: lines with picked units can be returned (gated on
+  // orders.manage; the createReturnFromOrder action re-checks server-side and
+  // caps quantity at picked minus already-returned).
+  const orgCtx = await getCurrentOrgContext();
+  const returnableItems: ReturnableItem[] = !isCancelled
+    ? rows
+        .filter((i) => (i.quantity_picked ?? 0) > 0)
+        .flatMap((i) => {
+          const product = Array.isArray(i.product) ? i.product[0] : i.product;
+          if (!product) return [];
+          return [
+            {
+              id: i.id,
+              productName: product.name,
+              barcode: product.barcode,
+              picked: i.quantity_picked ?? 0,
+            },
+          ];
+        })
+    : [];
+  const showCreateReturn =
+    (orgCtx?.can("orders.manage") ?? false) && returnableItems.length > 0;
 
   return (
     <div className="flex flex-col gap-32">
@@ -510,6 +535,12 @@ export default async function OrderDetailPage({
               </tbody>
             </table>
           </div>
+
+          {showCreateReturn && (
+            <div className="flex flex-col items-end gap-8">
+              <CreateReturnForm orderId={order.id} items={returnableItems} />
+            </div>
+          )}
 
           {order.notes && !isCancelled && (
             <div className="hairline bg-[var(--surface)] p-16 flex items-start gap-12">

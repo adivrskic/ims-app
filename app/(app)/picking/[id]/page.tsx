@@ -212,6 +212,21 @@ export default async function WaveDetailPage({
                             {t.sku && (
                               <span className="mono-sm text-text-dim ml-8">{t.sku}</span>
                             )}
+                            {t.fefoLot && (
+                              <span
+                                className="mono-sm ml-8 px-6 py-1 hairline-subtle border-[var(--accent-deep)] bg-[var(--accent-dim)] text-[var(--accent)]"
+                                title={`FEFO: draw from lot ${t.fefoLot.lotNumber} first${
+                                  t.fefoLot.expiresAt
+                                    ? ` — expires ${t.fefoLot.expiresAt.slice(0, 10)}`
+                                    : ""
+                                } (${t.fefoLot.remaining} attributed to this lot)`}
+                              >
+                                Lot {t.fefoLot.lotNumber}
+                                {t.fefoLot.expiresAt
+                                  ? ` · exp ${t.fefoLot.expiresAt.slice(0, 10)}`
+                                  : ""}
+                              </span>
+                            )}
                           </Td>
                           <Td>
                             <Link
