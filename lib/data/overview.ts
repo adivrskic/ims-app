@@ -69,6 +69,18 @@ export interface OverviewData {
     deadStockValue: number;
     deadStockSkus: number;
   };
+  /**
+   * Nightly KPI history for this scope (app.kpi_snapshots, oldest → newest,
+   * up to 30 days). Empty arrays until the nightly capture has run — the
+   * cards fall back to their flat placeholder sparks.
+   */
+  history: {
+    dates: string[];
+    inventoryValue: number[];
+    unitsOnHand: number[];
+    lowStock: number[];
+    openOrders: number[];
+  };
 }
 
 /**
@@ -124,6 +136,7 @@ export function getOverviewData(
         { data: recentScans },
         { data: stockByProduct },
         { data: finRows },
+        { data: historyRows },
       ] = await Promise.all([
         admin
           .from("products")
@@ -206,6 +219,21 @@ export function getOverviewData(
           p_warehouse: facilityId,
           p_dead_days: 90,
         }),
+        // Nightly KPI history (30 days, this scope) for sparklines/deltas.
+        (() => {
+          let q = admin
+            .from("kpi_snapshots")
+            .select(
+              "snapshot_date, inventory_value, units_on_hand, low_stock_count, open_orders"
+            )
+            .eq("org_id", orgId)
+            .order("snapshot_date", { ascending: true })
+            .limit(30);
+          q = facilityId
+            ? q.eq("warehouse_id", facilityId)
+            : q.is("warehouse_id", null);
+          return q;
+        })(),
       ]);
 
       return {
@@ -230,6 +258,22 @@ export function getOverviewData(
             inventoryValue: Number(r?.inventory_value ?? 0),
             deadStockValue: Number(r?.dead_stock_value ?? 0),
             deadStockSkus: Number(r?.dead_stock_skus ?? 0),
+          };
+        })(),
+        history: (() => {
+          const rows = (historyRows ?? []) as Array<{
+            snapshot_date: string;
+            inventory_value: number | string | null;
+            units_on_hand: number | string | null;
+            low_stock_count: number | null;
+            open_orders: number | null;
+          }>;
+          return {
+            dates: rows.map((r) => r.snapshot_date),
+            inventoryValue: rows.map((r) => Number(r.inventory_value ?? 0)),
+            unitsOnHand: rows.map((r) => Number(r.units_on_hand ?? 0)),
+            lowStock: rows.map((r) => r.low_stock_count ?? 0),
+            openOrders: rows.map((r) => r.open_orders ?? 0),
           };
         })(),
       };

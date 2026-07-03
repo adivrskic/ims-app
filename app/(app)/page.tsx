@@ -20,7 +20,7 @@ import {
 } from "lucide-react";
 import { getActiveScope, scopeDescription } from "@/lib/facilityScope";
 import { getCurrentOrgContext } from "@/lib/data/user";
-import { getOverviewData } from "@/lib/data/overview";
+import { getOverviewData, type OverviewData } from "@/lib/data/overview";
 import { getKioskData, type KioskData } from "@/lib/data/kiosk";
 
 export const metadata = { title: "Overview" };
@@ -81,6 +81,37 @@ function bucketByDay(scans: { scanned_at: string | null }[]): number[] {
 
 const flat = (n: number) => new Array(14).fill(n);
 
+/**
+ * Real KPI history when the nightly snapshots have accrued ≥2 points
+ * (appending today's live value so the spark ends at "now"); flat
+ * placeholder otherwise.
+ */
+const sparkOr = (series: number[], live: number): number[] =>
+  series.length >= 2 ? [...series, live] : flat(live);
+
+/**
+ * Delta chip vs ~7 days ago from snapshot history. Null until enough
+ * history exists or when nothing changed.
+ */
+function deltaVs7d(
+  series: number[],
+  live: number,
+  format: (n: number) => string,
+  { downIsGood = false }: { downIsGood?: boolean } = {}
+): { value: string; direction: "up" | "down"; tone: "good" | "bad" | "neutral" } | null {
+  if (series.length < 2) return null;
+  const base = series[Math.max(0, series.length - 7)];
+  const diff = live - base;
+  if (diff === 0) return null;
+  const direction = diff > 0 ? "up" : "down";
+  const improved = downIsGood ? diff < 0 : diff > 0;
+  return {
+    value: `${diff > 0 ? "+" : "−"}${format(Math.abs(diff))} · 7d`,
+    direction,
+    tone: improved ? "good" : "bad",
+  };
+}
+
 /* ── View model shared across the three role layouts ───────────────────── */
 
 interface OverviewVM {
@@ -120,6 +151,8 @@ interface OverviewVM {
   inventoryValue: number;
   deadStockValue: number;
   deadStockSkus: number;
+  // nightly KPI history (app.kpi_snapshots via getOverviewData)
+  history: OverviewData["history"];
 }
 
 export default async function OverviewPage() {
@@ -206,6 +239,13 @@ export default async function OverviewPage() {
     inventoryValue: data?.financials.inventoryValue ?? 0,
     deadStockValue: data?.financials.deadStockValue ?? 0,
     deadStockSkus: data?.financials.deadStockSkus ?? 0,
+    history: data?.history ?? {
+      dates: [],
+      inventoryValue: [],
+      unitsOnHand: [],
+      lowStock: [],
+      openOrders: [],
+    },
   };
 
   return (
@@ -273,7 +313,7 @@ function MemberOverview({ vm }: { vm: OverviewVM }) {
             {
               label: "Open orders",
               value: vm.openOrdersCount.toLocaleString(),
-              spark: flat(vm.openOrdersCount),
+              spark: sparkOr(vm.history.openOrders, vm.openOrdersCount),
             },
             {
               label: "In pick queue",
@@ -283,6 +323,7 @@ function MemberOverview({ vm }: { vm: OverviewVM }) {
             {
               label: "Low stock",
               value: vm.lowStockCount.toLocaleString(),
+              spark: sparkOr(vm.history.lowStock, vm.lowStockCount),
               delta: {
                 value: vm.lowStockCount > 0 ? "Needs reorder" : "All stocked",
                 direction: vm.lowStockCount > 0 ? "down" : "flat",
@@ -316,7 +357,7 @@ function AdminOverview({ vm }: { vm: OverviewVM }) {
             {
               label: "Open orders",
               value: vm.openOrdersCount.toLocaleString(),
-              spark: flat(vm.openOrdersCount),
+              spark: sparkOr(vm.history.openOrders, vm.openOrdersCount),
             },
             {
               label: "In pick queue",
@@ -331,6 +372,7 @@ function AdminOverview({ vm }: { vm: OverviewVM }) {
             {
               label: "Low stock",
               value: vm.lowStockCount.toLocaleString(),
+              spark: sparkOr(vm.history.lowStock, vm.lowStockCount),
               delta: {
                 value: vm.lowStockCount > 0 ? "Needs reorder" : "All stocked",
                 direction: vm.lowStockCount > 0 ? "down" : "flat",
@@ -358,7 +400,7 @@ function AdminOverview({ vm }: { vm: OverviewVM }) {
             {
               label: "Units on hand",
               value: vm.totalStock.toLocaleString(),
-              spark: flat(vm.totalStock),
+              spark: sparkOr(vm.history.unitsOnHand, vm.totalStock),
             },
             {
               label: "Products",
@@ -422,16 +464,17 @@ function OwnerOverview({ vm }: { vm: OverviewVM }) {
             {
               label: "Units on hand",
               value: vm.totalStock.toLocaleString(),
-              spark: flat(vm.totalStock),
+              spark: sparkOr(vm.history.unitsOnHand, vm.totalStock),
             },
             {
               label: "Open orders",
               value: vm.openOrdersCount.toLocaleString(),
-              spark: flat(vm.openOrdersCount),
+              spark: sparkOr(vm.history.openOrders, vm.openOrdersCount),
             },
             {
               label: "Low stock",
               value: vm.lowStockCount.toLocaleString(),
+              spark: sparkOr(vm.history.lowStock, vm.lowStockCount),
               delta: {
                 value: vm.lowStockCount > 0 ? "Needs reorder" : "All stocked",
                 direction: vm.lowStockCount > 0 ? "down" : "flat",
@@ -441,7 +484,7 @@ function OwnerOverview({ vm }: { vm: OverviewVM }) {
             {
               label: "Inventory value",
               value: formatCurrency(vm.inventoryValue),
-              spark: flat(vm.inventoryValue),
+              spark: sparkOr(vm.history.inventoryValue, vm.inventoryValue),
               delta:
                 vm.inventoryValue === 0
                   ? {
@@ -449,7 +492,11 @@ function OwnerOverview({ vm }: { vm: OverviewVM }) {
                       direction: "flat",
                       tone: "neutral",
                     }
-                  : undefined,
+                  : deltaVs7d(
+                      vm.history.inventoryValue,
+                      vm.inventoryValue,
+                      formatCurrency
+                    ) ?? undefined,
             },
             {
               label: "Capital in dead stock",
