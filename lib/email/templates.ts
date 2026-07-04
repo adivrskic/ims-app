@@ -269,3 +269,89 @@ Sent to ${input.recipientEmail} · ${input.orgName}`;
   const { html, text } = baseLayout({ preheader, bodyHtml, bodyText });
   return { subject, html, text };
 }
+
+// ─── Daily notification digest ─────────────────────────────────────
+
+export interface DigestEmailInput {
+  recipientName: string | null;
+  /** Unread notifications, newest first (capped by the caller). */
+  items: Array<{
+    title: string;
+    body: string | null;
+    link: string | null;
+    kind: string;
+  }>;
+  /** Total unread — may exceed items.length when capped. */
+  totalUnread: number;
+}
+
+export function digestEmail(input: DigestEmailInput): {
+  subject: string;
+  html: string;
+  text: string;
+} {
+  const n = input.totalUnread;
+  const subject = `Nautilus digest — ${n} unread notification${n === 1 ? "" : "s"}`;
+  const preheader = input.items[0]
+    ? `${input.items[0].title}${n > 1 ? ` and ${n - 1} more` : ""}`
+    : subject;
+  const greeting = input.recipientName
+    ? `Morning, ${input.recipientName.split(" ")[0]}.`
+    : "Morning.";
+
+  const itemsHtml = input.items
+    .map((it) => {
+      const href = it.link ? `${APP_URL}${it.link}` : APP_URL;
+      return `<div style="padding:12px 0;border-bottom:1px solid rgba(26,22,18,0.08);">
+        <a href="${href}" style="font-size:14px;font-weight:600;color:#1a1612;text-decoration:none;">${escapeHtml(
+        it.title
+      )}</a>
+        ${
+          it.body
+            ? `<p style="margin:4px 0 0;font-size:13px;line-height:1.5;color:rgba(26,22,18,0.7);">${escapeHtml(
+                it.body
+              )}</p>`
+            : ""
+        }
+      </div>`;
+    })
+    .join("");
+
+  const overflow =
+    n > input.items.length
+      ? `<p style="margin:16px 0 0;font-size:12px;color:rgba(26,22,18,0.5);">+ ${
+          n - input.items.length
+        } more in the app.</p>`
+      : "";
+
+  const bodyHtml = `
+    <h1 style="margin:0 0 8px;font-size:18px;font-weight:600;letter-spacing:-0.2px;">${escapeHtml(
+      greeting
+    )}</h1>
+    <p style="margin:0 0 20px;font-size:14px;line-height:1.6;color:rgba(26,22,18,0.75);">
+      You have ${n} unread notification${n === 1 ? "" : "s"} in Nautilus.
+    </p>
+    ${itemsHtml}
+    ${overflow}
+    <div style="margin:24px 0 0;">${ctaButton(
+      `${APP_URL}/notifications`,
+      "Open notifications →"
+    )}</div>
+    <p style="margin:24px 0 0;font-family:'JetBrains Mono',Menlo,Consolas,monospace;font-size:10px;color:rgba(26,22,18,0.4);">
+      Daily digest · turn off any time on the Notifications page
+    </p>
+  `;
+
+  const bodyText = `${greeting}
+
+You have ${n} unread notification${n === 1 ? "" : "s"} in Nautilus.
+
+${input.items.map((it) => `- ${it.title}${it.body ? ` — ${it.body}` : ""}`).join("\n")}
+${n > input.items.length ? `\n+ ${n - input.items.length} more in the app.` : ""}
+
+Open: ${APP_URL}/notifications
+(Daily digest — turn off any time on the Notifications page.)`;
+
+  const { html, text } = baseLayout({ preheader, bodyHtml, bodyText });
+  return { subject, html, text };
+}

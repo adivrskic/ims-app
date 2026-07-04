@@ -193,7 +193,7 @@ export async function getRecentDeliveries(endpointId: string) {
   const { data } = await admin
     .from("webhook_deliveries")
     .select(
-      "id, event_type, event_id, response_status, succeeded, duration_ms, delivered_at"
+      "id, event_type, event_id, response_status, succeeded, duration_ms, delivered_at, attempts, next_retry_at"
     )
     .eq("endpoint_id", endpointId)
     .eq("org_id", ctx.orgId)

@@ -36,9 +36,18 @@ import type { EventPayload } from "./types";
  *   3. Reject if the timestamp is too old (we recommend > 5 minutes)
  *   4. Use the X-Nautilus-Delivery header as an idempotency key
  *
- * v1 has no retry — failures are logged in webhook_deliveries and the
- * endpoint's last_error is set, but we don't re-attempt. Customers can
- * manually re-test from the UI. v2: queue + exponential backoff.
+ * Retries (v2): a failed delivery schedules its first retry 15 minutes out
+ * by stamping next_retry_at on its webhook_deliveries row. A pg_cron job
+ * POSTs /api/cron/webhook-retries every 15 minutes; the route picks up due
+ * rows and calls redeliverWebhook, which re-sends the ORIGINAL stored body
+ * verbatim under the ORIGINAL X-Nautilus-Delivery id (so receivers can
+ * dedupe) with a FRESH timestamp + signature recomputed over that body
+ * using the endpoint's current secret. Backoff after the Nth failed
+ * attempt: 15m → 1h → 4h → 12h; we give up after 5 total attempts.
+ * Deliveries that never produced an HTTP request (SSRF-blocked or decrypt
+ * failures — logged with an empty body) are not retried, and retries stop
+ * if the endpoint is deleted, no longer active, or unsubscribed from the
+ * event type. See supabase/migrations/20260703180000_webhook_retries.sql.
  */
 
 export interface WebhookEndpointRecord {
@@ -49,6 +58,44 @@ export interface WebhookEndpointRecord {
   secret_encrypted: string;
   events_enabled: string[];
   status: "active" | "paused" | "error";
+}
+
+/** The slice of a webhook_deliveries row that redeliverWebhook needs. */
+export interface WebhookDeliveryRecord {
+  id: string;
+  endpoint_id: string;
+  org_id: string;
+  event_type: string;
+  /** The original delivery UUID — re-sent verbatim as X-Nautilus-Delivery. */
+  event_id: string;
+  /** The original signed payload — re-sent byte-for-byte on retry. */
+  request_body: string;
+  /** Attempts so far (the original send counts as 1). */
+  attempts: number;
+}
+
+/** Total attempts (original + retries) before we give up on a delivery. */
+export const MAX_WEBHOOK_ATTEMPTS = 5;
+
+/** Backoff AFTER the Nth failed attempt: 1 → 15m, 2 → 1h, 3 → 4h, 4 → 12h. */
+const RETRY_BACKOFF_MS = [
+  15 * 60_000,
+  60 * 60_000,
+  4 * 60 * 60_000,
+  12 * 60 * 60_000,
+];
+
+/**
+ * When the next retry should run, given how many attempts have now failed.
+ * Returns null once the budget is exhausted (attempts >= MAX_WEBHOOK_ATTEMPTS).
+ */
+function nextRetryAt(failedAttempts: number): string | null {
+  if (failedAttempts >= MAX_WEBHOOK_ATTEMPTS) return null;
+  const delay =
+    RETRY_BACKOFF_MS[
+      Math.min(failedAttempts, RETRY_BACKOFF_MS.length) - 1
+    ];
+  return new Date(Date.now() + delay).toISOString();
 }
 
 /** Generate a fresh 32-byte hex secret (64 chars). Call once at endpoint creation. */
@@ -249,7 +296,9 @@ export async function deliverWebhook(
 
   const duration = Date.now() - startedAt;
 
-  // Log + update counters
+  // Log + schedule the first retry on failure. Only genuine send failures
+  // are retried — the decrypt/SSRF failures above never set next_retry_at
+  // (their empty body can't be re-signed, and the condition won't heal).
   await logDelivery(admin, {
     endpoint_id: endpoint.id,
     org_id: endpoint.org_id,
@@ -260,56 +309,165 @@ export async function deliverWebhook(
     response: responseBody || error || "",
     duration,
     succeeded,
+    next_retry_at: succeeded ? null : nextRetryAt(1),
   });
 
-  // Atomic-ish counter update (good enough for v1 — high-throughput
-  // workspaces would race here, but the absolute numbers don't need to
-  // be perfect for a debug counter).
   if (succeeded) {
-    await admin
-      .rpc("increment_webhook_success", {
-        endpoint_id: endpoint.id,
-        delivered_at: new Date().toISOString(),
-      })
-      .then(
-        (r) => r,
-        // If the RPC doesn't exist yet, fall back to a manual update
-        async () => {
-          await admin
-            .from("webhook_endpoints")
-            .update({
-              last_delivered_at: new Date().toISOString(),
-              last_error: null,
-              total_deliveries:
-                ((
-                  await admin
-                    .from("webhook_endpoints")
-                    .select("total_deliveries")
-                    .eq("id", endpoint.id)
-                    .single()
-                ).data?.total_deliveries ?? 0) + 1,
-            })
-            .eq("id", endpoint.id);
-        }
-      );
+    await recordEndpointSuccess(admin, endpoint.id);
   } else {
-    await admin
-      .from("webhook_endpoints")
-      .update({
-        last_error: error ?? `HTTP ${status}`,
-        total_failures:
-          ((
-            await admin
-              .from("webhook_endpoints")
-              .select("total_failures")
-              .eq("id", endpoint.id)
-              .single()
-          ).data?.total_failures ?? 0) + 1,
-      })
-      .eq("id", endpoint.id);
+    await recordEndpointFailure(admin, endpoint.id, error ?? `HTTP ${status}`);
   }
 
   return { ok: succeeded, status: status ?? undefined, error };
+}
+
+/**
+ * Re-attempt a previously failed delivery (called by the webhook-retries
+ * cron). Sends the ORIGINAL request_body verbatim with the ORIGINAL
+ * X-Nautilus-Delivery id — receivers treat that header as their idempotency
+ * key — but a FRESH timestamp + signature (recomputed over the stored body
+ * with the endpoint's current secret), so receivers' replay-window checks
+ * still pass. Updates the SAME webhook_deliveries row in place: attempts+1,
+ * refreshed status/response/duration, and either next_retry_at = null
+ * (success, or budget exhausted) or the next backoff slot.
+ */
+export async function redeliverWebhook(
+  delivery: WebhookDeliveryRecord,
+  endpoint: WebhookEndpointRecord
+): Promise<{ ok: boolean; status?: number; error?: string; gaveUp: boolean }> {
+  const admin = createAdminClient();
+  const attempts = delivery.attempts + 1;
+  const body = delivery.request_body;
+  const timestamp = Math.floor(Date.now() / 1000);
+  const startedAt = Date.now();
+
+  let status: number | null = null;
+  let responseBody = "";
+  let succeeded = false;
+  let error: string | undefined;
+
+  try {
+    const url = decrypt(endpoint.url_encrypted);
+    const secret = decrypt(endpoint.secret_encrypted);
+    // Same SSRF defense as the original send: re-resolve at delivery time
+    // and pin the socket to the vetted address.
+    const target = await resolvePublicHttpsAddress(url);
+    const res = await postPinned(target, {
+      headers: {
+        "Content-Type": "application/json",
+        "Content-Length": String(Buffer.byteLength(body)),
+        "User-Agent": "Nautilus-Webhook/1.0",
+        "X-Nautilus-Event": delivery.event_type,
+        "X-Nautilus-Delivery": delivery.event_id,
+        "X-Nautilus-Timestamp": String(timestamp),
+        "X-Nautilus-Signature": signBody(secret, body),
+      },
+      body,
+      timeoutMs: 10_000,
+    });
+    status = res.status;
+    responseBody = res.text;
+    succeeded = status >= 200 && status < 300;
+    if (!succeeded) {
+      error = `HTTP ${status}: ${responseBody.slice(0, 200)}`;
+    }
+  } catch (err) {
+    error =
+      err instanceof Error && err.message === "timeout"
+        ? "Timed out after 10s"
+        : err instanceof Error
+          ? err.message
+          : "Network error";
+  }
+
+  const duration = Date.now() - startedAt;
+  const nextRetry = succeeded ? null : nextRetryAt(attempts);
+
+  await admin
+    .from("webhook_deliveries")
+    .update({
+      attempts,
+      retried_at: new Date().toISOString(),
+      response_status: status,
+      response_body: (responseBody || error || "").slice(0, 4000),
+      duration_ms: duration,
+      succeeded,
+      next_retry_at: nextRetry,
+    })
+    .eq("id", delivery.id);
+
+  // Same counter/last_error mechanism as the original send — a late success
+  // clears last_error; a final failure leaves it explaining why.
+  if (succeeded) {
+    await recordEndpointSuccess(admin, endpoint.id);
+  } else {
+    await recordEndpointFailure(admin, endpoint.id, error ?? `HTTP ${status}`);
+  }
+
+  return {
+    ok: succeeded,
+    status: status ?? undefined,
+    error,
+    gaveUp: !succeeded && nextRetry === null,
+  };
+}
+
+/**
+ * Atomic-ish counter updates (good enough — high-throughput workspaces
+ * would race here, but the absolute numbers don't need to be perfect for
+ * a debug counter).
+ */
+async function recordEndpointSuccess(
+  admin: ReturnType<typeof createAdminClient>,
+  endpointId: string
+): Promise<void> {
+  await admin
+    .rpc("increment_webhook_success", {
+      endpoint_id: endpointId,
+      delivered_at: new Date().toISOString(),
+    })
+    .then(
+      (r) => r,
+      // If the RPC doesn't exist yet, fall back to a manual update
+      async () => {
+        await admin
+          .from("webhook_endpoints")
+          .update({
+            last_delivered_at: new Date().toISOString(),
+            last_error: null,
+            total_deliveries:
+              ((
+                await admin
+                  .from("webhook_endpoints")
+                  .select("total_deliveries")
+                  .eq("id", endpointId)
+                  .single()
+              ).data?.total_deliveries ?? 0) + 1,
+          })
+          .eq("id", endpointId);
+      }
+    );
+}
+
+async function recordEndpointFailure(
+  admin: ReturnType<typeof createAdminClient>,
+  endpointId: string,
+  lastError: string
+): Promise<void> {
+  await admin
+    .from("webhook_endpoints")
+    .update({
+      last_error: lastError,
+      total_failures:
+        ((
+          await admin
+            .from("webhook_endpoints")
+            .select("total_failures")
+            .eq("id", endpointId)
+            .single()
+        ).data?.total_failures ?? 0) + 1,
+    })
+    .eq("id", endpointId);
 }
 
 async function logDelivery(
@@ -324,19 +482,40 @@ async function logDelivery(
     response: string;
     duration: number;
     succeeded: boolean;
+    /** When the retry cron should re-attempt this delivery (failures only). */
+    next_retry_at?: string | null;
   }
 ): Promise<void> {
-  await admin.from("webhook_deliveries").insert({
-    endpoint_id: d.endpoint_id,
-    org_id: d.org_id,
-    event_type: d.event_type,
-    event_id: d.event_id,
-    request_body: d.body,
-    response_status: d.status,
-    response_body: d.response.slice(0, 4000),
-    duration_ms: d.duration,
-    succeeded: d.succeeded,
-  });
+  const { data: row } = await admin
+    .from("webhook_deliveries")
+    .insert({
+      endpoint_id: d.endpoint_id,
+      org_id: d.org_id,
+      event_type: d.event_type,
+      event_id: d.event_id,
+      request_body: d.body,
+      response_status: d.status,
+      response_body: d.response.slice(0, 4000),
+      duration_ms: d.duration,
+      succeeded: d.succeeded,
+    })
+    .select("id")
+    .maybeSingle();
+
+  // Retry scheduling is a best-effort follow-up UPDATE rather than part of
+  // the insert, so the delivery log itself can never be lost to a missing
+  // next_retry_at column (code deployed before the retry migration) — the
+  // delivery just behaves like v1 (no retry) in that window.
+  if (d.next_retry_at && row?.id) {
+    await admin
+      .from("webhook_deliveries")
+      .update({ next_retry_at: d.next_retry_at })
+      .eq("id", row.id)
+      .then(
+        (r) => r,
+        () => undefined
+      );
+  }
 }
 
 /** Fire a test event to an endpoint. Useful from the UI's Test button. */

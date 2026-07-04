@@ -277,6 +277,29 @@ export async function markAllNotificationsRead(
 }
 
 /**
+ * Toggle the caller's daily email digest of unread notifications. Self-serve —
+ * writes only the caller's own profile row; the daily cron
+ * (/api/cron/email-digests) reads the flag.
+ */
+export async function setDigestEmailEnabled(
+  formData: FormData
+): Promise<void> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return;
+
+  const enabled = String(formData.get("enabled") ?? "") === "true";
+  await supabase
+    .from("profiles")
+    .update({ digest_email_enabled: enabled })
+    .eq("id", user.id);
+
+  revalidatePath("/notifications");
+}
+
+/**
  * Set the active-facility cookie from the submitted "id" field ("all" or a
  * facility UUID). Validates a concrete id resolves to a facility the caller
  * can see (RLS-scoped) before writing the cookie — never pin to a facility the

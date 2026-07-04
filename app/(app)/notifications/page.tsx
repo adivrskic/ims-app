@@ -3,9 +3,9 @@ import { createClient } from "@/lib/supabase/server";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { CornerButton } from "@/components/ui/CornerButton";
-import { Bell, Check, ChevronLeft, ChevronRight } from "lucide-react";
+import { Bell, Check, ChevronLeft, ChevronRight, Mail } from "lucide-react";
 import { NotificationsRealtime } from "@/components/realtime/PageRealtime";
-import { markAllNotificationsRead } from "../actions";
+import { markAllNotificationsRead, setDigestEmailEnabled } from "../actions";
 
 export const metadata = { title: "Notifications" };
 
@@ -78,6 +78,15 @@ export default async function NotificationsPage({
   } = await supabase.auth.getUser();
   if (!user) return null;
 
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("digest_email_enabled")
+    .eq("id", user.id)
+    .maybeSingle();
+  const digestOn =
+    (profile as { digest_email_enabled?: boolean } | null)
+      ?.digest_email_enabled ?? false;
+
   // Fetch ALL notifications (no row cap for filter-aware paging math),
   // then apply the active filter + slice on the server. For workspaces with
   // thousands of notifications we'd push this to the query, but at our seed
@@ -117,14 +126,41 @@ export default async function NotificationsPage({
           },
         ]}
         actions={
-          unreadTotal > 0 ? (
-            <form action={markAllNotificationsRead}>
-              <CornerButton type="submit" variant="primary" size="sm">
-                <Check size={11} strokeWidth={1.5} />
-                Mark all read
+          <div className="flex items-center gap-10">
+            <form action={setDigestEmailEnabled}>
+              <input
+                type="hidden"
+                name="enabled"
+                value={(!digestOn).toString()}
+              />
+              <CornerButton
+                type="submit"
+                variant="ghost"
+                size="sm"
+                aria-pressed={digestOn}
+                title={
+                  digestOn
+                    ? "Daily email digest is on — turn off"
+                    : "Email me a daily digest of unread notifications"
+                }
+              >
+                <span
+                  className={digestOn ? "dot dot-live" : "dot dot-offline"}
+                  aria-hidden
+                />
+                <Mail size={11} strokeWidth={1.5} />
+                Email digest · {digestOn ? "On" : "Off"}
               </CornerButton>
             </form>
-          ) : undefined
+            {unreadTotal > 0 && (
+              <form action={markAllNotificationsRead}>
+                <CornerButton type="submit" variant="primary" size="sm">
+                  <Check size={11} strokeWidth={1.5} />
+                  Mark all read
+                </CornerButton>
+              </form>
+            )}
+          </div>
         }
       />
 
