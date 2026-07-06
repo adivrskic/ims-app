@@ -88,7 +88,10 @@ export default async function PurchaseOrderDetailPage({
        received_at, lot_number, qc_status`
     )
     .eq("po_id", id)
-    .order("created_at", { ascending: true });
+    // po_line_items has no created_at — ordering on it errored the whole
+    // query (silently: only data is destructured) and the lines table
+    // rendered empty. Caught in the 2026-07-03 browser pass.
+    .order("id", { ascending: true });
 
   type LineRow = {
     id: string;

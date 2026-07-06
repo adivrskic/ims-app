@@ -78,7 +78,8 @@ export default async function PurchaseOrderPrintPage({
       "id, product_name, barcode, quantity_expected, unit_cost"
     )
     .eq("po_id", id)
-    .order("created_at", { ascending: true });
+    // po_line_items has no created_at (see the detail page) — order by id.
+    .order("id", { ascending: true });
 
   type LineRow = {
     id: string;
