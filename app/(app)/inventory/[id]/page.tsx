@@ -23,6 +23,7 @@ import { PrintLabelButton } from "@/components/print/PrintLabelButton";
 import { productLabel } from "@/lib/print/zplTemplates";
 import {
   Activity,
+  FileText,
   Hash,
   Layers,
   Plus,
@@ -362,6 +363,17 @@ export default async function ProductDetailPage({
               })}
               label="Print shelf label"
             />
+            {/* Browser-print fallback: works everywhere (no WebUSB/Zebra
+                needed) and doubles as a PDF export for Zebra owners. */}
+            <CornerLink
+              href={`/inventory/${product.id}/labels`}
+              variant="ghost"
+              size="sm"
+              ariaLabel="Printable label sheet"
+            >
+              <FileText size={11} strokeWidth={1.5} />
+              Label sheet
+            </CornerLink>
             <CornerLink
               href={`/cycle-counts?product=${product.id}`}
               variant="ghost"

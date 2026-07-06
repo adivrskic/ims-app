@@ -28,6 +28,7 @@ export async function GET(req: Request) {
     "on_hand",
     "unit_cost",
     "value",
+    "fifo_value",
     "days_since_last_movement",
   ];
   const rows = r.products.map((p) =>
@@ -39,6 +40,7 @@ export async function GET(req: Request) {
       p.onHand,
       p.unitCost.toFixed(2),
       p.value.toFixed(2),
+      p.fifoValue.toFixed(2),
       p.lastMovedDays ?? "",
     ]
       .map(csvCell)

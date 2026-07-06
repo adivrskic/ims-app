@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { Pencil } from "lucide-react";
+import { FileText, Pencil } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentOrgContext } from "@/lib/data/user";
 import { CornerLink } from "@/components/ui/CornerButton";
@@ -136,6 +136,17 @@ export default async function FacilityPage({
               variant="ghost"
               size="sm"
             />
+            {/* Browser-print fallback: works everywhere (no WebUSB/Zebra
+                needed) and doubles as a PDF export for Zebra owners. */}
+            <CornerLink
+              href={`/facilities/${warehouse.id}/labels`}
+              variant="ghost"
+              size="sm"
+              ariaLabel="Printable bay label sheet"
+            >
+              <FileText size={11} strokeWidth={1.5} />
+              Label sheet
+            </CornerLink>
             {canEdit && (
               <CornerLink
                 href={`/facilities/${warehouse.id}/builder`}

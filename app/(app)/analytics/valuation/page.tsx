@@ -85,6 +85,19 @@ export default async function ValuationPage() {
             <SectionTitle numeral="01" eyebrow="Headline" title="Value" />
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-16">
               <KpiCard label="Inventory value" value={formatCurrency(r.totalValue)} />
+              <KpiCard
+                label="FIFO value"
+                value={formatCurrency(r.fifo.totalValue)}
+                delta={
+                  r.fifo.unlayeredUnits > 0
+                    ? {
+                        value: `${r.fifo.unlayeredUnits.toLocaleString()} units w/o receipts`,
+                        direction: "flat",
+                        tone: "neutral",
+                      }
+                    : undefined
+                }
+              />
               <KpiCard label="Units on hand" value={r.totalUnits.toLocaleString()} />
               <KpiCard
                 label="Avg unit cost"

@@ -4,6 +4,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { productVelocities } from "@/lib/data/velocity";
 import { fetchAllPaged } from "@/lib/data/paginate";
+import { fifoValue, type CostLayer } from "@/lib/fifoLayers";
 import { tags } from "@/lib/cache-tags";
 
 /**
@@ -33,6 +34,8 @@ export interface ProductValuation {
   onHand: number;
   unitCost: number;
   value: number;
+  /** FIFO-layered value (receipt costs, oldest consumed first). */
+  fifoValue: number;
   abc: AbcClass;
   lastMovedDays: number | null;
 }
@@ -55,6 +58,12 @@ export interface ValuationReport {
   daysOnHand: number | null;
   aging: AgingBucket[];
   products: ProductValuation[];
+  /** FIFO cost-layer totals (receipt-priced; see lib/fifoLayers). */
+  fifo: {
+    totalValue: number;
+    /** On-hand units with no receipt history — valued at current unit cost. */
+    unlayeredUnits: number;
+  };
 }
 
 const AGING_BUCKETS: Array<{ label: string; maxDays: number }> = [
@@ -92,7 +101,7 @@ async function computeValuation(
     unit_cost: string | null;
     category: { name: string | null } | { name: string | null }[] | null;
   };
-  const [prodRows, { data: movement }] = await Promise.all([
+  const [prodRows, { data: movement }, receiptRows] = await Promise.all([
     fetchAllPaged<P>((from, to) =>
       supabase
         .from("products")
@@ -105,7 +114,42 @@ async function computeValuation(
       p_org: orgId,
       p_warehouse: warehouseId,
     }),
+    // FIFO cost layers: every received PO line is a layer (landed cost when
+    // known). Scoped to the facility's POs when a facility scope is active.
+    fetchAllPaged<{
+      product_id: string | null;
+      quantity_received: number | null;
+      unit_cost: string | number | null;
+      landed_unit_cost: string | number | null;
+      received_at: string | null;
+      po: { org_id: string } | { org_id: string }[] | null;
+    }>((from, to) => {
+      let q = supabase
+        .from("po_line_items")
+        .select(
+          "product_id, quantity_received, unit_cost, landed_unit_cost, received_at, po:purchase_orders!inner ( org_id )"
+        )
+        .eq("po.org_id", orgId)
+        .gt("quantity_received", 0)
+        .not("received_at", "is", null);
+      if (warehouseId) q = q.eq("po.warehouse_id", warehouseId);
+      return q.order("id", { ascending: true }).range(from, to);
+    }),
   ]);
+
+  const layersByProduct = new Map<string, CostLayer[]>();
+  for (const r of receiptRows) {
+    if (!r.product_id || !r.received_at) continue;
+    const cost = Number(r.landed_unit_cost ?? r.unit_cost ?? 0);
+    const layer: CostLayer = {
+      qty: r.quantity_received ?? 0,
+      unitCost: Number.isFinite(cost) && cost > 0 ? cost : 0,
+      receivedAt: r.received_at,
+    };
+    const arr = layersByProduct.get(r.product_id);
+    if (arr) arr.push(layer);
+    else layersByProduct.set(r.product_id, [layer]);
+  }
 
   const onHandByProduct = new Map<string, number>();
   const lastMovedByProduct = new Map<string, number>();
@@ -131,6 +175,8 @@ async function computeValuation(
   let valuedUnits = 0; // on-hand units belonging to costed SKUs only
   let uncostedSkus = 0;
   let annualUsageValue = 0; // Σ velocity × 365 × cost → COGS proxy
+  let totalFifoValue = 0;
+  let fifoUnlayeredUnits = 0;
 
   const byCategory = new Map<string, number>();
   const aging: number[] = [0, 0, 0, 0];
@@ -174,6 +220,16 @@ async function computeValuation(
     aging[idx] += value;
     agingUnits[idx] += onHand;
 
+    // FIFO layer value for the same on-hand units (receipt-priced; on-hand
+    // beyond receipt history falls back to the current unit cost).
+    const fifo = fifoValue(
+      layersByProduct.get(p.id) ?? [],
+      onHand,
+      hasCost ? unitCost : 0
+    );
+    totalFifoValue += fifo.value;
+    fifoUnlayeredUnits += fifo.unlayeredUnits;
+
     interim.push({
       id: p.id,
       name: p.name,
@@ -182,6 +238,7 @@ async function computeValuation(
       onHand,
       unitCost: hasCost ? unitCost : 0,
       value,
+      fifoValue: fifo.value,
       abc: "C",
       lastMovedDays,
       _sortValue: value,
@@ -239,5 +296,9 @@ async function computeValuation(
       void _sortValue;
       return rest;
     }),
+    fifo: {
+      totalValue: totalFifoValue,
+      unlayeredUnits: fifoUnlayeredUnits,
+    },
   };
 }

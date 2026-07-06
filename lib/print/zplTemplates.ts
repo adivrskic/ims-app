@@ -247,3 +247,10 @@ export function ssccLabel(input: SsccLabelInput): string {
 function sanitize(s: string): string {
   return s.replace(/[\^~]/g, " ").trim();
 }
+
+/**
+ * The same sanitizer, exported for the printable label-sheet pages: their
+ * on-paper barcodes/text must carry byte-identical payloads to what these
+ * ZPL templates send to a Zebra, including this cleanup step.
+ */
+export const zplSanitize = sanitize;
