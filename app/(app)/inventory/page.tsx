@@ -132,7 +132,9 @@ export default async function InventoryPage({
   exportQuery.set("sort", sort);
   exportQuery.set("order", order);
   if (scope.mode === "single") exportQuery.set("facility", scope.id);
-  const exportHref = `/api/inventory/export?${exportQuery.toString()}`;
+  /* Route lives at app/(app)/inventory/export — the route group adds no
+     URL segment, so the path is /inventory/export, not /api/…. */
+  const exportHref = `/inventory/export?${exportQuery.toString()}`;
 
   return (
     <div className="flex flex-col gap-40">

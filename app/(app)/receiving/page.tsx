@@ -12,11 +12,19 @@ import { ShieldCheck, Check, X } from "lucide-react";
 
 export const metadata = { title: "Receiving · QC" };
 
-export default async function ReceivingPage() {
-  const [ctx, scope] = await Promise.all([
+export default async function ReceivingPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ error?: string }>;
+}) {
+  /* reviewQcLine redirects back here with ?error=… on failure. Without
+     reading it, both QC failure messages were silently swallowed. */
+  const [ctx, scope, sp] = await Promise.all([
     getCurrentOrgContext(),
     getActiveScope(),
+    searchParams,
   ]);
+  const actionError = sp?.error ? decodeURIComponent(sp.error) : null;
   if (!ctx) {
     return <PageHeader eyebrow="Flow" title="Receiving" description="No workspace." />;
   }
@@ -28,6 +36,16 @@ export default async function ReceivingPage() {
 
   return (
     <div className="flex flex-col gap-32">
+      {actionError && (
+        <div className="hairline border-[rgba(239,68,68,0.45)] bg-[var(--danger-dim)] px-16 py-12 flex items-start gap-12">
+          <X
+            size={14}
+            strokeWidth={1.5}
+            className="text-[var(--danger)] shrink-0 mt-2"
+          />
+          <p className="mono-sm text-[var(--danger)]">{actionError}</p>
+        </div>
+      )}
       <PageHeader
         eyebrow="Flow · Receiving"
         title="Quality control"

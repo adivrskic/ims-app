@@ -738,7 +738,7 @@ export default async function ProductDetailPage({
                       <Td>
                         {sup ? (
                           <Link
-                            href={`/settings/suppliers/${sup.id}`}
+                            href={`/suppliers/${sup.id}`}
                             className="text-text-secondary hover:text-[var(--accent)] transition-colors mono-sm"
                           >
                             {sup.name}

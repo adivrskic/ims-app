@@ -120,7 +120,30 @@ npm run dev
 | 1.5.7 | Confirm `CRON_SECRET` set | Cron endpoints testable | ☐ |
 | 1.5.8 | Pick + record the test workspace naming convention | e.g. `QA-<date>-<tester>` | ☐ |
 
-### 1.6 Browser / device matrix
+### 1.6 Seeding a demo workspace (for Phases 6–9)
+
+```bash
+node scripts/seed-demo.mjs --org <slug|uuid>       # or --email owner@example.com
+node scripts/seed-demo.mjs --org <slug> --wipe     # reset, then re-seed
+node scripts/seed-demo.mjs --org <slug> --wipe-only
+```
+
+Writes a facility with a dock door and 4 zoned sections, 27 products with unit
+costs / reorder points / lead times, ~150 stock placements, lots (expiring in
+9 and 25 days, plus one already expired), **90 days of scan history with
+weekday seasonality**, 3 purchase orders (draft / sent / partially received),
+and 5 orders including one that deliberately backorders.
+
+It also plants the conditions several reports need in order to show anything:
+4 products below their reorder point (low-stock queue + auto-draft-PO cron),
+3 dead-stock products with no picks for 200+ days, and a kit with a 3-part BOM.
+
+- Uses the service-role key — **it bypasses RLS.** Only point it at a workspace you mean to modify.
+- Every seeded row is tagged; `--wipe` removes **only** tagged rows, so it's safe on a shared dev project.
+- After seeding, **switch the facility scope** to the seeded facility — `/picking` will not build waves under "All facilities".
+- Dashboard sparklines stay flat until the nightly `kpi-snapshots` job has run **twice**; that's expected, not a bug.
+
+### 1.7 Browser / device matrix
 Run **Phase 1–9 fully on Chrome desktop**. Then repeat the §13 smoke test on each of:
 
 | Target | Priority | Notes |
@@ -237,7 +260,9 @@ Verified directly against the code. These **change what is testable**. Decide ho
 - [ ] **Is `RESEND_API_KEY` + `SYSTEM_EMAIL_FROM` set?** If not, the single-invite path on `/settings/members` is effectively broken (it says "share the link manually" but never shows the link). Use onboarding/bulk invite paths, which do show links.
 - [ ] **Is `NEXT_PUBLIC_APP_URL` set?** If not, **every email link points at `https://app.nautilus.io`**.
 - [ ] **Stripe / Shopify keys present?** If not, Phases 7.4 and 7.2 become short "degrades correctly" checks.
-- [ ] **Seed data?** There is no seed script. Roughly a third of screens are blank without one — budget 1–2 hours of manual setup per tester, or write a seeder first.
+- [ ] **Seed data?** Use `node scripts/seed-demo.mjs --org <slug>` (see §1.6). Roughly a third of the screens are blank without it, and the history-dependent reports (forecast, valuation, dead stock, turnover) can't be judged at all on an empty workspace.
+
+> **Seed vs. manual:** Phases 2–3 deliberately build data **by hand** — that *is* the test of the new-customer experience. Seed a **second** workspace for Phases 6–7 (intelligence and integrations), which need 90 days of history that no tester can click into existence.
 
 ---
 
@@ -690,23 +715,25 @@ Run this on the **exact environment** the customer will see, from a **fresh inco
 
 These were verified during the writing of this plan — testers don't need to rediscover them.
 
-| # | Sev | Bug | Location | Fix |
-|---|---|---|---|---|
-| 1 | **S2** | Inventory **Export CSV → 404** | `app/(app)/inventory/page.tsx:135` | Change `/api/inventory/export` → `/inventory/export` |
-| 2 | **S2** | Product detail **lot supplier link → 404** | `app/(app)/inventory/[id]/page.tsx:741` | Change `/settings/suppliers/{id}` → `/suppliers/{id}` |
-| 3 | **S2** | **QC pass/fail errors silently swallowed** | `app/(app)/receiving/page.tsx:15` | Accept `searchParams` and render `?error=` |
-| 4 | **S3** | **Duplicate route** `/api/inventory/import-template` from two files returning different CSVs | `app/(app)/api/...` + `app/api/...` | Delete one |
-| 5 | **S2** | New invitee funnelled into creating their own workspace instead of joining | `(auth)/actions.ts:169`, `LoginForm.tsx:122` | Preserve `next` through signup |
-| 6 | **S2** | Single-invite fallback says "share the link manually" but never shows the link | `settings/actions.ts:84` | Surface the link like the other invite paths |
-| 7 | **S1** | No last-owner guard on `removeMember` | `settings/actions.ts:101` | Block removing the final owner |
-| 8 | **S2** | API key **scopes never enforced** | `app/api/v1/*` | Enforce `auth.scopes` per route |
-| 9 | **S3** | `scan_burst` / `daily_summary` webhook events have no producers | `lib/integrations/types.ts:8` | Remove from the picker or implement |
-| 10 | **S3** | Forecast **Apply** has no permission check | `analytics/forecast/actions.ts:11` | Gate on a permission |
-| 11 | **S3** | Blueprint import destroys existing sections with no confirmation | `BuilderShell.tsx:436` | Add a confirm dialog with counts |
-| 12 | **S3** | Stale staff copy: "Billing is not yet wired to Stripe" | `admin/workspace/[id]/page.tsx:216` | Delete the line |
-| 13 | **S4** | "Nimbus" vs "Nautilus" branding split in `/admin` | `admin/layout.tsx:8,47` | Pick one |
-| 14 | **S3** | Normal PO receipts write no `scan_history` row (ASN receipts do) | `purchase-orders/actions.ts:469` | Move the insert out of the `qcHold` branch |
-| 15 | **S3** | Mobile offline banner / pending badge never rendered | `lib/offlineUI.tsx:12,221` | Mount them |
+**Items 1–4 are already FIXED** (commit following this document) — re-test them as regression cases rather than filing them.
+
+| # | Sev | Status | Bug | Location | Fix |
+|---|---|---|---|---|---|
+| 1 | **S2** | ✅ FIXED | Inventory **Export CSV → 404** | `app/(app)/inventory/page.tsx:135` | Change `/api/inventory/export` → `/inventory/export` |
+| 2 | **S2** | ✅ FIXED | Product detail **lot supplier link → 404** | `app/(app)/inventory/[id]/page.tsx:741` | Change `/settings/suppliers/{id}` → `/suppliers/{id}` |
+| 3 | **S2** | ✅ FIXED | **QC pass/fail errors silently swallowed** | `app/(app)/receiving/page.tsx:15` | Accept `searchParams` and render `?error=` |
+| 4 | **S3** | ✅ FIXED | **Duplicate route** `/api/inventory/import-template` from two files returning different CSVs | `app/(app)/api/...` + `app/api/...` | Delete one |
+| 5 | **S2** | open | New invitee funnelled into creating their own workspace instead of joining | `(auth)/actions.ts:169`, `LoginForm.tsx:122` | Preserve `next` through signup |
+| 6 | **S2** | open | Single-invite fallback says "share the link manually" but never shows the link | `settings/actions.ts:84` | Surface the link like the other invite paths |
+| 7 | **S1** | open | No last-owner guard on `removeMember` | `settings/actions.ts:101` | Block removing the final owner |
+| 8 | **S2** | open | API key **scopes never enforced** | `app/api/v1/*` | Enforce `auth.scopes` per route |
+| 9 | **S3** | open | `scan_burst` / `daily_summary` webhook events have no producers | `lib/integrations/types.ts:8` | Remove from the picker or implement |
+| 10 | **S3** | open | Forecast **Apply** has no permission check | `analytics/forecast/actions.ts:11` | Gate on a permission |
+| 11 | **S3** | open | Blueprint import destroys existing sections with no confirmation | `BuilderShell.tsx:436` | Add a confirm dialog with counts |
+| 12 | **S3** | open | Stale staff copy: "Billing is not yet wired to Stripe" | `admin/workspace/[id]/page.tsx:216` | Delete the line |
+| 13 | **S4** | open | "Nimbus" vs "Nautilus" branding split in `/admin` | `admin/layout.tsx:8,47` | Pick one |
+| 14 | **S3** | open | Normal PO receipts write no `scan_history` row (ASN receipts do) | `purchase-orders/actions.ts:469` | Move the insert out of the `qcHold` branch |
+| 15 | **S3** | open | Mobile offline banner / pending badge never rendered | `lib/offlineUI.tsx:12,221` | Mount them |
 
 ---
 

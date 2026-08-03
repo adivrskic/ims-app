@@ -322,6 +322,27 @@ middleware.ts                # Wires the Supabase middleware into Next.js
 
 Copy the Slack provider as the reference implementation: add the client under `lib/integrations/`, the metadata in `app/(app)/integrations/providers.ts`, the OAuth/webhook route handlers under `app/api/`, and the logo slug in `components/integrations/ProviderLogo.tsx`.
 
+### Seed a workspace with demo data
+
+A brand-new workspace is empty, and a third of the app (forecast, valuation,
+dead stock, slotting, KPI sparklines, low-stock alerts, the auto-draft-PO
+cron) needs *history* rather than just rows. `scripts/seed-demo.mjs` writes a
+realistic dataset — facility, sections, 27 products with costs and reorder
+points, ~150 stock placements, lots (including expiring and expired), 90 days
+of scan history with weekday seasonality, purchase orders in three states, and
+orders including a deliberately backordered one.
+
+```bash
+node scripts/seed-demo.mjs --org <slug|uuid>       # or --email owner@example.com
+node scripts/seed-demo.mjs --org acme --wipe       # reset, then re-seed
+node scripts/seed-demo.mjs --org acme --wipe-only  # just remove seed data
+```
+
+Uses `SUPABASE_SERVICE_ROLE_KEY`, so it **bypasses RLS** — point it only at a
+workspace you intend to modify. Every row it writes is tagged, and `--wipe`
+deletes only tagged rows, so it is safe to run against a shared dev project.
+Companion doc: [`docs/QA-TEST-PLAN.md`](docs/QA-TEST-PLAN.md).
+
 ### Regenerate DB types after a schema change
 
 ```bash

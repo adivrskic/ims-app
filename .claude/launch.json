@@ -1,0 +1,35 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "ljiljan-web",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "D:\\ljiljan\\apps\\web", "run", "dev", "--", "-p", "3017"],
+      "port": 3017
+    },
+    {
+      "name": "plumeform",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "D:\\plumeform", "run", "dev", "--", "-p", "3007"],
+      "port": 3007
+    },
+    {
+      "name": "nimbus-landing",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "D:\\nimbus-inventory-landing", "run", "dev", "--", "-p", "3011"],
+      "port": 3011
+    },
+    {
+      "name": "portfolio",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "D:\\portfolio-26", "run", "dev", "--", "--port", "5199", "--strictPort"],
+      "port": 5199
+    },
+    {
+      "name": "dashboard",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "D:\\dashboard-android", "run", "dev", "--", "--port", "3013"],
+      "port": 3013
+    }
+  ]
+}
