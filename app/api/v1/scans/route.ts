@@ -3,6 +3,7 @@ import {
   authenticateApiKey,
   apiUnauthorized,
   apiForbidden,
+  apiMissingScope,
   apiRateLimited,
   API_RATE_LIMIT,
 } from "@/lib/apiAuth";
@@ -32,6 +33,9 @@ const ALLOWED_ACTIONS = new Set([
 export async function POST(req: Request) {
   const auth = await authenticateApiKey(req);
   if (!auth) return apiUnauthorized();
+  /* Two gates: the key must carry the scope, AND its issuer must still hold
+     the RBAC permission. Scope first — it's the cheaper, more specific "no". */
+  if (!auth.hasScope("scan:write")) return apiMissingScope("scan:write");
   if (!auth.can("inventory.adjust")) return apiForbidden("inventory.adjust");
 
   const rl = await rateLimit(

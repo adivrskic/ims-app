@@ -149,23 +149,25 @@ export default async function ApiKeysPage() {
             <code className="text-text-secondary">
               Authorization: Bearer &lt;key&gt;
             </code>
-            . A key acts with the permissions of the member who created it.
+            . A request must satisfy both gates: the key needs the endpoint&apos;s
+            scope, and the member who created it must still hold the matching
+            permission. A missing scope returns 403 naming the scope required.
           </p>
           <ul className="flex flex-col gap-6">
             <EndpointRow
               method="GET"
               path="/api/v1/products"
-              desc="List the catalog"
+              desc="List the catalog — scope product:read"
             />
             <EndpointRow
               method="GET"
               path="/api/v1/inventory"
-              desc="On-hand per product (?warehouse_id= optional)"
+              desc="On-hand per product (?warehouse_id= optional) — scope location:read"
             />
             <EndpointRow
               method="POST"
               path="/api/v1/scans"
-              desc="Log a scan — requires inventory.adjust"
+              desc="Log a scan — scope scan:write + inventory.adjust"
             />
           </ul>
         </div>

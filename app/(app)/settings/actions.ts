@@ -7,6 +7,7 @@ import { getActionContext } from "@/lib/data/actionContext";
 import { sendInviteEmail } from "@/lib/email/invite";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { ALL_PERMISSIONS } from "@/lib/permissions";
+import { sanitizeScopes } from "@/lib/apiScopes";
 
 // ─── MEMBERS ───────────────────────────────────────────────────
 
@@ -103,7 +104,35 @@ export async function removeMember(formData: FormData) {
   if ("error" in ctx) return;
   if (!ctx.can("members.manage")) return;
   const userId = String(formData.get("user_id") ?? "");
+  if (!userId) return;
   if (userId === ctx.user.id) return; // can't remove self
+
+  /* Owner protection. The UI hides Remove for owners, but this action is a
+     plain server action — a crafted POST from anyone holding members.manage
+     could otherwise delete an owner, and deleting the LAST owner strands the
+     workspace with nobody able to manage billing or membership (there is no
+     way to promote a new owner from the UI). Mirrors the guards that
+     setMemberPermissions already applies below. */
+  const { data: target } = await ctx.supabase
+    .from("org_members")
+    .select("role")
+    .eq("user_id", userId)
+    .eq("org_id", ctx.orgId)
+    .maybeSingle();
+  if (!target) return; // not a member of this org
+
+  if ((target as { role: string }).role === "owner") {
+    // Only an owner may remove a fellow owner…
+    if (ctx.role !== "owner") return;
+    // …and never the last one.
+    const { count } = await ctx.supabase
+      .from("org_members")
+      .select("user_id", { count: "exact", head: true })
+      .eq("org_id", ctx.orgId)
+      .eq("role", "owner");
+    if ((count ?? 0) <= 1) return;
+  }
+
   return removeMemberInner(ctx, userId);
 }
 
@@ -175,7 +204,10 @@ export async function createApiKey(_prev: unknown, formData: FormData) {
   }
 
   const name = String(formData.get("name") ?? "").trim();
-  const scopes = formData.getAll("scopes").map(String);
+  /* Validate against the canonical list — the routes enforce these strings,
+     so an unrecognised one would mint a key that can never authorise
+     anything. Unknown values are dropped rather than silently stored. */
+  const scopes = sanitizeScopes(formData.getAll("scopes").map(String));
 
   if (!name) return { error: "Name is required" };
   if (scopes.length === 0) return { error: "Select at least one scope" };

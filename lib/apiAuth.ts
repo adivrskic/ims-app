@@ -2,6 +2,7 @@ import "server-only";
 import { createHash } from "crypto";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { effectivePermissions, type Permission } from "@/lib/permissions";
+import type { ApiScope } from "@/lib/apiScopes";
 
 /**
  * Authentication for the public API (Authorization: Bearer <key>).
@@ -23,6 +24,8 @@ export interface ApiKeyContext {
   userId: string;
   scopes: string[];
   can: (p: Permission) => boolean;
+  /** Does this key carry the given scope? See lib/apiScopes.ts. */
+  hasScope: (s: ApiScope) => boolean;
 }
 
 function extractBearer(req: Request): string | null {
@@ -75,12 +78,17 @@ export async function authenticateApiKey(
     .update({ last_used_at: new Date().toISOString() })
     .eq("id", k.id);
 
+  /* A key with no scopes grants nothing. createApiKey requires at least one,
+     so this only catches malformed/legacy rows — failing closed is correct. */
+  const scopes = new Set(k.scopes ?? []);
+
   return {
     keyId: k.id,
     orgId: k.org_id,
     userId: k.created_by,
-    scopes: k.scopes ?? [],
+    scopes: [...scopes],
     can: (p: Permission) => perms.has(p),
+    hasScope: (s: ApiScope) => scopes.has(s),
   };
 }
 
@@ -113,6 +121,21 @@ export function apiUnauthorized(): Response {
 export function apiForbidden(permission: string): Response {
   return new Response(
     JSON.stringify({ error: `Missing permission: ${permission}` }),
+    { status: 403, headers: { "Content-Type": "application/json" } }
+  );
+}
+
+/**
+ * Standard 403 when the KEY lacks a scope (distinct from the issuer lacking a
+ * permission — the message says which, so integrators know whether to mint a
+ * new key or ask an admin for access).
+ */
+export function apiMissingScope(scope: ApiScope): Response {
+  return new Response(
+    JSON.stringify({
+      error: `Missing scope: ${scope}`,
+      required_scope: scope,
+    }),
     { status: 403, headers: { "Content-Type": "application/json" } }
   );
 }

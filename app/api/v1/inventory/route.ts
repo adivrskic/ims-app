@@ -2,6 +2,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import {
   authenticateApiKey,
   apiUnauthorized,
+  apiMissingScope,
   apiRateLimited,
   API_RATE_LIMIT,
 } from "@/lib/apiAuth";
@@ -13,10 +14,12 @@ export const dynamic = "force-dynamic";
  * GET /api/v1/inventory — on-hand totals per product for the key's org.
  * Optional ?warehouse_id= to scope to one facility.
  * Auth: Authorization: Bearer <api key>.
+ * Scope: location:read — the figures are summed from `locations`.
  */
 export async function GET(req: Request) {
   const auth = await authenticateApiKey(req);
   if (!auth) return apiUnauthorized();
+  if (!auth.hasScope("location:read")) return apiMissingScope("location:read");
 
   const rl = await rateLimit(
     `api:${auth.keyId}`,

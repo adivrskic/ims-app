@@ -5,17 +5,8 @@ import { Copy, Check } from "lucide-react";
 import { Input } from "@/components/ui/Input";
 import { CornerButton } from "@/components/ui/CornerButton";
 import { createApiKey } from "../actions";
-
-const SCOPES = [
-  { id: "scan:read", label: "Read scans" },
-  { id: "scan:write", label: "Log scans" },
-  { id: "product:read", label: "Read products" },
-  { id: "product:write", label: "Manage products" },
-  { id: "location:read", label: "Read locations" },
-  { id: "location:write", label: "Place inventory" },
-  { id: "order:read", label: "Read orders" },
-  { id: "order:write", label: "Manage orders" },
-];
+/* Shared with the API routes that enforce them — see lib/apiScopes.ts. */
+import { API_SCOPES as SCOPES } from "@/lib/apiScopes";
 
 export function CreateKeyForm() {
   const [state, formAction, pending] = useActionState(createApiKey, undefined);

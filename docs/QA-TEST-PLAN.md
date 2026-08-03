@@ -111,7 +111,7 @@ npm run dev
 ### 1.5 Pre-flight gate (one person, 10 minutes, before the team starts)
 | # | Check | Expected | Result |
 |---|---|---|---|
-| 1.5.1 | `npm test` in `D:\app-nimbus1` | **67 tests pass, 10 files** (verified) | ☐ |
+| 1.5.1 | `npm test` in `D:\app-nimbus1` | **77 tests pass, 11 files** (verified) | ☐ |
 | 1.5.2 | `npm run build` in `D:\app-nimbus1` | Compiles, 67 static pages, exit 0 (verified) | ☐ |
 | 1.5.3 | `npm run build` in landing repo | Compiles, 102 static pages (verified) | ☐ |
 | 1.5.4 | Load both live URLs | Both 200 (verified) | ☐ |
@@ -317,7 +317,8 @@ Verified directly against the code. These **change what is testable**. Decide ho
 | 4.3.9 | Revoke pending invite | ✕ then open the link | No longer valid | ☐ |
 | 4.3.10 | Bulk CSV invite | Template → 5 rows incl. 1 bad email + 1 duplicate | Preview flags bad rows; only valid ones invited; links shown | ☐ |
 | 4.3.11 | Bulk limits | >200 rows or >2 MB | Rejected clearly | ☐ |
-| 4.3.12 | **Owner protection** | As admin, try to remove the owner | Button hidden. ⚠️ **Known gap: no last-owner guard server-side.** Record as a security finding; do not exploit on prod | ☐ |
+| 4.3.12 | **Owner protection** (regression) | As admin, try to remove the owner — the button is hidden, so replay the form POST with the owner's `user_id` | **Nothing happens; the owner remains.** An admin can no longer remove an owner | ☐ |
+| 4.3.12b | **Last-owner guard** (regression) | With two owners, have one remove the other (allowed). Then try to remove the final owner | Co-owner removal succeeds; removing the **last** owner is refused, so the workspace can't be stranded with nobody able to manage members or billing | ☐ |
 | 4.3.13 | Self-removal | Try to remove yourself | Blocked | ☐ |
 | 4.3.14 | Per-member permissions | Uncheck `orders.manage` for B; B tries to create an order | B cannot | ☐ |
 | 4.3.15 | Reset to role default | Chip returns to "· role default" | ☐ |
@@ -514,7 +515,10 @@ curl.exe -i -H "Authorization: Bearer YOUR_KEY" https://app.nautilusinventory.co
 | 9.3.2 | GET `/api/v1/inventory` | 200; products with no locations are **absent**, not `on_hand: 0` | ☐ |
 | 9.3.3 | POST `/api/v1/scans` | **201** `{data:{id}}` | ☐ |
 | 9.3.4 | No / bad / revoked key | Uniform `401 {"error":"Invalid or missing API key"}` | ☐ |
-| 9.3.5 | **Scope enforcement** | Create a `product:read`-only key, POST a scan | ⚠️ **Expected to SUCCEED — scopes are stored and displayed but never enforced.** High-value finding; confirm | ☐ |
+| 9.3.5 | **Scope enforcement** (regression) | Create a `product:read`-only key, then POST a scan with it | **403** `{"error":"Missing scope: scan:write","required_scope":"scan:write"}` | ☐ |
+| 9.3.5b | Scope enforcement, happy path | Same key against `GET /api/v1/products` | **200** — the scope it does hold still works | ☐ |
+| 9.3.5c | Inventory scope | A key **without** `location:read` against `GET /api/v1/inventory` | **403** naming `location:read` | ☐ |
+| 9.3.5d | Both gates | A `scan:write` key whose issuer lacks `inventory.adjust` | **403** naming the *permission*, not the scope — the two failures are distinguishable | ☐ |
 | 9.3.6 | **Cross-org isolation** | Use workspace A's key to fetch products; confirm zero workspace-B rows | **S1 if it leaks** — `api_keys` RLS is not in the repo | ☐ |
 | 9.3.7 | Rate limit | 130 requests inside 60s | `429` + `Retry-After` after 120. ⚠️ No `X-RateLimit-*` headers | ☐ |
 | 9.3.8 | Key inheritance | Remove the key's creator from the org, retry the key | Key goes inert (401) | ☐ |
@@ -715,7 +719,7 @@ Run this on the **exact environment** the customer will see, from a **fresh inco
 
 These were verified during the writing of this plan — testers don't need to rediscover them.
 
-**Items 1–4 are already FIXED** (commit following this document) — re-test them as regression cases rather than filing them.
+**Items 1–4, 7 and 8 are already FIXED** (commit following this document) — re-test them as regression cases rather than filing them.
 
 | # | Sev | Status | Bug | Location | Fix |
 |---|---|---|---|---|---|
@@ -725,8 +729,8 @@ These were verified during the writing of this plan — testers don't need to re
 | 4 | **S3** | ✅ FIXED | **Duplicate route** `/api/inventory/import-template` from two files returning different CSVs | `app/(app)/api/...` + `app/api/...` | Delete one |
 | 5 | **S2** | open | New invitee funnelled into creating their own workspace instead of joining | `(auth)/actions.ts:169`, `LoginForm.tsx:122` | Preserve `next` through signup |
 | 6 | **S2** | open | Single-invite fallback says "share the link manually" but never shows the link | `settings/actions.ts:84` | Surface the link like the other invite paths |
-| 7 | **S1** | open | No last-owner guard on `removeMember` | `settings/actions.ts:101` | Block removing the final owner |
-| 8 | **S2** | open | API key **scopes never enforced** | `app/api/v1/*` | Enforce `auth.scopes` per route |
+| 7 | **S1** | ✅ FIXED | No last-owner guard on `removeMember` | `settings/actions.ts:101` | Block removing the final owner |
+| 8 | **S2** | ✅ FIXED | API key **scopes never enforced** | `app/api/v1/*` | Enforce `auth.scopes` per route |
 | 9 | **S3** | open | `scan_burst` / `daily_summary` webhook events have no producers | `lib/integrations/types.ts:8` | Remove from the picker or implement |
 | 10 | **S3** | open | Forecast **Apply** has no permission check | `analytics/forecast/actions.ts:11` | Gate on a permission |
 | 11 | **S3** | open | Blueprint import destroys existing sections with no confirmation | `BuilderShell.tsx:436` | Add a confirm dialog with counts |
