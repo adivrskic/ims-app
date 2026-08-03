@@ -7,3 +7,6 @@ node_modules
 .vercel
 next-env.d.ts
 tsconfig.tsbuildinfo
+
+# Local Claude Code config (machine-specific)
+.claude/
