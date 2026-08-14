@@ -389,7 +389,7 @@ A second Netlify site sharing the build profile with the marketing repo.
 - Stay server-first: default to Server Components, mutate via Server Actions.
 - Pull every color, font, and spacing value from the design tokens — never hard-code hex or introduce a new font/radius. Consistency across the suite is a hard requirement; the canonical reference is `nimbus-design-system.md`.
 - Respect the client boundary: never import `lib/supabase/admin.ts` outside server code, and always filter admin-client queries by `org_id`.
-- See [`copilot-instructions.md`](copilot-instructions.md) for the full convention set (it also steers AI pair-programming).
+- See [`.github/copilot-instructions.md`](.github/copilot-instructions.md) for the full convention set (it also steers AI pair-programming).
 
 ### Known sharp edges worth knowing before you touch them
 

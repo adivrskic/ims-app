@@ -2,7 +2,7 @@
  * Google "G" brand glyph.
  *
  * Rendered inside the ghost CornerButton on the login form, to the left of
- * the "Continue with Google" label. Unlike the monochrome Nimbus Logo, this
+ * the "Continue with Google" label. Unlike the monochrome Nautilus Logo, this
  * keeps Google's four official brand colors — per Google's branding
  * guidelines the mark must not be recolored, so it's the one sanctioned
  * exception to the single-gold-accent rule.

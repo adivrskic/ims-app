@@ -13,6 +13,13 @@ import "server-only";
  * There is no safe invented default, so there isn't one here. Unset in
  * production is a misconfiguration, and this says so loudly rather than
  * papering over it with a plausible-looking hostname.
+ *
+ * DELIBERATE EXCEPTION — the Shopify OAuth routes
+ * (app/api/integrations/shopify/{connect,callback}) read NEXT_PUBLIC_APP_URL
+ * directly and 500 when it's missing. Do NOT migrate them to this helper: an
+ * OAuth redirect_uri must byte-match the one registered with Shopify, so
+ * falling back to the request origin would either break the handshake or let a
+ * spoofed Host header steer the redirect. Failing closed is correct there.
  */
 
 const FALLBACK_DEV_ORIGIN = "http://localhost:3000";

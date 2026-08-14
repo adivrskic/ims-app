@@ -1,6 +1,7 @@
 "use server";
 
 import { redirect } from "next/navigation";
+import { appUrl as resolveAppUrl } from "@/lib/appUrl";
 import { revalidatePath } from "next/cache";
 import { cookies } from "next/headers";
 import { randomBytes } from "crypto";
@@ -197,7 +198,7 @@ export async function setUpWorkspace(
     if (inviteErr) {
       console.error("[onboarding] invite inserts failed:", inviteErr);
     } else {
-      const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "";
+      const appUrl = resolveAppUrl();
       const inviterName =
         (user.user_metadata?.full_name as string | undefined) ??
         user.email ??

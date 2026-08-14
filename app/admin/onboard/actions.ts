@@ -98,7 +98,7 @@ export async function createWorkspace(
     .maybeSingle();
   if (existingProfile) {
     return {
-      error: `${ownerEmail} already has a Nimbus account. Use "Add member" instead of creating a new workspace.`,
+      error: `${ownerEmail} already has a Nautilus account. Use "Add member" instead of creating a new workspace.`,
     };
   }
 

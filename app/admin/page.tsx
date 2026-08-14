@@ -55,7 +55,7 @@ export default async function AdminDashboard() {
         <PageHeader
           eyebrow="Staff"
           title="Workspaces"
-          description="All organizations across Nimbus."
+          description="All organizations across Nautilus."
         />
         <p className="mono-sm text-[var(--danger)]">
           Failed to load workspaces: {error.message}

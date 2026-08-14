@@ -1,6 +1,6 @@
 # Copilot instructions — Nautilus Dashboard
 
-These instructions guide GitHub Copilot (and other AI pair-programmers) when working in this repository. Place this file at `.github/copilot-instructions.md`. Follow it for every suggestion.
+These instructions guide GitHub Copilot (and other AI pair-programmers) when working in this repository. Follow it for every suggestion.
 
 ## Project context
 
@@ -27,9 +27,20 @@ It is part of a suite: a marketing site (apex domain), this dashboard (`app.<ape
 
 ## Auth + access control
 
-- Middleware (`middleware.ts`) handles session refresh and redirects; don't duplicate auth gating in pages.
-- Gate privileged writes on role. Owner/admin-only actions check role server-side (mirroring the `app.has_org_role` policy) — re-validate in the action, never trust the client.
-- The `/admin/*` area is staff-only (`profiles.is_staff`) and redirects non-staff to `/` (it must not 404 — that would leak its existence).
+- Middleware (`middleware.ts`) handles session refresh and redirects; don't duplicate auth gating in pages. It does **not** protect Server Actions — those must gate themselves.
+- **Every server action starts with `getActionContext()`** (`lib/data/actionContext.tsx`). It resolves the active workspace from the cookie-validated membership and returns `{ supabase, user, orgId, role, permissions, can }` or `{ error }`. Never hand-roll an org lookup — an `org_members ... .limit(1)` resolver ignores the workspace cookie and writes to the wrong org after a switch.
+- **Gate privileged writes on granular permissions, not role.** The pattern is:
+
+  ```ts
+  const ctx = await getActionContext();
+  if ("error" in ctx) return { error: ctx.error };
+  if (!ctx.can("inventory.manage")) return { error: "Not authorized" };
+  ```
+
+  Permissions are defined in `lib/permissions.ts`. Role-only checks (`app.has_org_role`) are the older pattern and are no longer sufficient on their own.
+- **RLS enforces the same permissions independently** via `app.has_any_perm` (`20260715120000_rls_permission_gating`). This is defense in depth, not a substitute for the app-level check — an action that skips `ctx.can()` gets its write silently rejected by RLS, and if it ignores the error the user sees a page reload with no explanation and no error. Check in the action **and** hide the control in the UI.
+- The `/admin/*` area is staff-only (`profiles.is_staff`) and redirects non-staff to `/` (it must not 404 — that would leak its existence). The layout gate does not cover its server actions; `createWorkspace` re-checks `getStaffUser()` itself, and any new staff action must too.
+- **Never invent a fallback origin.** Public URLs for invites, resets and email links come from `appUrl()` (`lib/appUrl.ts`). A plausible-looking hardcoded hostname for an unset `NEXT_PUBLIC_APP_URL` sends real invite links to a domain we don't own, and nothing errors.
 
 ## Design system — non-negotiable
 
@@ -58,6 +69,22 @@ The whole suite must look identical. Pull from the tokens in `globals.css`; neve
 - Register new authenticated routes in `lib/navData.ts` so they appear in the side rail, mobile nav, and command palette.
 - New integrations follow the **Slack** provider as the reference: client in `lib/integrations/`, metadata in `app/(app)/integrations/providers.ts`, logo slug in `ProviderLogo.tsx`, callbacks in `app/api/`.
 - Replenishment math (velocity, ROP, EOQ) lives in `lib/replenishment.ts` — reuse it, don't reimplement.
+- CSV export cells go through `csvCell` from `lib/print/csv.ts`. It handles spreadsheet formula injection and RFC 4180 quoting while keeping negative numbers numeric. Four routes previously inlined their own copy and drifted into two different bugs — don't start a fifth.
+
+## Data access & performance
+
+- **Aggregate in SQL for anything on a hot path.** `fetchAllPaged` (`lib/data/paginate.ts`) pulls a whole table in 1000-row pages — fine for COLD paths (reports, one-off analytics), wrong for dashboards and anything in a request the user waits on. For hot paths write an RPC that aggregates in Postgres; see `app.overview_stock_total` / `overview_scan_trend` / `overview_low_stock` and the `analytics_aggregate_rpcs` migration for the house pattern.
+- **New RPCs follow that pattern:** `language sql`, `stable`, `security invoker`, `set search_path to 'app', 'public'`, then explicit `revoke ... from public, anon` + `grant execute ... to authenticated, service_role`. `security definer` needs a reason.
+- **`unstable_cache` is not a fix for an expensive query.** The Overview cache is tag-busted by realtime events, so a slow fetcher re-runs most often exactly when the workspace is busiest.
+
+## Security headers
+
+Set in `next.config.mjs` via `headers()` — CSP, HSTS, `X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`, `Permissions-Policy`. Two traps:
+
+- `script-src` keeps `'unsafe-inline'` deliberately for the pre-hydration theme script. **Do not add a nonce or hash alongside it** — per CSP3 that makes browsers ignore `'unsafe-inline'`, breaking every other inline script. Full-nonce or leave it; not halfway.
+- `connect-src` is built from `NEXT_PUBLIC_SUPABASE_URL` and must keep the `wss:` entry, or Realtime stops updating with no visible error.
+
+Any new external origin (script, image, font, fetch target) needs its directive updated or it is silently blocked in production.
 
 ## Hardware code
 
@@ -66,9 +93,10 @@ The whole suite must look identical. Pull from the tokens in `globals.css`; neve
 
 ## Don't
 
-- Don't add browser storage (`localStorage`/`sessionStorage`) for app state — use server state, cookies, or React state.
+- Don't put app state in browser storage — use server state, cookies, or React state. `localStorage` is used for **device-local UI preferences only** (theme in `app/layout.tsx`, 2D/3D viewer mode in `FacilityViewer.tsx`), always inside a `try/catch` since private mode can throw.
 - Don't hard-code colors, fonts, or border radii.
 - Don't call the admin client outside server code, or without an `org_id` filter.
 - Don't introduce a new UI primitive when an existing one fits.
-- Don't add dependencies for things the current stack already covers (Lucide for icons, GSAP for motion, three/r3f for 3D).
+- Don't add dependencies for things the current stack already covers: **Lucide** for icons, **three / @react-three/fiber / drei** for 3D, CSS transitions + custom properties for motion (there is no animation library — motion is hand-rolled, e.g. `lib/useGlowCards.ts`).
 - Don't query the `public` schema.
+- Don't `import` three/r3f into a route's main bundle — it's ~500 kB. Load it via `next/dynamic` with `ssr: false`, as `FacilityViewer.tsx` does.

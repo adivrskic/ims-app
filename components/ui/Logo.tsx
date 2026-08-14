@@ -1,7 +1,7 @@
 import { useId } from "react";
 
 /**
- * Nimbus logo glyph.
+ * Nautilus logo glyph.
  *
  * The N is cut from a `currentColor`-filled square via an SVG mask, so the
  * glyph renders as a hairline-precise letterform against any background and
@@ -14,7 +14,7 @@ interface Props {
   title?: string;
 }
 
-export function Logo({ size = 22, className, title = "Nimbus" }: Props) {
+export function Logo({ size = 22, className, title = "Nautilus" }: Props) {
   const maskId = useId();
   return (
     <svg

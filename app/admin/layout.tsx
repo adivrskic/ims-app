@@ -5,7 +5,7 @@ import { getStaffUser } from "@/lib/staff";
 import { signOut } from "@/app/(auth)/actions";
 import { ArrowLeftRight, Building2, UserPlus, LogOut } from "lucide-react";
 
-export const metadata = { title: "Staff · Nimbus" };
+export const metadata = { title: "Staff · Nautilus" };
 
 export default async function AdminLayout({
   children,
@@ -46,7 +46,7 @@ export default async function AdminLayout({
                 fontWeight: 500,
               }}
             >
-              NIMBUS
+              NAUTILUS
             </span>
             <span
               className="hairline-subtle px-8 py-2 mono-sm"

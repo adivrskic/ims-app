@@ -4,6 +4,10 @@
 **Goal:** a brand-new person can sign up from zero and run a full warehouse day without hitting a broken screen, a wrong number, or a dead end — before any customer sees it.
 
 > **Status of this document:** generated from the code as of the latest `main`. Every route, permission, field and business rule below was read out of the repo, not assumed. Where something is unverified or environment-dependent it says so explicitly.
+>
+> **Re-checked 2026-08-14** against the security/performance audit ([`audit-2026-08-14.md`](audit-2026-08-14.md)). Finding **A** (the desk app cannot pick) was re-verified and **still holds** — `app.pick_order_item` has no caller in this repo, so Phase 5 still needs the mobile app or seeded `quantity_picked`. §11.3 gained cases for the newly-added security headers, the CSP-doesn't-break-the-app check, CSV numeric integrity, and forecast RBAC.
+>
+> One thing this plan cannot cover: **the low-stock KPI card and the reorder panel beneath it use different definitions of "low"** (they disagree on quarantined units and on locations with no section). If a tester reports the count disagreeing with the list, that is a known open item, not a new bug.
 
 ---
 
@@ -249,7 +253,7 @@ Verified directly against the code. These **change what is testable**. Decide ho
 | **A** | **The desk app cannot pick.** `quantity_picked` is written only by the `app.pick_order_item` RPC, which has **zero callers** in the web app. The only callers are the mobile app (`app/orders/[id].tsx:769`, `app/waves.tsx:432`). | grep for `pick_order_item` in `app/ lib/ components/` returns one comment | Orders **cannot leave `in_progress`**, waves **cannot complete**, and **Returns are unreachable** from the desk (the Create-return panel only renders when `picked > 0`). **Phase 5 must run with the mobile app, or with `quantity_picked` seeded via SQL.** |
 | **B** | **Receiving does not create stock.** Receiving a PO/ASN only increments `quantity_received`. On-hand exists only after placing product into a slot. | `purchase-orders/actions.ts:290`, `inbound/actions.ts:313`; the UI says so at `purchase-orders/[id]/page.tsx:400` | A tester who receives a PO then checks Inventory sees **0 on hand** and files a false bug. Scripted explicitly in Phase 4. |
 | **C** | **Orders are never linked to customers.** Nothing writes `orders.customer_id`; the order form takes a free-text name. | only two *reads*, at `customers/actions.ts:94,101` | Customer detail's Orders panel is **permanently empty**. One known gap — don't file it repeatedly. |
-| **D** | **The base schema is not in this repo.** Only 45 incremental migrations; **zero** `create table` for `orgs`, `org_members`, `profiles`, `products`, `warehouses`, `org_subscriptions`, `audit_log`, `api_keys`, `integrations`, `notifications`. | verified: 0 migrations create any of them | **You cannot build a clean QA environment from the repo — `supabase db reset` yields a broken DB. Clone the live project.** Also: **RLS on account tables is unverifiable from source, so multi-tenant isolation must be proven empirically (§11.2).** |
+| **D** | **The base schema is not in this repo.** Only 46 incremental migrations; **zero** `create table` for `orgs`, `org_members`, `profiles`, `products`, `warehouses`, `org_subscriptions`, `audit_log`, `api_keys`, `integrations`, `notifications`. | verified: 0 migrations create any of them | **You cannot build a clean QA environment from the repo — `supabase db reset` yields a broken DB. Clone the live project.** Also: **RLS on account tables is unverifiable from source, so multi-tenant isolation must be proven empirically (§11.2).** |
 | **E** | **The audit log is never written to.** `audit_log` appears once in the entire codebase — the SELECT that renders the page. | `settings/audit/page.tsx:55` | `/settings/audit` is **permanently empty**. Confirm whether DB triggers exist in the live project; otherwise hide the tab before demos. |
 | **F** | **Mobile push cannot work in the current build.** `extra.eas.projectId` is missing from `app.json`, so registration returns `no-eas-project` and the Settings toggle flips itself back off. | `lib/push.tsx:52-58` | Run `eas init` before Phase 8, or cut push testing. |
 
@@ -653,10 +657,13 @@ Because account-table RLS isn't in the repo (finding D), this must be proven emp
 |---|---|---|---|
 | 11.3.1 | Direct URL to an app page while logged out | Redirect to login, no data flash | ☐ |
 | 11.3.2 | `/admin` as a non-staff user | Silent redirect to `/` | ☐ |
-| 11.3.3 | CSV injection | Product named `=cmd\|' /c calc'!A1` → export → open in Excel | Prefixed/neutralised, no formula execution | ☐ |
-| 11.3.4 | XSS attempts | `<script>alert(1)</script>` in product name, notes, customer name | Rendered as text everywhere it appears | ☐ |
+| 11.3.3 | CSV injection — product named `=cmd\|' /c calc'!A1`, then export and open in Excel | Prefixed/neutralised, no formula execution. Check **all four** exports: inventory, orders, saved report, valuation | ☐ |
+| 11.3.4 | XSS attempts — `<script>alert(1)</script>` in product name, notes, customer name | Rendered as text everywhere it appears | ☐ |
 | 11.3.5 | Session after password change | Behaves as documented | ☐ |
-| 11.3.6 | Security headers on the app | CSP / HSTS present | ☐ |
+| 11.3.6 | Security headers on the app (`curl -I`) | All six present: `Content-Security-Policy`, `Strict-Transport-Security` (prod only), `X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`, `Permissions-Policy`. Set in `next.config.mjs` | ☐ |
+| 11.3.7 | CSP does not break the app | Sign in, load Overview, open a facility in **3D**, leave a Realtime page open ~1 min. Console shows **zero** CSP violations and the live data still updates (`connect-src` must allow Supabase `wss:`) | ☐ |
+| 11.3.8 | CSV numeric columns survive the injection guard | Export valuation/report data containing **negative** numbers → cells stay numeric in Excel (`SUM()` includes them), not text | ☐ |
+| 11.3.9 | Forecast "Apply" respects RBAC | As a member **without** `inventory.manage`: the Apply control is absent on `/analytics/forecast` and on product detail. As one **with** it: applying updates reorder point / safety stock | ☐ |
 
 ### 11.4 Responsive, accessibility, resilience
 | # | Case | Expected | Result |

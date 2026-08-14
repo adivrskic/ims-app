@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { appUrl as resolveAppUrl } from "@/lib/appUrl";
 import { headers } from "next/headers";
 import { randomBytes } from "crypto";
 import { createClient } from "@/lib/supabase/server";
@@ -404,7 +405,7 @@ export async function executeBulkInvite(
   const orgId = String(formData.get("org_id") ?? "");
   const admin = createAdminClient();
   const h = await headers();
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? h.get("origin") ?? "";
+  const appUrl = resolveAppUrl(h.get("origin"));
 
   // Inviter + workspace context for the invite emails / links.
   const caller = await getCallerRole(orgId);

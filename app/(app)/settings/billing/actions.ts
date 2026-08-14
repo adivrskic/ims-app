@@ -4,13 +4,13 @@ import { redirect } from "next/navigation";
 import { headers } from "next/headers";
 import { getActionContext } from "@/lib/data/actionContext";
 import { stripe } from "@/lib/stripe";
+import { appUrl } from "@/lib/appUrl";
 import { priceIdFor, type PaidTier, type BillingPeriod } from "@/lib/billing/plans";
 
+/** Stripe success/cancel targets. Shared resolver — see lib/appUrl.ts. */
 async function appOrigin(): Promise<string> {
-  const fromEnv = (process.env.NEXT_PUBLIC_APP_URL ?? "").trim();
-  if (fromEnv) return fromEnv.replace(/\/$/, "");
   const h = await headers();
-  return h.get("origin") ?? "";
+  return appUrl(h.get("origin"));
 }
 
 /** Read this org's stored Stripe customer id (if any). */
