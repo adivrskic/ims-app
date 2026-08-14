@@ -188,12 +188,13 @@ export default async function OverviewPage() {
     pickQueue: kiosk?.pickQueue ?? [],
     posInTransit: kiosk?.posInTransit ?? [],
     topMovers: kiosk?.topMovers ?? [],
-    /* Fallback is the RPC's window-functioned total, not lowStock.length —
-       that list is capped at 6, so the KPI card used to read "6" for an org
-       with fifty understocked SKUs whenever kiosk data was unavailable.
-       NOTE: kiosk's count comes from inventory_list, which inner-joins sections
-       and ignores quarantine, so it can disagree with the panel below it. That
-       predates this change; see docs/audit-2026-08-14.md. */
+    /* Both sources now agree: inventory_list (kiosk) and overview_low_stock
+       share one definition of "low" as of 20260814140000 — available stock,
+       excluding quarantined units, counting unsectioned locations when
+       workspace-wide. Either value is correct; kiosk wins only because it is
+       already loaded. The fallback is the RPC's window-functioned total rather
+       than lowStock.length, which is capped at 6 and made this card read "6"
+       for an org with fifty understocked SKUs. */
     lowStockCount: kiosk?.lowStockCount ?? data?.lowStockCount ?? 0,
     inventoryValue: data?.financials.inventoryValue ?? 0,
     deadStockValue: data?.financials.deadStockValue ?? 0,

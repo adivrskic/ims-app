@@ -7,7 +7,12 @@
 >
 > **Re-checked 2026-08-14** against the security/performance audit ([`audit-2026-08-14.md`](audit-2026-08-14.md)). Finding **A** (the desk app cannot pick) was re-verified and **still holds** — `app.pick_order_item` has no caller in this repo, so Phase 5 still needs the mobile app or seeded `quantity_picked`. §11.3 gained cases for the newly-added security headers, the CSP-doesn't-break-the-app check, CSV numeric integrity, and forecast RBAC.
 >
-> One thing this plan cannot cover: **the low-stock KPI card and the reorder panel beneath it use different definitions of "low"** (they disagree on quarantined units and on locations with no section). If a tester reports the count disagreeing with the list, that is a known open item, not a new bug.
+> **One number changed on purpose.** "Low stock" now means *available* stock — quarantined
+> units no longer count toward it, and stock in a location with no section assigned now does.
+> The KPI card and the reorder panel share one definition as of migration `20260814140000`,
+> so they must agree; **if they don't, that is a bug worth reporting.** Expect low-stock
+> counts to differ from any pre-2026-08-14 baseline: SKUs whose stock is mostly quarantined
+> will newly appear, and SKUs holding unsectioned stock will drop off.
 
 ---
 
@@ -664,6 +669,9 @@ Because account-table RLS isn't in the repo (finding D), this must be proven emp
 | 11.3.7 | CSP does not break the app | Sign in, load Overview, open a facility in **3D**, leave a Realtime page open ~1 min. Console shows **zero** CSP violations and the live data still updates (`connect-src` must allow Supabase `wss:`) | ☐ |
 | 11.3.8 | CSV numeric columns survive the injection guard | Export valuation/report data containing **negative** numbers → cells stay numeric in Excel (`SUM()` includes them), not text | ☐ |
 | 11.3.9 | Forecast "Apply" respects RBAC | As a member **without** `inventory.manage`: the Apply control is absent on `/analytics/forecast` and on product detail. As one **with** it: applying updates reorder point / safety stock | ☐ |
+| 11.3.10 | Low-stock definition is consistent | On Overview, the "Low stock" KPI number **equals** the count of SKUs the reorder panel would list (use the Inventory page's low-stock filter to count). Check workspace-wide **and** scoped to one facility | ☐ |
+| 11.3.11 | Quarantine drives low stock | Take a SKU above its reorder point, quarantine enough units that available falls below it → it **appears** as low stock, while its on-hand figure still shows the full physical quantity (that split is intended) | ☐ |
+| 11.3.12 | Unsectioned stock counts | Put stock in a location with no section assigned → it counts toward on-hand and low-stock **workspace-wide**, and is excluded when scoped to a facility | ☐ |
 
 ### 11.4 Responsive, accessibility, resilience
 | # | Case | Expected | Result |

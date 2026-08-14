@@ -77,6 +77,17 @@ The whole suite must look identical. Pull from the tokens in `globals.css`; neve
 - **New RPCs follow that pattern:** `language sql`, `stable`, `security invoker`, `set search_path to 'app', 'public'`, then explicit `revoke ... from public, anon` + `grant execute ... to authenticated, service_role`. `security definer` needs a reason.
 - **`unstable_cache` is not a fix for an expensive query.** The Overview cache is tag-busted by realtime events, so a slow fetcher re-runs most often exactly when the workspace is busiest.
 
+## Two stock numbers — don't conflate them
+
+These had drifted into three inconsistent definitions across the dashboard; they were reconciled in `20260814140000`. Preserve the distinction:
+
+- **On hand** = *physical* stock. Includes quarantined units. Excludes soft-deleted (`is_active = false`) rows. This is `app.overview_stock_total` and `inventory_list.on_hand`.
+- **Low stock** = judged on *available* stock, which **excludes quarantined units** — they can't be picked or sold, so counting them masks a real reorder need. This is `app.overview_low_stock` and `inventory_list`'s `p_low_only` predicate.
+
+So a SKU can show on-hand 30 against a reorder point of 25 and still be flagged low. That is intended, not a bug.
+
+Facility scoping resolves through **sections**: with a facility set, only locations whose section belongs to it count, so unsectioned stock drops out when scoped and counts workspace-wide. Any new stock rollup follows the same rule.
+
 ## Security headers
 
 Set in `next.config.mjs` via `headers()` — CSP, HSTS, `X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`, `Permissions-Policy`. Two traps:
