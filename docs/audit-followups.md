@@ -1,9 +1,29 @@
 # Audit — bugs, edge cases & unfinished features (2026-05-31)
 
+> ## ⚠️ HISTORICAL — this work list is CLOSED. Do not treat it as open work.
+>
+> This document was written as a work list on 2026-05-31 and said "nothing here is fixed yet."
+> That is no longer true and has not been since June. **Every P0 and P1 item below shipped.**
+> Re-verified against `main` on **2026-08-14**:
+>
+> | Finding | Resolution | Verify at |
+> |---|---|---|
+> | P0-1 `assembleKit` stale-snapshot decrement | `app.assemble_kit` RPC under a per-facility advisory lock | `lib/data/assemble.ts:41` · `20260531150500_app_p0_concurrency_rpcs.sql` |
+> | P0-2 Concurrent allocation oversell | `app.allocate_order` RPC under advisory lock | `lib/data/allocation.ts:271` |
+> | P0-3 Double work-order completion | `app.complete_work_order` RPC (claimed status transition) | `app/(app)/work-orders/actions.ts:143` |
+> | P0-4 `commitAdjustment` lost update | `app.commit_stock_adjustment` RPC | `lib/data/adjustments.ts:174` |
+> | P1 RBAC gaps + cross-org write | Fixed; RBAC now also enforced in RLS | `20260715120000_rls_permission_gating.sql` |
+> | P1 cancel-after-pick oversell, forecast seasonality, slotting capacity | Fixed | see `lib/data/allocation.ts`, `lib/forecast.ts` |
+> | QC quarantine | Shipped in both desk + mobile repos | `20260701123000_allocate_order_exclude_quarantine.sql` |
+>
+> Kept in the repo because the **fix patterns and the reasoning** below are still the house
+> style for stock mutations — read it before touching any read-then-write on quantities.
+> For currently-open work see [`audit-2026-08-14.md`](audit-2026-08-14.md).
+
 Post-build audit of the nine features shipped this cycle (slotting, allocation/ATP/backorders,
 wave/zone picking, multi-level BOM + work orders, receiving QC, adjustment reasons + approvals,
 demand forecasting, custom reports, granular RBAC). All merged to `main`. Findings verified
-against real code with file:line. **Nothing here is fixed yet** — this is the work list.
+against real code with file:line.
 
 Severity: **P0** = data corruption / overselling / security · **P1** = correctness · **P2** = quality/perf · **P3** = polish.
 

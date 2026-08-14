@@ -20,7 +20,11 @@ import {
 } from "lucide-react";
 import { getActiveScope, scopeDescription } from "@/lib/facilityScope";
 import { getCurrentOrgContext } from "@/lib/data/user";
-import { getOverviewData, type OverviewData } from "@/lib/data/overview";
+import {
+  getOverviewData,
+  TREND_DAYS,
+  type OverviewData,
+} from "@/lib/data/overview";
 import { getKioskData, type KioskData } from "@/lib/data/kiosk";
 
 export const metadata = { title: "Overview" };
@@ -64,22 +68,10 @@ const ORDER_STATUS_LABEL: Record<string, string> = {
   partially_received: "Partial",
 };
 
-function bucketByDay(scans: { scanned_at: string | null }[]): number[] {
-  const buckets = new Array<number>(14).fill(0);
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const todayMs = today.getTime();
-  scans.forEach((s) => {
-    if (!s.scanned_at) return;
-    const d = new Date(s.scanned_at);
-    d.setHours(0, 0, 0, 0);
-    const idx = 13 - Math.floor((todayMs - d.getTime()) / 86400000);
-    if (idx >= 0 && idx < 14) buckets[idx]++;
-  });
-  return buckets;
-}
+/* bucketByDay used to live here, folding 14 days of raw scan rows into buckets.
+   app.overview_scan_trend does it in Postgres now — see lib/data/overview.ts. */
 
-const flat = (n: number) => new Array(14).fill(n);
+const flat = (n: number) => new Array(TREND_DAYS).fill(n);
 
 /**
  * Real KPI history when the nightly snapshots have accrued ≥2 points
@@ -172,53 +164,14 @@ export default async function OverviewPage() {
   const sectionCount = data?.sectionCount ?? 0;
   const warehouseCount = data?.warehouseCount ?? 0;
   const scansTodayCount = data?.scansTodayCount ?? 0;
-  const stockRows = data?.stockRows ?? [];
-  const scans14d = data?.scans14d ?? [];
   const recentScans = (data?.recentScans ?? []) as OverviewVM["recentScans"];
-  const stockByProduct = data?.stockByProduct ?? [];
-  const validSectionIds = data?.validSectionIds
-    ? new Set(data.validSectionIds)
-    : null;
 
-  const lowStock = (
-    (stockByProduct ?? []) as Array<{
-      id: string;
-      name: string;
-      barcode: string;
-      reorder_point: number;
-      category: { name: string } | { name: string }[] | null;
-      locations: Array<{
-        quantity: number | null;
-        section_id: string | null;
-      }> | null;
-    }>
-  )
-    .map((p) => {
-      const relevantLocs = validSectionIds
-        ? (p.locations ?? []).filter(
-            (l) => l.section_id && validSectionIds!.has(l.section_id)
-          )
-        : p.locations ?? [];
-      const total = relevantLocs.reduce((sum, l) => sum + (l.quantity ?? 0), 0);
-      const cat = Array.isArray(p.category) ? p.category[0] : p.category;
-      return {
-        id: p.id,
-        name: p.name,
-        barcode: p.barcode,
-        reorder_point: p.reorder_point,
-        total,
-        category_name: cat?.name ?? null,
-      };
-    })
-    .filter((p) => p.total <= p.reorder_point)
-    .sort((a, b) => a.total - a.reorder_point - (b.total - b.reorder_point))
-    .slice(0, 6);
-
-  const totalStock = (stockRows ?? []).reduce(
-    (sum, row: { quantity: number | null }) => sum + (row.quantity ?? 0),
-    0
-  );
-  const trend = bucketByDay(scans14d as { scanned_at: string | null }[]);
+  // Aggregated in Postgres — see lib/data/overview.ts. The low-stock list
+  // arrives already filtered to on_hand <= reorder_point, sorted by deepest
+  // shortfall, and capped; the trend arrives zero-filled per day.
+  const lowStock = data?.lowStock ?? [];
+  const totalStock = data?.totalStock ?? 0;
+  const trend = data?.trend ?? new Array<number>(TREND_DAYS).fill(0);
   const totalScans14 = trend.reduce((a, b) => a + b, 0);
 
   const vm: OverviewVM = {
@@ -235,7 +188,13 @@ export default async function OverviewPage() {
     pickQueue: kiosk?.pickQueue ?? [],
     posInTransit: kiosk?.posInTransit ?? [],
     topMovers: kiosk?.topMovers ?? [],
-    lowStockCount: kiosk?.lowStockCount ?? lowStock.length,
+    /* Fallback is the RPC's window-functioned total, not lowStock.length —
+       that list is capped at 6, so the KPI card used to read "6" for an org
+       with fifty understocked SKUs whenever kiosk data was unavailable.
+       NOTE: kiosk's count comes from inventory_list, which inner-joins sections
+       and ignores quarantine, so it can disagree with the panel below it. That
+       predates this change; see docs/audit-2026-08-14.md. */
+    lowStockCount: kiosk?.lowStockCount ?? data?.lowStockCount ?? 0,
     inventoryValue: data?.financials.inventoryValue ?? 0,
     deadStockValue: data?.financials.deadStockValue ?? 0,
     deadStockSkus: data?.financials.deadStockSkus ?? 0,

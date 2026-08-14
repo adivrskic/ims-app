@@ -1,4 +1,5 @@
 import "server-only";
+import { appUrl } from "@/lib/appUrl";
 
 /**
  * Email template builders.
@@ -17,7 +18,7 @@ import "server-only";
  *     spam-filter scoring
  */
 
-const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? "https://app.nautilus.io";
+const APP_URL = appUrl();
 
 interface BaseLayoutProps {
   preheader: string;

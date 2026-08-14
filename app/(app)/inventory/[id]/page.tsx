@@ -555,7 +555,11 @@ export default async function ProductDetailPage({
                   mono
                 />
               </dl>
-              {(forecast.forecast.reorderPoint !== forecast.currentReorderPoint ||
+              {/* Gated on inventory.manage to match applyForecastSettings and
+                  the RLS products_update policy — otherwise the button is a
+                  no-op that silently reloads with unchanged numbers. */}
+              {orgCtx?.can("inventory.manage") &&
+                (forecast.forecast.reorderPoint !== forecast.currentReorderPoint ||
                 forecast.forecast.safetyStock !== forecast.currentSafetyStock) && (
                 <form action={applyForecastSettings} className="mt-14">
                   <input type="hidden" name="product_id" value={product.id} />

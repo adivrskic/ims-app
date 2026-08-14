@@ -297,10 +297,16 @@ components/
 lib/
 ├── supabase/                # client / server / admin / middleware
 ├── ai/narrate.ts            # Edge-function wrapper
+├── appUrl.ts                # Single source for the public origin (links in email/invites)
 ├── replenishment.ts         # velocity / ROP / EOQ math
 ├── integrations/            # Provider clients (shopify, slack, webhooks, resend)
 ├── data/                    # Request-cached fetchers
-└── print/zebra.ts           # ZPL transport over WebUSB
+│   ├── actionContext.ts     # getActionContext() — the org + RBAC gate every action uses
+│   └── paginate.ts          # fetchAllPaged — COLD paths only; hot paths use SQL aggregates
+└── print/
+    ├── csv.ts               # Shared CSV encoder for all four export routes
+    ├── code128.ts           # Barcode SVG generation
+    └── zebra.ts             # ZPL transport over WebUSB
 
 types/db.ts                  # Hand-written DB types (regeneratable)
 middleware.ts                # Wires the Supabase middleware into Next.js
@@ -383,10 +389,13 @@ A second Netlify site sharing the build profile with the marketing repo.
 - Stay server-first: default to Server Components, mutate via Server Actions.
 - Pull every color, font, and spacing value from the design tokens — never hard-code hex or introduce a new font/radius. Consistency across the suite is a hard requirement; the canonical reference is `nimbus-design-system.md`.
 - Respect the client boundary: never import `lib/supabase/admin.ts` outside server code, and always filter admin-client queries by `org_id`.
-- See [`.github/copilot-instructions.md`](.github/copilot-instructions.md) for the full convention set (it also steers AI pair-programming).
+- See [`copilot-instructions.md`](copilot-instructions.md) for the full convention set (it also steers AI pair-programming).
 
 ### Known sharp edges worth knowing before you touch them
 
 - **Admin client = no RLS.** The `lib/data/` cached fetchers use the service-role client, so an `org_id` filter is the _only_ thing isolating workspaces. Drop it and you leak cross-org data.
 - **Workspace context is cookie-driven.** `getCurrentOrgContext` resolves the active workspace from a cookie validated against the user's real memberships (`lib/data/user.ts`); creating additional workspaces goes through the transactional `app.provision_workspace` RPC.
-- **No E2E suite.** `npm test` covers the pure logic (SSRF guard, redirect safety, RBAC math, allocation, forecasting, replenishment); anything touching the DB or browser still needs manual verification against the dev server.
+- **No E2E suite.** `npm test` covers the pure logic (SSRF guard, redirect safety, RBAC math, API-key scopes, rate limiting, allocation, forecasting, replenishment, FEFO, FIFO layers, Code 128, CSV encoding) — 88 tests across 12 files. Anything touching the DB or browser still needs manual verification against the dev server.
+- **Security headers live in `next.config.mjs`, not a host config.** CSP, HSTS, `X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy` and `Permissions-Policy` are emitted by the `headers()` block for every route. Two traps: (1) `script-src` keeps `'unsafe-inline'` deliberately for the pre-hydration theme script — adding a nonce or hash **disables** `'unsafe-inline'` per CSP3 and breaks every other inline script, so it is all-or-nothing; (2) `connect-src` is built from `NEXT_PUBLIC_SUPABASE_URL` and must include the `wss:` form or Realtime silently stops updating.
+- **One CSV encoder.** All four export routes share `lib/print/csv.ts`. It defends against spreadsheet formula injection *without* stringifying negative numbers — a subtlety that four divergent copies previously got wrong two different ways. Don't inline a local copy.
+- **Public origin comes from `lib/appUrl.ts`.** Never invent a fallback hostname for invite/reset/email links; an unset `NEXT_PUBLIC_APP_URL` should be loud, not plausible.

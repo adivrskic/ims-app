@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { type NextRequest } from "next/server";
+import { csvCell } from "@/lib/print/csv";
 
 /*
  * Orders CSV export. Mirrors the inventory export pattern.
@@ -11,19 +12,6 @@ import { type NextRequest } from "next/server";
  *   to=<iso>      — end of date range (created_at <=)
  */
 
-function csvCell(v: unknown): string {
-  let s = v == null ? "" : String(v);
-  // Neutralize spreadsheet formula injection: a cell beginning with = + - @ (or
-  // tab/CR) executes in Excel/Sheets. Customer name/notes are user-controlled.
-  // Prefix a single quote to force text, leaving plain numbers untouched.
-  if (/^[=+\-@\t\r]/.test(s) && !/^[-+]?\d+(\.\d+)?$/.test(s)) {
-    s = `'${s}`;
-  }
-  if (s.includes(",") || s.includes('"') || s.includes("\n")) {
-    return `"${s.replace(/"/g, '""')}"`;
-  }
-  return s;
-}
 
 const ORDER_TYPE_LABEL: Record<string, string> = {
   installer_job: "Installer job",

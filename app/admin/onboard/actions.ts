@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
+import { appUrl } from "@/lib/appUrl";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getStaffUser } from "@/lib/staff";
 
@@ -104,10 +105,7 @@ export async function createWorkspace(
   // 5. Build the magic-link redirect target. Falls back to the request
   //    origin if NEXT_PUBLIC_APP_URL isn't set (handy for staging).
   const h = await headers();
-  const origin =
-    process.env.NEXT_PUBLIC_APP_URL ??
-    h.get("origin") ??
-    "https://app.nimbus.io";
+  const origin = appUrl(h.get("origin"));
   const redirectTo = `${origin}/auth/callback?next=/`;
 
   // 6. Invite the owner. This creates the auth.users row, generates a

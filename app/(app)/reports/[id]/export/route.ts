@@ -3,20 +3,10 @@ import { createClient } from "@/lib/supabase/server";
 import { getCurrentOrgContext } from "@/lib/data/user";
 import { getDatasetMeta, type ReportConfig } from "@/lib/reports-meta";
 import { runReport } from "@/lib/data/reports";
+import { csvCell } from "@/lib/print/csv";
 
 const EXPORT_LIMIT = 100_000;
 
-function csvCell(v: unknown): string {
-  let s = v == null ? "" : String(v);
-  // Neutralize spreadsheet formula injection: Excel/Sheets evaluate a cell that
-  // begins with = + - @ (or a leading tab/CR). Prefix such values with an
-  // apostrophe so they render as literal text instead of executing.
-  if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
-  if (s.includes(",") || s.includes('"') || s.includes("\n") || s.includes("\r")) {
-    return `"${s.replace(/"/g, '""')}"`;
-  }
-  return s;
-}
 
 export async function GET(
   req: NextRequest,

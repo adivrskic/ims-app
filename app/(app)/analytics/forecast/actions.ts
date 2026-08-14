@@ -7,10 +7,17 @@ import { tags } from "@/lib/cache-tags";
 /**
  * Apply forecast-suggested reorder settings to a product. Feeds the existing
  * reorder-point / auto-draft-PO machinery with statistically-derived values.
+ *
+ * Writes app.products, so it carries the same `inventory.manage` gate as
+ * createProduct/updateProduct. Without it the RLS products_update policy
+ * (20260715120000_rls_permission_gating) rejected the write while this action
+ * ignored the error and revalidated anyway — a member without inventory.manage
+ * saw the page reload with the old numbers and no explanation.
  */
 export async function applyForecastSettings(formData: FormData): Promise<void> {
   const ctx = await getActionContext();
   if ("error" in ctx) return;
+  if (!ctx.can("inventory.manage")) return;
 
   const productId = String(formData.get("product_id") ?? "").trim();
   if (!productId) return;

@@ -131,12 +131,18 @@ export default async function ForecastPage() {
                           </span>
                         </Td>
                         <Td className="text-right">
-                          <form action={applyForecastSettings}>
-                            <input type="hidden" name="product_id" value={r.productId} />
-                            <input type="hidden" name="reorder_point" value={r.suggestedReorderPoint} />
-                            <input type="hidden" name="safety_stock" value={r.suggestedSafetyStock} />
-                            <CornerButton type="submit" variant="ghost" size="sm">Apply</CornerButton>
-                          </form>
+                          {/* Applying writes products.reorder_point — same gate
+                              as the action and the RLS policy behind it. */}
+                          {ctx.can("inventory.manage") ? (
+                            <form action={applyForecastSettings}>
+                              <input type="hidden" name="product_id" value={r.productId} />
+                              <input type="hidden" name="reorder_point" value={r.suggestedReorderPoint} />
+                              <input type="hidden" name="safety_stock" value={r.suggestedSafetyStock} />
+                              <CornerButton type="submit" variant="ghost" size="sm">Apply</CornerButton>
+                            </form>
+                          ) : (
+                            <span className="mono-sm text-text-dim">—</span>
+                          )}
                         </Td>
                       </tr>
                     ))}

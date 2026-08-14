@@ -2,6 +2,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { getCurrentOrgContext } from "@/lib/data/user";
 import { parseSort, parseOrder, type InventoryRow } from "@/lib/data/inventory";
 import { type NextRequest } from "next/server";
+import { csvCell } from "@/lib/print/csv";
 
 /*
  * Inventory CSV export.
@@ -15,21 +16,6 @@ import { type NextRequest } from "next/server";
 
 const EXPORT_LIMIT = 100_000;
 
-function csvCell(v: unknown): string {
-  let s = v == null ? "" : String(v);
-  // Neutralize spreadsheet formula injection: Excel/Sheets execute a cell that
-  // begins with = + - @ (or a leading tab/CR). A product name/SKU like
-  // `=HYPERLINK(...)` or `=cmd|'/c calc'!A1` would otherwise run on open. Prefix
-  // a single quote to force text — but leave plain numbers (incl. negatives)
-  // untouched so numeric columns stay numeric.
-  if (/^[=+\-@\t\r]/.test(s) && !/^[-+]?\d+(\.\d+)?$/.test(s)) {
-    s = `'${s}`;
-  }
-  if (s.includes(",") || s.includes('"') || s.includes("\n")) {
-    return `"${s.replace(/"/g, '""')}"`;
-  }
-  return s;
-}
 
 export async function GET(req: NextRequest) {
   const ctx = await getCurrentOrgContext();

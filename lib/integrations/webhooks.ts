@@ -2,6 +2,7 @@ import "server-only";
 import { createHmac, randomBytes } from "crypto";
 import { request as httpsRequest } from "node:https";
 import { decrypt, encrypt } from "./crypto";
+import { appUrl } from "@/lib/appUrl";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
   resolvePublicHttpsAddress,
@@ -527,7 +528,7 @@ export async function testEndpoint(
     org_id: endpoint.org_id,
     title: "Test event from Nautilus",
     body: "If your endpoint received this with a valid signature, you're wired up correctly.",
-    link: "https://app.nautilus.io/integrations/webhooks",
+    link: `${appUrl()}/integrations/webhooks`,
     occurred_at: new Date().toISOString(),
     data: { test: true },
   });

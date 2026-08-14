@@ -1,32 +1,37 @@
 import "server-only";
 import { unstable_cache } from "next/cache";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { fetchAllPaged } from "@/lib/data/paginate";
 import { tags } from "@/lib/cache-tags";
 
 /**
  * Cross-request cached fetcher for the Overview dashboard.
  *
- * Returns the RAW datasets + scalar counts the page needs; the page keeps
- * doing its own lowStock / totalStock / trend (bucketByDay) computation
- * unchanged. Mirrors the old Promise.all of eight queries, just cached.
+ * Returns FINISHED values, not raw datasets. Total on-hand, the activity
+ * sparkline and the low-stock worklist are all aggregated in Postgres by
+ * app.overview_stock_total / overview_scan_trend / overview_low_stock
+ * (20260814120000_overview_aggregate_rpcs).
+ *
+ * Those three used to be fetchAllPaged calls that pulled whole tables into Node
+ * and reduced them in JS — on the post-login landing page, i.e. the hottest
+ * read path in the app, and against the rule paginate.ts states in its own
+ * docstring. unstable_cache softened it, but OverviewRealtime tag-busts this
+ * cache on every scan_history/locations event, so the busier the warehouse the
+ * more often the full scan re-ran. Keep aggregation in SQL here.
  *
  * Admin (service-role) client → BYPASSES RLS, so every query filters org_id
  * explicitly; the cache key includes org_id + facilityId.
  *
  * Tagged across every domain the dashboard reads:
- *   - products      → productCount + stockByProduct (low-stock)
- *   - sections      → sectionCount + validSectionIds
+ *   - products      → productCount + lowStock
+ *   - sections      → sectionCount (and low-stock facility scoping, which
+ *                     resolves sections → locations inside the RPC)
  *   - warehouses    → warehouseCount
- *   - inventory     → stockRows (on-hand)  [also busted by location writes]
- *   - scans         → scansToday / scans14d / recentScans
+ *   - inventory     → totalStock + lowStock  [also busted by location writes]
+ *   - scans         → scansToday / trend / recentScans
  *
  * OverviewRealtime busts scans + inventory on scan_history/location events,
  * keeping the "live" header honest; the 60s revalidate is a short safety net
  * since this is the landing dashboard.
- *
- * NOTE: validSectionIds is returned as a string[] (not a Set) because
- * unstable_cache serializes its result to JSON. The page rebuilds the Set.
  */
 
 export interface OverviewRecentScan {
@@ -40,29 +45,36 @@ export interface OverviewRecentScan {
     | null;
 }
 
-export interface OverviewStockByProduct {
+export interface OverviewLowStockItem {
   id: string;
   name: string;
   barcode: string;
   reorder_point: number;
-  category: { name: string } | { name: string }[] | null;
-  locations: Array<{
-    quantity: number | null;
-    section_id: string | null;
-  }> | null;
+  /** On-hand across active, non-quarantined locations in the active scope. */
+  total: number;
+  category_name: string | null;
 }
+
+/** Days in the activity sparkline. Bucket TREND_DAYS-1 is today. */
+export const TREND_DAYS = 14;
+
+/** How many understocked SKUs the reorder-alerts panel shows. */
+const LOW_STOCK_LIMIT = 6;
 
 export interface OverviewData {
   productCount: number;
   sectionCount: number;
   warehouseCount: number;
   scansTodayCount: number;
-  stockRows: Array<{ quantity: number | null }>;
-  scans14d: Array<{ scanned_at: string | null }>;
+  /** Total units on hand across active locations in scope (SQL-side sum). */
+  totalStock: number;
+  /** Scan counts per day, oldest → newest, length TREND_DAYS. */
+  trend: number[];
   recentScans: OverviewRecentScan[];
-  stockByProduct: OverviewStockByProduct[];
-  /** Section ids at the active facility, or null when workspace-wide. */
-  validSectionIds: string[] | null;
+  /** Deepest-shortfall SKUs, already filtered/sorted/capped in SQL. */
+  lowStock: OverviewLowStockItem[];
+  /** Every low-stock SKU in scope, not just the ones in `lowStock`. */
+  lowStockCount: number;
   /** Financial signals (scope-aware): inventory value + dead-stock capital. */
   financials: {
     inventoryValue: number;
@@ -98,19 +110,11 @@ export function getOverviewData(
       const now = new Date();
       const today = new Date(now);
       today.setHours(0, 0, 0, 0);
-      const fourteenDaysAgo = new Date(today);
-      fourteenDaysAgo.setDate(today.getDate() - 14);
-
-      // Active-facility section ids (scoped). null = workspace-wide.
-      let validSectionIds: string[] | null = null;
-      if (facilityId) {
-        const { data: sec } = await admin
-          .from("sections")
-          .select("id")
-          .eq("org_id", orgId)
-          .eq("warehouse_id", facilityId);
-        validSectionIds = (sec ?? []).map((s) => s.id as string);
-      }
+      // Oldest bucket in the sparkline: local midnight, TREND_DAYS-1 days back.
+      // Passed to overview_scan_trend as the bucketing origin, so buckets line
+      // up with the operator's calendar rather than UTC.
+      const trendStart = new Date(today);
+      trendStart.setDate(today.getDate() - (TREND_DAYS - 1));
 
       // Scope helpers for the warehouse-bearing tables.
       // Conditionally apply a warehouse_id filter, preserving the concrete
@@ -130,11 +134,11 @@ export function getOverviewData(
         { count: productCount },
         { count: sectionCount },
         { count: warehouseCount },
-        { data: stockRows },
+        { data: stockTotal },
         { count: scansTodayCount },
-        { data: scans14d },
+        { data: trendRows },
         { data: recentScans },
-        { data: stockByProduct },
+        { data: lowStockRows },
         { data: finRows },
         { data: historyRows },
       ] = await Promise.all([
@@ -152,19 +156,12 @@ export function getOverviewData(
           .from("warehouses")
           .select("id", { count: "exact", head: true })
           .eq("org_id", orgId),
-        (async () => ({
-          // Paginate + exclude soft-deleted locations. A plain select caps at
-          // ~1000 rows, undercounting total stock in any real warehouse.
-          data: await fetchAllPaged<{ quantity: number | null }>((from, to) => {
-            let q = admin
-              .from("locations")
-              .select("quantity")
-              .eq("org_id", orgId)
-              .eq("is_active", true);
-            if (facilityId) q = q.eq("warehouse_id", facilityId);
-            return q.order("id", { ascending: true }).range(from, to);
-          }),
-        }))(),
+        // Total on-hand, summed in Postgres. Previously paginated every active
+        // location row into Node to reduce() it — see the migration header.
+        admin.rpc("overview_stock_total", {
+          p_org: orgId,
+          p_warehouse: facilityId,
+        }),
         scoped(
           admin
             .from("scan_history")
@@ -172,18 +169,14 @@ export function getOverviewData(
             .eq("org_id", orgId)
             .gte("scanned_at", today.toISOString())
         ),
-        (async () => ({
-          // Paginate: >1000 scans in 14 days (busy org) would truncate the trend.
-          data: await fetchAllPaged<{ scanned_at: string | null }>((from, to) => {
-            let q = admin
-              .from("scan_history")
-              .select("scanned_at")
-              .eq("org_id", orgId)
-              .gte("scanned_at", fourteenDaysAgo.toISOString());
-            if (facilityId) q = q.eq("warehouse_id", facilityId);
-            return q.order("id", { ascending: true }).range(from, to);
-          }),
-        }))(),
+        // Activity sparkline, bucketed by day in Postgres. Previously pulled
+        // every scan in the window into Node to bucket there.
+        admin.rpc("overview_scan_trend", {
+          p_org: orgId,
+          p_start: trendStart.toISOString(),
+          p_days: TREND_DAYS,
+          p_warehouse: facilityId,
+        }),
         scoped(
           admin
             .from("scan_history")
@@ -194,24 +187,14 @@ export function getOverviewData(
             .order("scanned_at", { ascending: false })
             .limit(10)
         ),
-        (async () => ({
-          // Low-stock detection: the embedded locations MUST exclude soft-deleted
-          // and QC-quarantined units, else a SKU that is actually below reorder
-          // point looks healthy. Paginate the parent products too.
-          data: await fetchAllPaged<OverviewStockByProduct>((from, to) =>
-            admin
-              .from("products")
-              .select(
-                "id, name, barcode, reorder_point, category:categories ( name ), locations:locations ( quantity, section_id )"
-              )
-              .eq("org_id", orgId)
-              .gt("reorder_point", 0)
-              .eq("locations.is_active", true)
-              .eq("locations.quarantined", false)
-              .order("id", { ascending: true })
-              .range(from, to)
-          ),
-        }))(),
+        // Low stock: the filter/sort/slice all happen in SQL now. Soft-deleted
+        // and QC-quarantined units stay excluded, else a SKU that is genuinely
+        // below its reorder point looks healthy.
+        admin.rpc("overview_low_stock", {
+          p_org: orgId,
+          p_warehouse: facilityId,
+          p_limit: LOW_STOCK_LIMIT,
+        }),
         // Financial signals (inventory value + capital tied in dead stock),
         // aggregated in Postgres so they can't truncate.
         admin.rpc("overview_financials", {
@@ -236,16 +219,46 @@ export function getOverviewData(
         })(),
       ]);
 
+      // Zero-fill the sparkline: the RPC returns only non-empty buckets.
+      const trend = new Array<number>(TREND_DAYS).fill(0);
+      for (const r of (trendRows ?? []) as Array<{
+        day_offset: number;
+        scan_count: number | string;
+      }>) {
+        if (r.day_offset >= 0 && r.day_offset < TREND_DAYS) {
+          trend[r.day_offset] = Number(r.scan_count ?? 0);
+        }
+      }
+
+      const lowRows = (lowStockRows ?? []) as Array<{
+        id: string;
+        name: string;
+        barcode: string;
+        reorder_point: number;
+        category_name: string | null;
+        on_hand: number | string | null;
+        total_count: number | string | null;
+      }>;
+
       return {
         productCount: productCount ?? 0,
         sectionCount: sectionCount ?? 0,
         warehouseCount: warehouseCount ?? 0,
         scansTodayCount: scansTodayCount ?? 0,
-        stockRows: (stockRows ?? []) as Array<{ quantity: number | null }>,
-        scans14d: (scans14d ?? []) as Array<{ scanned_at: string | null }>,
+        // bigint comes back as a string over PostgREST — coerce, don't trust.
+        totalStock: Number(stockTotal ?? 0),
+        trend,
         recentScans: (recentScans ?? []) as OverviewRecentScan[],
-        stockByProduct: (stockByProduct ?? []) as OverviewStockByProduct[],
-        validSectionIds,
+        lowStock: lowRows.map((r) => ({
+          id: r.id,
+          name: r.name,
+          barcode: r.barcode,
+          reorder_point: r.reorder_point,
+          total: Number(r.on_hand ?? 0),
+          category_name: r.category_name,
+        })),
+        // Window-functioned onto every row, so any row carries the true total.
+        lowStockCount: Number(lowRows[0]?.total_count ?? 0),
         financials: (() => {
           const r = (
             (finRows ?? []) as Array<{
