@@ -5,14 +5,34 @@
 
 > **Status of this document:** generated from the code as of the latest `main`. Every route, permission, field and business rule below was read out of the repo, not assumed. Where something is unverified or environment-dependent it says so explicitly.
 >
-> **Re-checked 2026-08-14** against the security/performance audit ([`audit-2026-08-14.md`](audit-2026-08-14.md)). Finding **A** (the desk app cannot pick) was re-verified and **still holds** — `app.pick_order_item` has no caller in this repo, so Phase 5 still needs the mobile app or seeded `quantity_picked`. §11.3 gained cases for the newly-added security headers, the CSP-doesn't-break-the-app check, CSV numeric integrity, and forecast RBAC.
+> ## Re-verified 2026-08-14 — is this plan good to start?
 >
-> **One number changed on purpose.** "Low stock" now means *available* stock — quarantined
-> units no longer count toward it, and stock in a location with no section assigned now does.
-> The KPI card and the reorder panel share one definition as of migration `20260814140000`,
-> so they must agree; **if they don't, that is a bug worth reporting.** Expect low-stock
-> counts to differ from any pre-2026-08-14 baseline: SKUs whose stock is mostly quarantined
-> will newly appear, and SKUs holding unsectioned stock will drop off.
+> **Yes, with three decisions made first.** Every structural finding below was re-checked
+> against the current code and the live database, not assumed. Two were **wrong** and have
+> been rewritten (**B** and **E** — read them, they changed materially). The pre-flight
+> numbers in §1.5 were stale and are corrected.
+>
+> **Blocking — decide before anyone is scheduled:**
+> 1. **Mobile in or out?** Finding **A** re-confirmed: the desk app still cannot pick
+>    (`app.pick_order_item` has no caller in this repo). Without the mobile app, Phase 5
+>    stops at `in_progress` and Returns is untestable.
+> 2. **Which environment?** Finding **D** re-confirmed: zero `create table` migrations for
+>    all ten core tables. `supabase db reset` yields a broken DB — you must clone the live
+>    project.
+> 3. **Who gets `is_staff`?** No UI for it; `/admin` is unreachable until someone runs the SQL.
+>
+> **Not blocking, but know before you start:**
+> - **One number changed on purpose.** "Low stock" now means *available* stock: quarantined
+>   units no longer count toward it, and stock in a location with no section now does. The
+>   KPI card and the reorder panel share one definition as of migration `20260814140000`, so
+>   they must agree — **if they don't, that is a bug worth reporting.** Expect counts to
+>   differ from any pre-2026-08-14 baseline.
+> - **Security headers are new** (2026-08-14). §11.3 gained cases for them, for CSP not
+>   breaking the app (including Realtime over `wss:`), CSV numeric integrity, low-stock
+>   consistency, and forecast RBAC. **§11.3.7 is the highest-value unrun check** — no
+>   signed-in page has been exercised under the new CSP.
+> - **§1.5.3 and §1.5.4 are unverified here** — they cover the landing repo and live URLs,
+>   which are outside this repo. Re-run them yourself as part of the gate.
 
 ---
 
@@ -111,7 +131,7 @@ npm run dev
 | `INTEGRATION_ENCRYPTION_KEY` | Integration token storage | Integrations fail |
 | `SHOPIFY_API_KEY` / `SECRET` | Shopify connect | Shopify untestable |
 | `STRIPE_SECRET_KEY` / `WEBHOOK_SECRET` / 4× `PRICE_*` | Billing | Billing untestable |
-| `NEXT_PUBLIC_APP_URL` / `SITE_URL` | Links in emails, redirects | Broken links in emails |
+| `NEXT_PUBLIC_APP_URL` / `SITE_URL` | Links in emails, redirects | Links fall back to `http://localhost:3000` and a loud `console.error` fires. **Previously they silently pointed at an unowned domain** — fixed 2026-08-14, see `lib/appUrl.ts` |
 
 **Marketing site:** `ANTHROPIC_API_KEY` (Ask Nautilus chat), `RESEND_API_KEY` + `RESEND_FROM_EMAIL` + `LEAD_TO_EMAIL` (demo/contact forms), `SUPABASE_URL` + `SERVICE_ROLE_KEY` (form storage, chat history), `IP_HASH_SALT` (rate limiting), `NEXT_PUBLIC_GA_MEASUREMENT_ID`, `NEXT_PUBLIC_CALENDLY_URL`, `NEXT_PUBLIC_SITE_URL`.
 
@@ -120,8 +140,8 @@ npm run dev
 ### 1.5 Pre-flight gate (one person, 10 minutes, before the team starts)
 | # | Check | Expected | Result |
 |---|---|---|---|
-| 1.5.1 | `npm test` in `D:\app-nimbus1` | **77 tests pass, 11 files** (verified) | ☐ |
-| 1.5.2 | `npm run build` in `D:\app-nimbus1` | Compiles, 67 static pages, exit 0 (verified) | ☐ |
+| 1.5.1 | `npm test` in the dashboard repo | **88 tests pass, 12 files** (verified 2026-08-14) | ☐ |
+| 1.5.2 | `npm run build` in the dashboard repo | Compiles, exit 0. **100 routes (4 prerendered static, 96 dynamic)** - the old "67 static pages" figure was stale (verified 2026-08-14) | ☐ |
 | 1.5.3 | `npm run build` in landing repo | Compiles, 102 static pages (verified) | ☐ |
 | 1.5.4 | Load both live URLs | Both 200 (verified) | ☐ |
 | 1.5.5 | Confirm `RESEND_API_KEY` is set in the app env | Invite emails will send | ☐ |
@@ -256,10 +276,10 @@ Verified directly against the code. These **change what is testable**. Decide ho
 | # | Finding | Evidence (verified) | Impact on this plan |
 |---|---|---|---|
 | **A** | **The desk app cannot pick.** `quantity_picked` is written only by the `app.pick_order_item` RPC, which has **zero callers** in the web app. The only callers are the mobile app (`app/orders/[id].tsx:769`, `app/waves.tsx:432`). | grep for `pick_order_item` in `app/ lib/ components/` returns one comment | Orders **cannot leave `in_progress`**, waves **cannot complete**, and **Returns are unreachable** from the desk (the Create-return panel only renders when `picked > 0`). **Phase 5 must run with the mobile app, or with `quantity_picked` seeded via SQL.** |
-| **B** | **Receiving does not create stock.** Receiving a PO/ASN only increments `quantity_received`. On-hand exists only after placing product into a slot. | `purchase-orders/actions.ts:290`, `inbound/actions.ts:313`; the UI says so at `purchase-orders/[id]/page.tsx:400` | A tester who receives a PO then checks Inventory sees **0 on hand** and files a false bug. Scripted explicitly in Phase 4. |
+| **B** | **Receiving mostly does not create stock — with one exception.** A plain PO/ASN receipt only increments `quantity_received`; on-hand exists only after placing product into a slot. **BUT** receiving with **"Hold for QC"** *does* land real stock immediately, as a quarantined pseudo-slot (no section, bay 1/level 1). | `purchase-orders/actions.ts` `receiveLineItem` — the `qcHold` branch inserts into `locations` with `quarantined: true`; the plain path does not | A tester who receives a PO then checks Inventory sees **0 on hand** and files a false bug — scripted explicitly in Phase 4. A tester who receives *with QC hold* sees on-hand **increase**, and (since 2026-08-14) that stock counts toward on-hand but **not** toward low-stock availability. Both behaviours are intended. |
 | **C** | **Orders are never linked to customers.** Nothing writes `orders.customer_id`; the order form takes a free-text name. | only two *reads*, at `customers/actions.ts:94,101` | Customer detail's Orders panel is **permanently empty**. One known gap — don't file it repeatedly. |
-| **D** | **The base schema is not in this repo.** Only 46 incremental migrations; **zero** `create table` for `orgs`, `org_members`, `profiles`, `products`, `warehouses`, `org_subscriptions`, `audit_log`, `api_keys`, `integrations`, `notifications`. | verified: 0 migrations create any of them | **You cannot build a clean QA environment from the repo — `supabase db reset` yields a broken DB. Clone the live project.** Also: **RLS on account tables is unverifiable from source, so multi-tenant isolation must be proven empirically (§11.2).** |
-| **E** | **The audit log is never written to.** `audit_log` appears once in the entire codebase — the SELECT that renders the page. | `settings/audit/page.tsx:55` | `/settings/audit` is **permanently empty**. Confirm whether DB triggers exist in the live project; otherwise hide the tab before demos. |
+| **D** | **The base schema is not in this repo.** Only 47 incremental migrations; **zero** `create table` for `orgs`, `org_members`, `profiles`, `products`, `warehouses`, `org_subscriptions`, `audit_log`, `api_keys`, `integrations`, `notifications`. | verified: 0 migrations create any of them | **You cannot build a clean QA environment from the repo — `supabase db reset` yields a broken DB. Clone the live project.** Also: **RLS on account tables is unverifiable from source, so multi-tenant isolation must be proven empirically (§11.2).** |
+| **E** | **The audit log is written by nothing, but is NOT empty.** Re-verified against the live DB 2026-08-14: `app.audit_log` holds **30 rows spanning 2026-04-30 to 2026-05-13** across 12 distinct actions, and **zero functions in any schema** reference `audit_log`. Whatever wrote those rows is gone. | `settings/audit/page.tsx:55` is the only code reference; live DB: 30 rows, newest 2026-05-13, 0 writing functions | **Worse than the previously-documented "permanently empty".** `/settings/audit` shows real-looking but months-stale data, so a tester may conclude the feature works. Treat any expectation of *new* entries as a fail. Decide before demos: backfill a writer, or hide the tab. |
 | **F** | **Mobile push cannot work in the current build.** `extra.eas.projectId` is missing from `app.json`, so registration returns `no-eas-project` and the Settings toggle flips itself back off. | `lib/push.tsx:52-58` | Run `eas init` before Phase 8, or cut push testing. |
 
 ### 3.1 Decisions required before Day 1
@@ -267,7 +287,7 @@ Verified directly against the code. These **change what is testable**. Decide ho
 - [ ] **Which environment?** Production (real data) or a **clone** of the live Supabase project. A rebuild from migrations will not work.
 - [ ] **Who has `is_staff`?** `/admin` is unreachable until someone runs `update app.profiles set is_staff = true where email = '…'`. There is **no UI** for this.
 - [ ] **Is `RESEND_API_KEY` + `SYSTEM_EMAIL_FROM` set?** If not, the single-invite path on `/settings/members` is effectively broken (it says "share the link manually" but never shows the link). Use onboarding/bulk invite paths, which do show links.
-- [ ] **Is `NEXT_PUBLIC_APP_URL` set?** If not, **every email link points at `https://app.nautilus.io`**.
+- [ ] **Is `NEXT_PUBLIC_APP_URL` set?** If not, every email link points at `http://localhost:3000` and the server logs an error on boot. (Until 2026-08-14 they pointed at `https://app.nautilus.io`, a domain we do not own — if you are testing an older deploy, check this first.)
 - [ ] **Stripe / Shopify keys present?** If not, Phases 7.4 and 7.2 become short "degrades correctly" checks.
 - [ ] **Seed data?** Use `node scripts/seed-demo.mjs --org <slug>` (see §1.6). Roughly a third of the screens are blank without it, and the history-dependent reports (forecast, valuation, dead stock, turnover) can't be judged at all on an empty workspace.
 

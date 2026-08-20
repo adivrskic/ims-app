@@ -65,7 +65,7 @@ All four share one **Supabase project** and one **design system** (`nimbus-desig
 - **Auth + data** — Supabase via `@supabase/ssr` (Postgres, Auth, Realtime, Edge Functions)
 - **Styling** — Tailwind CSS driven by CSS-custom-property design tokens
 - **3D** — `three` + `@react-three/fiber` + `@react-three/drei` (lazy-loaded for the facility viewer)
-- **Motion** — GSAP
+- **Motion** — hand-rolled CSS transitions + custom properties (e.g. `lib/useGlowCards.ts`). No animation library; GSAP was removed.
 - **Icons** — Lucide
 - **Hosting** — Netlify (a second site sharing env conventions with the marketing repo)
 
@@ -111,7 +111,7 @@ All four share one **Supabase project** and one **design system** (`nimbus-desig
 
 ### Integrations
 
-Built: **Slack** (reference implementation), **Shopify** (OAuth + webhook ingestion), **Resend** (transactional email), and custom webhook endpoints. Nine more providers (Square, WooCommerce, QuickBooks, Xero, Stripe, ShipStation, FedEx, Gmail, Zapier, HubSpot) ship as stubs — Slack is the template for building any new one.
+Built: **Slack** (reference implementation), **Shopify** (OAuth + webhook ingestion), **Resend** (transactional email), and custom webhook endpoints. Ten more providers (Square, WooCommerce, QuickBooks, Xero, Stripe, ShipStation, FedEx, Gmail, Zapier, HubSpot) ship as stubs — 14 entries in `providers.ts`, 4 built — Slack is the template for building any new one.
 
 ### Admin
 
@@ -397,5 +397,7 @@ A second Netlify site sharing the build profile with the marketing repo.
 - **Workspace context is cookie-driven.** `getCurrentOrgContext` resolves the active workspace from a cookie validated against the user's real memberships (`lib/data/user.ts`); creating additional workspaces goes through the transactional `app.provision_workspace` RPC.
 - **No E2E suite.** `npm test` covers the pure logic (SSRF guard, redirect safety, RBAC math, API-key scopes, rate limiting, allocation, forecasting, replenishment, FEFO, FIFO layers, Code 128, CSV encoding) — 88 tests across 12 files. Anything touching the DB or browser still needs manual verification against the dev server.
 - **Security headers live in `next.config.mjs`, not a host config.** CSP, HSTS, `X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy` and `Permissions-Policy` are emitted by the `headers()` block for every route. Two traps: (1) `script-src` keeps `'unsafe-inline'` deliberately for the pre-hydration theme script — adding a nonce or hash **disables** `'unsafe-inline'` per CSP3 and breaks every other inline script, so it is all-or-nothing; (2) `connect-src` is built from `NEXT_PUBLIC_SUPABASE_URL` and must include the `wss:` form or Realtime silently stops updating.
+- **Two stock numbers, deliberately different.** *On hand* means physical stock and **includes** quarantined units (`app.overview_stock_total`, `inventory_list.on_hand`). *Low stock* is judged on **available** stock and **excludes** quarantined units, because they can't be picked or sold (`app.overview_low_stock`, `inventory_list`'s `p_low_only`). So a SKU can read 30 on hand against a reorder point of 25 and still be flagged low — that is intended. Facility scoping resolves through **sections**, so unsectioned stock counts workspace-wide and drops out when scoped. Unified in `20260814140000`; don't re-diverge them.
+- **Dashboard aggregates live in SQL.** Overview's on-hand total, activity sparkline and low-stock worklist come from `app.overview_stock_total` / `overview_scan_trend` / `overview_low_stock`. `fetchAllPaged` (`lib/data/paginate.ts`) is for COLD paths only — it pulls whole tables in 1000-row pages, and `unstable_cache` won't save you because realtime events bust the cache hardest exactly when the workspace is busiest.
 - **One CSV encoder.** All four export routes share `lib/print/csv.ts`. It defends against spreadsheet formula injection *without* stringifying negative numbers — a subtlety that four divergent copies previously got wrong two different ways. Don't inline a local copy.
 - **Public origin comes from `lib/appUrl.ts`.** Never invent a fallback hostname for invite/reset/email links; an unset `NEXT_PUBLIC_APP_URL` should be loud, not plausible.
