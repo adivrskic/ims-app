@@ -119,8 +119,15 @@ export function LoginForm({ next, initialError }: Props) {
         >
           Use magic link instead →
         </Link>
+        {/* Carry `next` through signup exactly as the magic-link above
+            does. Without it, someone who follows an invite link while
+            signed out lands here, clicks through to sign up, and is then
+            sent to /onboarding to create their OWN workspace instead of
+            joining the one that invited them. */}
         <Link
-          href="/signup"
+          href={`/signup${
+            next !== "/" ? `?next=${encodeURIComponent(next)}` : ""
+          }`}
           className="mono-sm text-text-muted hover:text-text transition-colors"
         >
           New operator? →

@@ -10,7 +10,7 @@ import { PasswordStrength } from "@/components/auth/PasswordStrength";
 import { CornerButton } from "@/components/ui/CornerButton";
 import { signUpWithPassword } from "../actions";
 
-export function SignupForm() {
+export function SignupForm({ next = "/" }: { next?: string }) {
   const [state, formAction, pending] = useActionState(
     signUpWithPassword,
     undefined
@@ -37,6 +37,10 @@ export function SignupForm() {
       </h1>
 
       <form action={formAction}>
+        {/* Where to land after signing up — an invite path when the user
+            arrived from one, otherwise "/" which the action turns into
+            /onboarding. Validated server-side by safeNext(). */}
+        <input type="hidden" name="next" value={next} />
         <ManifestRow number="01" label="Full name">
           <ManifestInput
             type="text"

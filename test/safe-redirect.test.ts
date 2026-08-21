@@ -28,3 +28,27 @@ describe("safeNext (open-redirect guard)", () => {
     expect(safeNext("/ok", "/home")).toBe("/ok");
   });
 });
+
+/* The signup flow now threads `next` through so an invitee who has to
+   create an account lands back on their invite instead of being sent to
+   /onboarding to make a second, empty workspace. That redirect is
+   attacker-influenced (it arrives as a query param), so the invite shape
+   specifically must survive the guard, and hostile look-alikes must not. */
+describe("safeNext — invite destinations", () => {
+  const token = "a".repeat(32);
+
+  it("preserves a genuine invite path", () => {
+    expect(safeNext(`/invite/${token}`)).toBe(`/invite/${token}`);
+  });
+
+  it("preserves an invite path carrying a query string", () => {
+    expect(safeNext(`/invite/${token}?src=email`)).toBe(
+      `/invite/${token}?src=email`
+    );
+  });
+
+  it("rejects an off-site look-alike", () => {
+    expect(safeNext(`https://evil.test/invite/${token}`)).toBe("/");
+    expect(safeNext(`//evil.test/invite/${token}`)).toBe("/");
+  });
+});

@@ -8,6 +8,7 @@ import { sendInviteEmail } from "@/lib/email/invite";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { ALL_PERMISSIONS } from "@/lib/permissions";
 import { sanitizeScopes } from "@/lib/apiScopes";
+import { appUrl as resolveAppUrl } from "@/lib/appUrl";
 
 // ─── MEMBERS ───────────────────────────────────────────────────
 
@@ -79,10 +80,18 @@ export async function inviteMember(_prev: unknown, formData: FormData) {
   }
 
   revalidatePath("/settings/members");
+  if (sent.ok) return { success: `Invite emailed to ${email}` };
+
+  /* The send failed but the invite row is valid, so the link still works.
+     Hand it back for the form to display: telling an admin to "share the
+     link manually" without showing them the link left this path with no
+     way to complete the invite at all — the only recourse was reading it
+     out of the database. Every other invite path (onboarding, new
+     workspace, bulk CSV) already surfaces copy-able links. */
   return {
-    success: sent.ok
-      ? `Invite emailed to ${email}`
-      : `Invite created for ${email} — share the link manually`,
+    success: `Invite created for ${email}, but the email could not be sent — copy the link below and send it yourself.`,
+    inviteUrl: `${resolveAppUrl()}/invite/${token}`,
+    inviteEmail: email,
   };
 }
 

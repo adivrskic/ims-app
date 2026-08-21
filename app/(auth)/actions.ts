@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { headers } from "next/headers";
 import { safeNext } from "@/lib/auth/safe-redirect";
+import { appUrl } from "@/lib/appUrl";
 import { rateLimit, clientIpFrom } from "@/lib/rateLimit";
 
 const RATE_LIMITED_MSG = "Too many attempts. Wait a minute and try again.";
@@ -133,6 +134,12 @@ export async function signUpWithPassword(
   const email = String(formData.get("email") ?? "").trim();
   const password = String(formData.get("password") ?? "");
   const fullName = String(formData.get("full_name") ?? "").trim();
+  /* Where to go once they're in. "/" means "no particular destination",
+     which for a brand-new account means /onboarding. Anything else is an
+     invite (or similar) they were headed to before signing up. safeNext
+     rejects off-site and protocol-relative values. */
+  const next = safeNext(String(formData.get("next") ?? "/"));
+  const destination = next === "/" ? "/onboarding" : next;
 
   if (!email) return { error: "Email is required" };
   if (!password) return { error: "Password is required" };
@@ -145,11 +152,17 @@ export async function signUpWithPassword(
   }
 
   const supabase = await createClient();
+  const h = await headers();
   const { data, error } = await supabase.auth.signUp({
     email,
     password,
     options: {
       data: { full_name: fullName || null },
+      /* Without this the confirmation link drops the destination, so an
+         invitee who has to confirm their email still loses the invite. */
+      emailRedirectTo: `${appUrl(h.get("origin"))}/auth/callback?next=${encodeURIComponent(
+        destination
+      )}`,
     },
   });
   if (error) return { error: friendlyAuthError(error) };
@@ -162,11 +175,13 @@ export async function signUpWithPassword(
     };
   }
 
-  // If sessions are auto-created (email confirmation disabled in
-  // Supabase settings), they land on /onboarding so they can create
-  // their workspace + first facility. The (app)/layout guard would
-  // bounce them there anyway, but redirecting directly avoids a flash.
-  redirect("/onboarding");
+  // Sessions are auto-created when email confirmation is disabled in
+  // Supabase settings. A plain signup goes to /onboarding to create a
+  // workspace + first facility (the (app)/layout guard would bounce them
+  // there anyway; redirecting directly avoids a flash). Someone who came
+  // in from an invite goes back to it instead — creating a second,
+  // empty workspace and abandoning the invite was the old behaviour.
+  redirect(destination);
 }
 
 export async function sendPasswordReset(

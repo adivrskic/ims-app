@@ -754,7 +754,7 @@ Run this on the **exact environment** the customer will see, from a **fresh inco
 
 These were verified during the writing of this plan — testers don't need to rediscover them.
 
-**Items 1–4, 7 and 8 are already FIXED** (commit following this document) — re-test them as regression cases rather than filing them.
+**Items 1–8 are already FIXED** (commit following this document) — re-test them as regression cases rather than filing them.
 
 | # | Sev | Status | Bug | Location | Fix |
 |---|---|---|---|---|---|
@@ -762,8 +762,8 @@ These were verified during the writing of this plan — testers don't need to re
 | 2 | **S2** | ✅ FIXED | Product detail **lot supplier link → 404** | `app/(app)/inventory/[id]/page.tsx:741` | Change `/settings/suppliers/{id}` → `/suppliers/{id}` |
 | 3 | **S2** | ✅ FIXED | **QC pass/fail errors silently swallowed** | `app/(app)/receiving/page.tsx:15` | Accept `searchParams` and render `?error=` |
 | 4 | **S3** | ✅ FIXED | **Duplicate route** `/api/inventory/import-template` from two files returning different CSVs | `app/(app)/api/...` + `app/api/...` | Delete one |
-| 5 | **S2** | open | New invitee funnelled into creating their own workspace instead of joining | `(auth)/actions.ts:169`, `LoginForm.tsx:122` | Preserve `next` through signup |
-| 6 | **S2** | open | Single-invite fallback says "share the link manually" but never shows the link | `settings/actions.ts:84` | Surface the link like the other invite paths |
+| 5 | **S2** | ✅ FIXED | New invitee funnelled into creating their own workspace instead of joining | `(auth)/actions.ts:169`, `LoginForm.tsx:122` | Preserve `next` through signup |
+| 6 | **S2** | ✅ FIXED | Single-invite fallback says "share the link manually" but never shows the link | `settings/actions.ts:84` | Surface the link like the other invite paths |
 | 7 | **S1** | ✅ FIXED | No last-owner guard on `removeMember` | `settings/actions.ts:101` | Block removing the final owner |
 | 8 | **S2** | ✅ FIXED | API key **scopes never enforced** | `app/api/v1/*` | Enforce `auth.scopes` per route |
 | 9 | **S3** | open | `scan_burst` / `daily_summary` webhook events have no producers | `lib/integrations/types.ts:8` | Remove from the picker or implement |
