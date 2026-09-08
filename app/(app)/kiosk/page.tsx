@@ -20,6 +20,8 @@ const EMPTY: KioskData = {
   openOrdersCount: 0,
   pickQueue: [],
   posInTransit: [],
+  pickQueueCount: 0,
+  posInTransitCount: 0,
 };
 
 export default async function KioskPage() {

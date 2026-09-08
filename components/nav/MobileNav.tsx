@@ -2,14 +2,30 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
-import { X, HelpCircle } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { X, HelpCircle, ChevronDown } from "lucide-react";
 import { Logo } from "@/components/ui/Logo";
-import { NAV_GROUPS } from "@/lib/navData";
+import { resolveUserNav, type NavPrefs } from "@/lib/navData";
 
-export function MobileNav() {
+interface Props {
+  /** Workspace industry slug — drives which items show by default. */
+  industry: string | null;
+  /** Per-user nav customization (overrides workspace defaults when set). */
+  navPrefs: NavPrefs | null;
+  /** Org modules enabled at onboarding (between industry and user prefs). */
+  orgModules: string[] | null;
+}
+
+export function MobileNav({ industry, navPrefs, orgModules }: Props) {
   const [open, setOpen] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
   const pathname = usePathname();
+
+  // Same resolver as SideRail, so onboarding/nav choices apply on mobile too.
+  const { groups: navGroups, more: moreItems } = useMemo(
+    () => resolveUserNav(industry, navPrefs, orgModules),
+    [industry, navPrefs, orgModules]
+  );
 
   // Listen for hamburger event
   useEffect(() => {
@@ -100,56 +116,58 @@ export function MobileNav() {
         </header>
 
         <nav className="flex-1 flex flex-col gap-20 px-10 py-16 overflow-y-auto">
-          {NAV_GROUPS.map((group) => (
-            <div key={group.label}>
-              <div className="px-10 mb-6">
-                <span className="label-text">{group.label}</span>
-              </div>
+          {navGroups.map((group, gi) => (
+            <div key={group.label ?? `g${gi}`}>
+              {group.label && (
+                <div className="px-10 mb-6">
+                  <span className="label-text">{group.label}</span>
+                </div>
+              )}
               <ul className="flex flex-col gap-1">
-                {group.items.map((item) => {
-                  const active =
-                    item.href === "/"
-                      ? pathname === "/"
-                      : pathname === item.href ||
-                        pathname.startsWith(`${item.href}/`);
-                  const Icon = item.icon;
-                  return (
-                    <li key={item.href}>
-                      <Link
-                        href={item.href}
-                        onClick={() => setOpen(false)}
-                        className={`relative flex items-center gap-10 px-10 py-10 transition-colors ${
-                          active
-                            ? "bg-[var(--accent-dim)] text-[var(--accent)]"
-                            : "text-text-secondary hover:text-text hover:bg-[var(--surface-2)]"
-                        }`}
-                        aria-current={active ? "page" : undefined}
-                      >
-                        {active && (
-                          <span
-                            className="absolute left-0 top-0 bottom-0 w-px bg-[var(--accent)]"
-                            aria-hidden
-                          />
-                        )}
-                        <Icon size={14} strokeWidth={1.5} />
-                        <span
-                          className="flex-1"
-                          style={{
-                            fontFamily: "var(--mono)",
-                            fontSize: 12,
-                            letterSpacing: "1.5px",
-                            textTransform: "uppercase",
-                          }}
-                        >
-                          {item.label}
-                        </span>
-                      </Link>
-                    </li>
-                  );
-                })}
+                {group.items.map((item) => (
+                  <MobileNavLink
+                    key={item.href}
+                    item={item}
+                    pathname={pathname}
+                    onNavigate={() => setOpen(false)}
+                  />
+                ))}
               </ul>
             </div>
           ))}
+
+          {/* Items not primary for this workspace — reachable under "More". */}
+          {moreItems.length > 0 && (
+            <div>
+              <button
+                type="button"
+                onClick={() => setMoreOpen((o) => !o)}
+                className="w-full flex items-center gap-6 px-10 mb-6 text-text-muted hover:text-text transition-colors"
+                aria-expanded={moreOpen}
+              >
+                <span className="label-text">More</span>
+                <ChevronDown
+                  size={11}
+                  strokeWidth={1.5}
+                  className={`transition-transform ${
+                    moreOpen ? "rotate-180" : ""
+                  }`}
+                />
+              </button>
+              {moreOpen && (
+                <ul className="flex flex-col gap-1">
+                  {moreItems.map((item) => (
+                    <MobileNavLink
+                      key={item.href}
+                      item={item}
+                      pathname={pathname}
+                      onNavigate={() => setOpen(false)}
+                    />
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
         </nav>
 
         <div className="hairline-t px-10 py-10 shrink-0">
@@ -175,5 +193,54 @@ export function MobileNav() {
         </div>
       </aside>
     </>
+  );
+}
+
+function MobileNavLink({
+  item,
+  pathname,
+  onNavigate,
+}: {
+  item: { href: string; label: string; icon: React.ComponentType<{ size?: number; strokeWidth?: number }> };
+  pathname: string;
+  onNavigate: () => void;
+}) {
+  const active =
+    item.href === "/"
+      ? pathname === "/"
+      : pathname === item.href || pathname.startsWith(`${item.href}/`);
+  const Icon = item.icon;
+  return (
+    <li>
+      <Link
+        href={item.href}
+        onClick={onNavigate}
+        className={`relative flex items-center gap-10 px-10 py-10 transition-colors ${
+          active
+            ? "bg-[var(--accent-dim)] text-[var(--accent)]"
+            : "text-text-secondary hover:text-text hover:bg-[var(--surface-2)]"
+        }`}
+        aria-current={active ? "page" : undefined}
+      >
+        {active && (
+          <span
+            className="absolute left-0 top-0 bottom-0 w-px bg-[var(--accent)]"
+            aria-hidden
+          />
+        )}
+        <Icon size={14} strokeWidth={1.5} />
+        <span
+          className="flex-1"
+          style={{
+            fontFamily: "var(--mono)",
+            fontSize: 12,
+            letterSpacing: "1.5px",
+            textTransform: "uppercase",
+          }}
+        >
+          {item.label}
+        </span>
+      </Link>
+    </li>
   );
 }

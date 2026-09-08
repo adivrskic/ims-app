@@ -10,27 +10,15 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { sendInviteEmail } from "@/lib/email/invite";
 import { CURRENT_WORKSPACE_COOKIE } from "@/lib/currentWorkspace";
 import { CURRENT_FACILITY_COOKIE } from "@/lib/currentFacility";
+import {
+  slugify,
+  parseEmailsDetailed,
+  MAX_INVITES,
+} from "@/lib/workspace/helpers";
 
 export interface AdditionalWorkspaceState {
   error?: string;
   invites?: { email: string; url: string }[];
-}
-
-function slugify(name: string): string {
-  return (
-    name
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/(^-|-$)/g, "")
-      .slice(0, 60) || `ws-${randomBytes(3).toString("hex")}`
-  );
-}
-
-function parseEmails(raw: string): string[] {
-  return raw
-    .split(/[\s,;]+/)
-    .map((s) => s.trim().toLowerCase())
-    .filter((s) => s.length > 0 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s));
 }
 
 /**
@@ -81,8 +69,17 @@ export async function createAdditionalWorkspace(
   }
   if (!facilityName) return { error: "Facility name is required" };
 
-  const inviteEmails = parseEmails(inviteRaw).filter((e) => e !== user.email);
-  const uniqueInvites = Array.from(new Set(inviteEmails));
+  // Parsed, deduped, self-excluded (case-insensitively), capped — shared
+  // with the onboarding wizard so both flows agree. This form has no chip
+  // preview to warn in, so an over-cap list is refused outright rather than
+  // silently inviting only the first MAX_INVITES.
+  const parsedInvites = parseEmailsDetailed(inviteRaw, user.email);
+  if (parsedInvites.overflow > 0) {
+    return {
+      error: `You can invite up to ${MAX_INVITES} people at a time — remove ${parsedInvites.overflow} and invite the rest from Settings → Members.`,
+    };
+  }
+  const uniqueInvites = parsedInvites.emails;
 
   // ── 3. Provision (atomic) ────────────────────────────────────────
   // org + owner membership + first facility in one transaction via

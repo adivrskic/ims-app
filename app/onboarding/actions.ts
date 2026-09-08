@@ -8,49 +8,55 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { sendInviteEmail } from "@/lib/email/invite";
 import { isIndustrySlug } from "@/lib/industries";
+import { slugify, parseEmails } from "@/lib/workspace/helpers";
+import {
+  MAX_NAME_LENGTH,
+  isActivityKey,
+  isSizeClass,
+  modulesFromActivities,
+  normalizePriorities,
+} from "@/lib/modules";
+
+export interface OnboardingInvite {
+  email: string;
+  url: string;
+  /** Whether the invite email actually sent (links work regardless). */
+  emailed: boolean;
+}
 
 export interface OnboardingState {
   error?: string;
-  invites?: { email: string; url: string }[];
-}
-
-function slugify(name: string): string {
-  return (
-    name
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/(^-|-$)/g, "")
-      .slice(0, 60) ||
-    // Fallback for names that strip to empty
-    `ws-${randomBytes(3).toString("hex")}`
-  );
-}
-
-function parseEmails(raw: string): string[] {
-  return raw
-    .split(/[\s,;]+/)
-    .map((s) => s.trim().toLowerCase())
-    .filter((s) => s.length > 0 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s));
+  /** Workspace created. The wizard shows the success screen / navigates. */
+  success?: boolean;
+  orgName?: string;
+  invites?: OnboardingInvite[];
+  /** Workspace created but the invite rows failed — recoverable in Settings. */
+  inviteError?: string;
 }
 
 /**
- * Bootstrap a new workspace for a self-signed-up user.
+ * Bootstrap a new workspace for a self-signed-up user from the onboarding
+ * wizard's answers.
  *
  * Preconditions enforced server-side:
  *   - User is authenticated (Supabase auth.getUser)
- *   - User has zero existing memberships — prevents abuse where someone
- *     reuses this flow to create unlimited orgs
+ *   - User has zero existing memberships — checked here for a clean
+ *     redirect, and enforced AGAIN inside the RPC under an advisory lock
+ *     (p_require_no_membership) so a two-tab double submit cannot mint two
+ *     orgs.
  *
- * Steps (admin client, in order):
- *   1. Create the organization
- *   2. Upsert the user's profile row (signup may not have created one)
- *   3. Insert org_members with role=owner
- *   4. Create the first facility (warehouse)
- *   5. Optionally create org_invites for any provided teammate emails + email
+ * Provisioning is ATOMIC: org + profile + owner membership + first facility
+ * (with its default Receiving door) all commit in one transaction via
+ * app.provision_workspace. The wizard's choices persist to
+ * orgs.enabled_modules / priorities / onboarding and warehouses.size_class,
+ * which drive the sidenav, the overview dashboard, and the getting-started
+ * checklist.
  *
- * Non-atomic — if step 3 fails after step 1, the org is orphaned. For
- * v1 this is acceptable (rare; cleanup is a manual SQL). Future: wrap
- * in a Postgres SECURITY DEFINER function so it's transactional.
+ * Invites are inserted after the workspace commits; an insert failure is
+ * surfaced honestly (workspace still created, links recoverable from
+ * Settings → Members) instead of the old silent console.error. Email sends
+ * are awaited and reported per-recipient so the success screen never claims
+ * "we emailed everyone" when a send bounced.
  */
 export async function setUpWorkspace(
   _prev: OnboardingState | undefined,
@@ -86,118 +92,107 @@ export async function setUpWorkspace(
   const inviteRaw = String(formData.get("invite_emails") ?? "");
   const industryRaw = String(formData.get("industry") ?? "").trim();
   const industry = isIndustrySlug(industryRaw) ? industryRaw : null;
+  const sizeRaw = String(formData.get("size_class") ?? "").trim();
+  const sizeClass = isSizeClass(sizeRaw) ? sizeRaw : null;
+  const activities = formData
+    .getAll("activities")
+    .map(String)
+    .filter(isActivityKey);
+  const priorities = normalizePriorities(
+    formData.getAll("priorities").map(String)
+  );
 
   if (!workspaceName) return { error: "Workspace name is required" };
   if (workspaceName.length < 2) {
     return { error: "Workspace name must be at least 2 characters" };
   }
+  // Bounded well under orgs.name's varchar(255): without this, an over-long
+  // name surfaces as a raw Postgres 22001 that repeats on every retry with
+  // no hint that the name is the problem.
+  if (workspaceName.length > MAX_NAME_LENGTH) {
+    return {
+      error: `Workspace name is too long — keep it under ${MAX_NAME_LENGTH} characters.`,
+    };
+  }
   if (!facilityName) return { error: "Facility name is required" };
-
-  const inviteEmails = parseEmails(inviteRaw).filter((e) => e !== user.email);
-  // Deduplicate
-  const uniqueInvites = Array.from(new Set(inviteEmails));
-
-  // ── 4. Provision ─────────────────────────────────────────────────
-  const admin = createAdminClient();
-
-  // 4a. Slug — ensure uniqueness by appending a random suffix on collision.
-  let slug = slugify(workspaceName);
-  const { data: slugTaken } = await admin
-    .from("orgs")
-    .select("id")
-    .eq("slug", slug)
-    .maybeSingle();
-  if (slugTaken) {
-    slug = `${slug}-${randomBytes(2).toString("hex")}`;
+  if (facilityName.length > MAX_NAME_LENGTH) {
+    return {
+      error: `Facility name is too long — keep it under ${MAX_NAME_LENGTH} characters.`,
+    };
   }
 
-  // 4b. Create org
-  const { data: org, error: orgErr } = await admin
-    .from("orgs")
-    .insert({ name: workspaceName, slug, industry })
-    .select("id, name")
-    .single();
-  if (orgErr || !org) {
+  const uniqueInvites = parseEmails(inviteRaw, user.email);
+  const enabledModules = modulesFromActivities(activities);
+
+  // ── 4. Provision (atomic) ────────────────────────────────────────
+  const admin = createAdminClient();
+  const { data: provisioned, error: provErr } = await admin.rpc(
+    "provision_workspace",
+    {
+      p_user_id: user.id,
+      p_user_email: user.email,
+      p_full_name:
+        (user.user_metadata?.full_name as string | undefined) ?? null,
+      p_name: workspaceName,
+      p_slug: slugify(workspaceName),
+      p_industry: industry,
+      p_facility_name: facilityName,
+      p_city: facilityCity || null,
+      p_state: facilityState || null,
+      p_zip: facilityZip || null,
+      p_enabled_modules: enabledModules,
+      p_priorities: priorities.length > 0 ? priorities : null,
+      p_onboarding: {
+        version: 1,
+        industry,
+        activities,
+        priorities,
+        size_class: sizeClass,
+      },
+      p_size_class: sizeClass,
+      p_require_no_membership: true,
+    }
+  );
+  if (provErr || !provisioned) {
+    // The in-RPC double-submit guard: the other tab already created it.
+    if (provErr?.message?.includes("already_member")) redirect("/");
     return {
       error: `Couldn't create the workspace (${
-        orgErr?.message ?? "unknown error"
+        provErr?.message ?? "unknown error"
       }). Try again.`,
     };
   }
+  const orgId = (provisioned as { orgId: string }).orgId;
 
-  // 4c. Upsert profile — signup creates auth.users but not profiles.
-  const { error: profileErr } = await admin.from("profiles").upsert(
-    {
-      id: user.id,
-      email: user.email,
-      full_name: (user.user_metadata?.full_name as string | undefined) ?? null,
-    },
-    { onConflict: "id" }
-  );
-  if (profileErr) {
-    await admin.from("orgs").delete().eq("id", org.id);
-    return {
-      error: `Couldn't create your profile (${profileErr.message}). Try again.`,
-    };
-  }
-
-  // 4d. Membership as owner
-  const { error: memberErr } = await admin.from("org_members").insert({
-    org_id: org.id,
-    user_id: user.id,
-    role: "owner",
-  });
-  if (memberErr) {
-    await admin.from("orgs").delete().eq("id", org.id);
-    return {
-      error: `Couldn't link you to the workspace (${memberErr.message}). Try again.`,
-    };
-  }
-
-  // 4e. First facility
-  const { error: facilityErr } = await admin.from("warehouses").insert({
-    org_id: org.id,
-    name: facilityName,
-    city: facilityCity || null,
-    state: facilityState || null,
-    zip: facilityZip || null,
-    owner_id: user.id,
-    is_active: true,
-  });
-  if (facilityErr) {
-    // Membership + org are now committed — leave them, but report.
-    return {
-      error: `Workspace created, but the first facility failed (${facilityErr.message}). Add one manually from Facilities.`,
-    };
-  }
-
-  // 4f. Optional invites — insert rows, email them, collect share links.
-  let inviteLinks: { email: string; url: string }[] = [];
+  // ── 5. Optional invites ──────────────────────────────────────────
+  let invites: OnboardingInvite[] = [];
+  let inviteError: string | undefined;
   if (uniqueInvites.length > 0) {
     const expiresAtMs = Date.now() + 7 * 24 * 60 * 60 * 1000;
-    const expiresAt = new Date(expiresAtMs).toISOString();
     const inviteRows = uniqueInvites.map((email) => ({
-      org_id: org.id,
+      org_id: orgId,
       email,
       role: "member",
       token: randomBytes(16).toString("hex"),
       invited_by: user.id,
-      expires_at: expiresAt,
+      expires_at: new Date(expiresAtMs).toISOString(),
     }));
     const { error: inviteErr } = await admin
       .from("org_invites")
       .insert(inviteRows);
     if (inviteErr) {
       console.error("[onboarding] invite inserts failed:", inviteErr);
+      inviteError =
+        "Your workspace is ready, but the invites couldn't be created. Add your team from Settings → Members.";
     } else {
       const appUrl = resolveAppUrl();
       const inviterName =
         (user.user_metadata?.full_name as string | undefined) ??
         user.email ??
         "A teammate";
-      await Promise.all(
+      const sendResults = await Promise.all(
         inviteRows.map((row) =>
-          sendInviteEmail(org.id, {
+          sendInviteEmail(orgId, {
             inviterName,
             inviterEmail: user.email ?? "",
             orgName: workspaceName,
@@ -205,20 +200,21 @@ export async function setUpWorkspace(
             token: row.token,
             recipientEmail: row.email,
             expiresAt: new Date(expiresAtMs),
-          }).catch((e) => console.error("[onboarding] invite email failed:", e))
+          }).catch((e) => {
+            console.error("[onboarding] invite email failed:", e);
+            return { ok: false as const };
+          })
         )
       );
-      inviteLinks = inviteRows.map((row) => ({
+      invites = inviteRows.map((row, i) => ({
         email: row.email,
         url: `${appUrl}/invite/${row.token}`,
+        emailed: sendResults[i]?.ok ?? false,
       }));
     }
   }
 
-  // ── 5. Refresh, then show invite links or redirect ────────────────
+  // ── 6. Refresh; the wizard renders the success screen / navigates ─
   revalidatePath("/", "layout");
-  if (inviteLinks.length > 0) {
-    return { invites: inviteLinks };
-  }
-  redirect("/");
+  return { success: true, orgName: workspaceName, invites, inviteError };
 }

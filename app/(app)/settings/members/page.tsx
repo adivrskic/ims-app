@@ -7,6 +7,8 @@ import { BulkInviteButton } from "./BulkInviteButton";
 import { MemberPermissions } from "./MemberPermissions";
 import { removeMember, revokeInvite } from "../actions";
 import { effectivePermissions } from "@/lib/permissions";
+import { appUrl as resolveAppUrl } from "@/lib/appUrl";
+import { CopyInviteLink } from "./CopyInviteLink";
 import { Mail, X } from "lucide-react";
 
 export const metadata = { title: "Members · Settings" };
@@ -38,7 +40,7 @@ export default async function MembersPage() {
       .order("joined_at", { ascending: true }),
     supabase
       .from("org_invites")
-      .select("id, email, role, created_at, expires_at, accepted_at")
+      .select("id, email, role, token, created_at, expires_at, accepted_at")
       .is("accepted_at", null)
       .order("created_at", { ascending: false }),
     supabase
@@ -209,6 +211,7 @@ export default async function MembersPage() {
                 id: string;
                 email: string;
                 role: string;
+                token: string | null;
                 created_at: string | null;
                 expires_at: string | null;
               }) => {
@@ -263,6 +266,12 @@ export default async function MembersPage() {
                     <Badge tone={ROLE_TONE[role]} variant="outline">
                       {role}
                     </Badge>
+                    {isAdmin && inv.token && !isExpired && (
+                      <CopyInviteLink
+                        url={`${resolveAppUrl()}/invite/${inv.token}`}
+                        email={inv.email}
+                      />
+                    )}
                     {isAdmin && (
                       <form action={revokeInvite}>
                         <input type="hidden" name="id" value={inv.id} />

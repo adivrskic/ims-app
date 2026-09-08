@@ -1,5 +1,6 @@
-import Link from "next/link";
+import { LogOut } from "lucide-react";
 import { LogoWordmark } from "@/components/ui/LogoWordmark";
+import { signOut } from "@/app/(auth)/actions";
 
 export const metadata = { title: "Set up workspace · Nautilus" };
 
@@ -14,15 +15,27 @@ export default function OnboardingLayout({
         className="absolute inset-0 dot-grid opacity-40 pointer-events-none"
         aria-hidden
       />
-      <header className="relative z-10 px-32 md:px-48 py-24 flex items-center justify-between">
-        <Link
-          href="/"
-          className="inline-flex items-center text-text"
-          aria-label="Nautilus Inventory"
-        >
+      <header className="relative z-10 px-32 md:px-48 py-24 flex items-center justify-between gap-12">
+        {/* Deliberately NOT a home link: "/" bounces membership-less users
+            straight back here, and the old link wiped in-progress answers. */}
+        <span className="inline-flex items-center text-text" aria-hidden>
           <LogoWordmark size="md" />
-        </Link>
-        <span className="label-text text-text-muted">First-time setup</span>
+        </span>
+        <div className="flex items-center gap-16">
+          <span className="label-text text-text-muted hidden sm:inline">
+            First-time setup
+          </span>
+          {/* Escape hatch for wrong-account signins. */}
+          <form action={signOut}>
+            <button
+              type="submit"
+              className="inline-flex items-center gap-6 mono-sm text-text-muted hover:text-text transition-colors"
+            >
+              <LogOut size={11} strokeWidth={1.5} />
+              Sign out
+            </button>
+          </form>
+        </div>
       </header>
 
       <section className="relative z-10 flex-1 flex items-start justify-center px-20 md:px-32 py-24 md:py-40">

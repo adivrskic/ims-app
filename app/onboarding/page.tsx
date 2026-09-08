@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { OnboardingForm } from "./OnboardingForm";
+import { OnboardingWizard } from "./OnboardingWizard";
 
 export default async function OnboardingPage() {
   const supabase = await createClient();
@@ -23,7 +23,7 @@ export default async function OnboardingPage() {
   }
 
   // Pull the full name from profile (or auth user metadata) to greet them
-  // and pre-fill the form's "your name" hint without making them retype.
+  // without making them retype it.
   const { data: profile } = await supabase
     .from("profiles")
     .select("full_name")
@@ -35,5 +35,11 @@ export default async function OnboardingPage() {
     (user.user_metadata?.full_name as string | undefined) ??
     null;
 
-  return <OnboardingForm fullName={fullName} email={user.email ?? ""} />;
+  return (
+    <OnboardingWizard
+      fullName={fullName}
+      email={user.email ?? ""}
+      userId={user.id}
+    />
+  );
 }

@@ -1,11 +1,15 @@
 import { PageHeader } from "@/components/ui/PageHeader";
-import { GlowKpiGrid } from "@/components/dashboard/GlowKpiGrid";
+import { GlowKpiGrid, type GlowKpi } from "@/components/dashboard/GlowKpiGrid";
 import { formatCurrency } from "@/lib/dashboard";
 import { SectionTitle } from "@/components/ui/SectionTitle";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { CornerLink } from "@/components/ui/CornerButton";
 import { GlowCardGrid } from "@/components/dashboard/GlowCardGrid";
 import { ReorderAlerts } from "@/components/dashboard/ReorderAlerts";
+import {
+  GettingStarted,
+  type GettingStartedItem,
+} from "@/components/dashboard/GettingStarted";
 import { OverviewRealtime } from "@/components/realtime/PageRealtime";
 import type { ScanAction } from "@/types/db";
 import {
@@ -19,17 +23,29 @@ import {
   TrendingUp,
 } from "lucide-react";
 import { getActiveScope, scopeDescription } from "@/lib/facilityScope";
-import { getCurrentOrgContext } from "@/lib/data/user";
+import {
+  getCurrentOrgContext,
+  getActiveMembership,
+  getProfile,
+} from "@/lib/data/user";
 import {
   getOverviewData,
   TREND_DAYS,
   type OverviewData,
 } from "@/lib/data/overview";
 import { getKioskData, type KioskData } from "@/lib/data/kiosk";
+import {
+  resolveDashboard,
+  type DashboardBlock,
+  type DashboardRole,
+  type KpiKey,
+  type SectionKey,
+  type CardKey,
+} from "@/lib/dashboardWidgets";
+import { ALWAYS_ON_MODULES } from "@/lib/modules";
+import type { Permission } from "@/lib/permissions";
 
 export const metadata = { title: "Overview" };
-
-type Role = "owner" | "admin" | "member";
 
 const SCAN_LABEL: Record<ScanAction, string> = {
   register: "REG",
@@ -104,7 +120,7 @@ function deltaVs7d(
   };
 }
 
-/* ── View model shared across the three role layouts ───────────────────── */
+/* ── View model shared across every widget ─────────────────────────────── */
 
 interface OverviewVM {
   scope: Awaited<ReturnType<typeof getActiveScope>>;
@@ -138,6 +154,10 @@ interface OverviewVM {
   pickQueue: KioskData["pickQueue"];
   posInTransit: KioskData["posInTransit"];
   topMovers: KioskData["topMovers"];
+  // True totals for the capped lists — KPI tiles must use these, never
+  // list.length (the lists fetch at most 8 rows).
+  pickQueueCount: number;
+  posInTransitCount: number;
   lowStockCount: number;
   // financial signals (getOverviewData → app.overview_financials)
   inventoryValue: number;
@@ -149,8 +169,12 @@ interface OverviewVM {
 
 export default async function OverviewPage() {
   const scope = await getActiveScope();
-  const ctx = await getCurrentOrgContext();
-  const role: Role = (ctx?.role as Role) ?? "member";
+  const [ctx, membership, profile] = await Promise.all([
+    getCurrentOrgContext(),
+    getActiveMembership(),
+    getProfile(),
+  ]);
+  const role: DashboardRole = (ctx?.role as DashboardRole) ?? "member";
 
   const facilityId = scope.mode === "single" ? scope.id : null;
   const [data, kiosk] = ctx
@@ -188,13 +212,11 @@ export default async function OverviewPage() {
     pickQueue: kiosk?.pickQueue ?? [],
     posInTransit: kiosk?.posInTransit ?? [],
     topMovers: kiosk?.topMovers ?? [],
-    /* Both sources now agree: inventory_list (kiosk) and overview_low_stock
-       share one definition of "low" as of 20260814140000 — available stock,
-       excluding quarantined units, counting unsectioned locations when
-       workspace-wide. Either value is correct; kiosk wins only because it is
-       already loaded. The fallback is the RPC's window-functioned total rather
-       than lowStock.length, which is capped at 6 and made this card read "6"
-       for an org with fifty understocked SKUs. */
+    pickQueueCount: kiosk?.pickQueueCount ?? 0,
+    posInTransitCount: kiosk?.posInTransitCount ?? 0,
+    /* Both sources agree on the "low" rule (available stock, excluding
+       quarantined units) as of 20260814140000; kiosk wins only because it is
+       already loaded. The fallback is the RPC's window-functioned total. */
     lowStockCount: kiosk?.lowStockCount ?? data?.lowStockCount ?? 0,
     inventoryValue: data?.financials.inventoryValue ?? 0,
     deadStockValue: data?.financials.deadStockValue ?? 0,
@@ -207,6 +229,48 @@ export default async function OverviewPage() {
       openOrders: [],
     },
   };
+
+  // ── Choice-driven layout ──────────────────────────────────────────────
+  // The onboarding wizard's answers persist on the org; the resolver turns
+  // them into an ordered block list. Null modules = the classic layout.
+  const org = membership?.org ?? null;
+  const enabledModules = org?.enabled_modules ?? null;
+  const priorities = org?.priorities ?? null;
+  const compact = org?.onboarding?.size_class === "single_room";
+  const moduleSet = enabledModules
+    ? new Set([...enabledModules, ...ALWAYS_ON_MODULES])
+    : null;
+  const hasModule = (m: string) => !moduleSet || moduleSet.has(m);
+
+  const dismissed =
+    profile?.dashboard_prefs?.dismissed_getting_started === true;
+  // "Not started yet" = no products in the catalog. Once a workspace has
+  // products it's operating, so the checklist retires itself (and it's
+  // always manually dismissible before then).
+  const youngWorkspace = productCount === 0;
+  const checklist =
+    !dismissed && youngWorkspace && ctx
+      ? buildChecklist(vm, hasModule, (p) => ctx.can(p))
+      : [];
+
+  let blocks = resolveDashboard(role, enabledModules, priorities, { compact });
+  blocks = blocks.filter((b) => {
+    // The reorder worklist still self-hides when nothing is below threshold —
+    // filtered here, BEFORE numbering, so the numeral sequence has no gaps.
+    if (b.kind === "section" && b.key === "section.reorder_alerts") {
+      return vm.lowStock.length > 0;
+    }
+    if (b.kind === "columns") return true;
+    if (b.kind === "section" && b.key === "section.getting_started") {
+      return checklist.length > 0;
+    }
+    return true;
+  });
+
+  // Numerals derive from actual render order. Columns hold two titled
+  // sections side by side, so they consume two numerals (as before).
+  let numeralCounter = 0;
+  const nextNumeral = () => String(++numeralCounter).padStart(2, "0");
 
   return (
     <PageHeader
@@ -235,268 +299,310 @@ export default async function OverviewPage() {
     >
       <OverviewRealtime warehouseId={facilityId} />
 
-      {role === "owner" ? (
-        <OwnerOverview vm={vm} />
-      ) : role === "admin" ? (
-        <AdminOverview vm={vm} />
-      ) : (
-        <MemberOverview vm={vm} />
-      )}
+      {blocks.map((block, i) => (
+        <Block
+          key={blockKey(block, i)}
+          block={block}
+          vm={vm}
+          role={role}
+          checklist={checklist}
+          nextNumeral={nextNumeral}
+        />
+      ))}
     </PageHeader>
   );
 }
 
+function blockKey(block: DashboardBlock, i: number): string {
+  if (block.kind === "kpis") return block.id;
+  if (block.kind === "section") return block.key;
+  if (block.kind === "columns") return block.keys.join("+");
+  return `quick_jump-${i}`;
+}
+
 /* ════════════════════════════════════════════════════════════════════════
- * Role layouts
+ * Block renderer
  * ════════════════════════════════════════════════════════════════════════ */
 
-/* MEMBER — floor operator. Actionable queues only; no money, no rollups. */
-function MemberOverview({ vm }: { vm: OverviewVM }) {
-  return (
-    <>
-      <section aria-labelledby="signals">
-        <h2 id="signals" className="sr-only">
-          Today
+function Block({
+  block,
+  vm,
+  role,
+  checklist,
+  nextNumeral,
+}: {
+  block: DashboardBlock;
+  vm: OverviewVM;
+  role: DashboardRole;
+  checklist: GettingStartedItem[];
+  nextNumeral: () => string;
+}) {
+  if (block.kind === "kpis") {
+    const kpis = block.kpis.map((k) => buildKpi(k, vm, role));
+    if (block.title) {
+      return (
+        <section aria-labelledby={block.id}>
+          <SectionTitle
+            numeral={nextNumeral()}
+            eyebrow={block.title.eyebrow}
+            title={block.title.title}
+          />
+          <GlowKpiGrid kpis={kpis} />
+        </section>
+      );
+    }
+    return (
+      <section aria-labelledby={block.id}>
+        <h2 id={block.id} className="sr-only">
+          {block.srTitle ?? "Signals"}
         </h2>
-        <GlowKpiGrid
-          kpis={[
-            {
-              label: "Scans · today",
-              value: vm.scansTodayCount.toLocaleString(),
-              spark: vm.trend,
-              delta: {
-                value: `${vm.totalScans14.toLocaleString()} in 14d`,
-                direction: vm.scansTodayCount > 0 ? "up" : "flat",
-                tone: "neutral",
-              },
-            },
-            {
-              label: "Open orders",
-              value: vm.openOrdersCount.toLocaleString(),
-              spark: sparkOr(vm.history.openOrders, vm.openOrdersCount),
-            },
-            {
-              label: "In pick queue",
-              value: vm.pickQueue.length.toLocaleString(),
-              spark: flat(vm.pickQueue.length),
-            },
-            {
-              label: "Low stock",
-              value: vm.lowStockCount.toLocaleString(),
-              spark: sparkOr(vm.history.lowStock, vm.lowStockCount),
-              delta: {
-                value: vm.lowStockCount > 0 ? "Needs reorder" : "All stocked",
-                direction: vm.lowStockCount > 0 ? "down" : "flat",
-                tone: vm.lowStockCount > 0 ? "bad" : "good",
-              },
-            },
-          ]}
-        />
+        <GlowKpiGrid kpis={kpis} />
       </section>
+    );
+  }
 
-      <ReorderSection vm={vm} numeral="02" />
-      <PickQueueSection pickQueue={vm.pickQueue} numeral="03" />
-      <RecentScansSection vm={vm} numeral="04" />
+  if (block.kind === "columns") {
+    return (
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-32">
+        {block.keys.map((key) => (
+          <Section
+            key={key}
+            sectionKey={key}
+            vm={vm}
+            checklist={checklist}
+            numeral={nextNumeral()}
+          />
+        ))}
+      </div>
+    );
+  }
 
-      <QuickJump
-        numeral="05"
-        cards={[CARD.inventory, CARD.orders, CARD.facilities]}
-      />
-    </>
+  if (block.kind === "quick_jump") {
+    return <QuickJump numeral={nextNumeral()} cards={block.cards} />;
+  }
+
+  return (
+    <Section
+      sectionKey={block.key}
+      vm={vm}
+      checklist={checklist}
+      numeral={nextNumeral()}
+    />
   );
 }
 
-/* ADMIN — ops lead. Run-the-floor: order flow + inventory + movers. */
-function AdminOverview({ vm }: { vm: OverviewVM }) {
-  return (
-    <>
-      <section aria-labelledby="order-flow">
-        <SectionTitle numeral="01" eyebrow="Order flow" title="In motion" />
-        <GlowKpiGrid
-          kpis={[
-            {
-              label: "Open orders",
-              value: vm.openOrdersCount.toLocaleString(),
-              spark: sparkOr(vm.history.openOrders, vm.openOrdersCount),
-            },
-            {
-              label: "In pick queue",
-              value: vm.pickQueue.length.toLocaleString(),
-              spark: flat(vm.pickQueue.length),
-            },
-            {
-              label: "POs in transit",
-              value: vm.posInTransit.length.toLocaleString(),
-              spark: flat(vm.posInTransit.length),
-            },
-            {
-              label: "Low stock",
-              value: vm.lowStockCount.toLocaleString(),
-              spark: sparkOr(vm.history.lowStock, vm.lowStockCount),
-              delta: {
-                value: vm.lowStockCount > 0 ? "Needs reorder" : "All stocked",
-                direction: vm.lowStockCount > 0 ? "down" : "flat",
-                tone: vm.lowStockCount > 0 ? "bad" : "good",
-              },
-            },
-          ]}
-        />
-      </section>
-
-      <section aria-labelledby="inventory-signals">
-        <SectionTitle numeral="02" eyebrow="Inventory" title="On hand" />
-        <GlowKpiGrid
-          kpis={[
-            {
-              label: "Scans · today",
-              value: vm.scansTodayCount.toLocaleString(),
-              spark: vm.trend,
-              delta: {
-                value: `${vm.totalScans14.toLocaleString()} in 14d`,
-                direction: vm.scansTodayCount > 0 ? "up" : "flat",
-                tone: "neutral",
-              },
-            },
-            {
-              label: "Units on hand",
-              value: vm.totalStock.toLocaleString(),
-              spark: sparkOr(vm.history.unitsOnHand, vm.totalStock),
-            },
-            {
-              label: "Products",
-              value: vm.productCount.toLocaleString(),
-              spark: flat(vm.productCount),
-            },
-            {
-              label: vm.scope.mode === "single" ? "Sections here" : "Sections",
-              value: vm.sectionCount.toLocaleString(),
-              spark: flat(vm.sectionCount),
-            },
-          ]}
-        />
-      </section>
-
-      <ReorderSection vm={vm} numeral="03" />
-
-      {/* Pick queue + POs side by side on wide screens. */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-32">
-        <PickQueueSection pickQueue={vm.pickQueue} numeral="04" />
-        <PoSection posInTransit={vm.posInTransit} numeral="05" />
-      </div>
-
-      <MoversSection topMovers={vm.topMovers} numeral="06" />
-      <RecentScansSection vm={vm} numeral="07" />
-
-      <QuickJump
-        numeral="08"
-        cards={[
-          CARD.inventory,
-          CARD.orders,
-          CARD.analytics,
-          CARD.facilities,
-          CARD.integrations,
-        ]}
-      />
-    </>
-  );
+function Section({
+  sectionKey,
+  vm,
+  checklist,
+  numeral,
+}: {
+  sectionKey: SectionKey;
+  vm: OverviewVM;
+  checklist: GettingStartedItem[];
+  numeral: string;
+}) {
+  switch (sectionKey) {
+    case "section.getting_started":
+      return <GettingStarted numeral={numeral} items={checklist} />;
+    case "section.reorder_alerts":
+      return <ReorderSection vm={vm} numeral={numeral} />;
+    case "section.pick_queue":
+      return <PickQueueSection pickQueue={vm.pickQueue} numeral={numeral} />;
+    case "section.pos_in_transit":
+      return <PoSection posInTransit={vm.posInTransit} numeral={numeral} />;
+    case "section.top_movers":
+      return <MoversSection topMovers={vm.topMovers} numeral={numeral} />;
+    case "section.recent_scans":
+      return <RecentScansSection vm={vm} numeral={numeral} />;
+    default:
+      return null;
+  }
 }
 
-/* OWNER — exec summary. Rollups + velocity; operational digest beneath. */
-function OwnerOverview({ vm }: { vm: OverviewVM }) {
-  return (
-    <>
-      <section aria-labelledby="signals">
-        <h2 id="signals" className="sr-only">
-          Headline
-        </h2>
-        <GlowKpiGrid
-          kpis={[
-            {
-              label: "Scan velocity · today",
-              value: vm.scansTodayCount.toLocaleString(),
-              spark: vm.trend,
-              delta: {
-                value: `${vm.totalScans14.toLocaleString()} in 14d`,
-                direction: vm.scansTodayCount > 0 ? "up" : "flat",
-                tone: "neutral",
-              },
-            },
-            {
-              label: "Units on hand",
-              value: vm.totalStock.toLocaleString(),
-              spark: sparkOr(vm.history.unitsOnHand, vm.totalStock),
-            },
-            {
-              label: "Open orders",
-              value: vm.openOrdersCount.toLocaleString(),
-              spark: sparkOr(vm.history.openOrders, vm.openOrdersCount),
-            },
-            {
-              label: "Low stock",
-              value: vm.lowStockCount.toLocaleString(),
-              spark: sparkOr(vm.history.lowStock, vm.lowStockCount),
-              delta: {
+/* ── KPI factory ───────────────────────────────────────────────────────── */
+
+function buildKpi(key: KpiKey, vm: OverviewVM, role: DashboardRole): GlowKpi {
+  switch (key) {
+    case "kpi.scans_today":
+      return {
+        label: role === "owner" ? "Scan velocity · today" : "Scans · today",
+        value: vm.scansTodayCount.toLocaleString(),
+        spark: vm.trend,
+        delta: {
+          value: `${vm.totalScans14.toLocaleString()} in 14d`,
+          direction: vm.scansTodayCount > 0 ? "up" : "flat",
+          tone: "neutral",
+        },
+      };
+    case "kpi.open_orders":
+      return {
+        label: "Open orders",
+        value: vm.openOrdersCount.toLocaleString(),
+        spark: sparkOr(vm.history.openOrders, vm.openOrdersCount),
+      };
+    case "kpi.pick_queue":
+      return {
+        label: "In pick queue",
+        value: vm.pickQueueCount.toLocaleString(),
+        spark: flat(vm.pickQueueCount),
+      };
+    case "kpi.pos_in_transit":
+      return {
+        label: "POs in transit",
+        value: vm.posInTransitCount.toLocaleString(),
+        spark: flat(vm.posInTransitCount),
+      };
+    case "kpi.low_stock":
+      return {
+        label: "Low stock",
+        value: vm.lowStockCount.toLocaleString(),
+        spark: sparkOr(vm.history.lowStock, vm.lowStockCount),
+        delta:
+          vm.productCount === 0
+            ? { value: "No products yet", direction: "flat", tone: "neutral" }
+            : {
                 value: vm.lowStockCount > 0 ? "Needs reorder" : "All stocked",
                 direction: vm.lowStockCount > 0 ? "down" : "flat",
                 tone: vm.lowStockCount > 0 ? "bad" : "good",
               },
-            },
-            {
-              label: "Inventory value",
-              value: formatCurrency(vm.inventoryValue),
-              spark: sparkOr(vm.history.inventoryValue, vm.inventoryValue),
-              delta:
-                vm.inventoryValue === 0
-                  ? {
-                      value: "Set unit costs",
-                      direction: "flat",
-                      tone: "neutral",
-                    }
-                  : deltaVs7d(
-                      vm.history.inventoryValue,
-                      vm.inventoryValue,
-                      formatCurrency
-                    ) ?? undefined,
-            },
-            {
-              label: "Capital in dead stock",
-              value: formatCurrency(vm.deadStockValue),
-              delta: {
-                value:
-                  vm.deadStockSkus > 0
-                    ? `${vm.deadStockSkus.toLocaleString()} dormant SKU${
-                        vm.deadStockSkus === 1 ? "" : "s"
-                      }`
-                    : "Nothing dormant",
-                direction: vm.deadStockValue > 0 ? "down" : "flat",
-                tone: vm.deadStockValue > 0 ? "bad" : "good",
-              },
-            },
-          ]}
-        />
-      </section>
+      };
+    case "kpi.units_on_hand":
+      return {
+        label: "Units on hand",
+        value: vm.totalStock.toLocaleString(),
+        spark: sparkOr(vm.history.unitsOnHand, vm.totalStock),
+      };
+    case "kpi.products":
+      return {
+        label: "Products",
+        value: vm.productCount.toLocaleString(),
+        spark: flat(vm.productCount),
+      };
+    case "kpi.sections":
+      return {
+        label: vm.scope.mode === "single" ? "Sections here" : "Sections",
+        value: vm.sectionCount.toLocaleString(),
+        spark: flat(vm.sectionCount),
+      };
+    case "kpi.inventory_value":
+      return {
+        label: "Inventory value",
+        value: formatCurrency(vm.inventoryValue),
+        spark: sparkOr(vm.history.inventoryValue, vm.inventoryValue),
+        delta:
+          vm.inventoryValue === 0
+            ? { value: "Set unit costs", direction: "flat", tone: "neutral" }
+            : deltaVs7d(
+                vm.history.inventoryValue,
+                vm.inventoryValue,
+                formatCurrency
+              ) ?? undefined,
+      };
+    case "kpi.dead_stock":
+      return {
+        label: "Capital in dead stock",
+        value: formatCurrency(vm.deadStockValue),
+        delta: {
+          value:
+            vm.deadStockSkus > 0
+              ? `${vm.deadStockSkus.toLocaleString()} dormant SKU${
+                  vm.deadStockSkus === 1 ? "" : "s"
+                }`
+              : "Nothing dormant",
+          direction: vm.deadStockValue > 0 ? "down" : "flat",
+          tone: vm.deadStockValue > 0 ? "bad" : "good",
+        },
+      };
+  }
+}
 
-      <MoversSection topMovers={vm.topMovers} numeral="02" />
+/* ── Getting-started checklist composition ─────────────────────────────── */
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-32">
-        <PickQueueSection pickQueue={vm.pickQueue} numeral="03" />
-        <PoSection posInTransit={vm.posInTransit} numeral="04" />
-      </div>
+/**
+ * Compose the first-run checklist from the org's enabled modules AND the
+ * viewer's permissions — a day-0 member must never get a card whose page
+ * 403s. Done-states derive from counts already in the view model.
+ */
+function buildChecklist(
+  vm: OverviewVM,
+  hasModule: (m: string) => boolean,
+  can: (permission: Permission) => boolean
+): GettingStartedItem[] {
+  const items: GettingStartedItem[] = [];
 
-      <ReorderSection vm={vm} numeral="05" />
+  if (can("inventory.manage")) {
+    items.push({
+      key: "product",
+      label: "Add your first product",
+      desc: "Register one item to start tracking stock",
+      href: "/inventory",
+      done: vm.productCount > 0,
+    });
+    if (vm.productCount === 0) {
+      items.push({
+        key: "import",
+        label: "…or import your whole catalog",
+        desc: "Upload a CSV — template included",
+        href: "/inventory/import",
+      });
+    }
+  }
+  if (can("facilities.manage")) {
+    items.push({
+      key: "layout",
+      label: "Lay out your space",
+      desc: "Sections and bays make putaway and picking fast",
+      href: "/facilities",
+      done: vm.sectionCount > 0,
+    });
+  }
+  if (hasModule("purchase-orders") && can("purchasing.manage")) {
+    items.push({
+      key: "po",
+      label: "Receive your first purchase order",
+      desc: "Add a supplier, then bring stock in the front door",
+      href: "/purchase-orders/new",
+    });
+  }
+  if (hasModule("orders") && can("orders.manage")) {
+    items.push({
+      key: "order",
+      label: "Create an order",
+      desc: "Pick, stage, and ship your first outbound",
+      href: "/orders/new",
+      done: vm.openOrdersCount > 0,
+    });
+  }
+  items.push({
+    key: "scan",
+    label: "Do your first scan",
+    desc: "Scanning keeps counts honest — try it on anything",
+    href: "/scan",
+    done: vm.scansTodayCount > 0 || vm.totalScans14 > 0,
+  });
+  if (can("members.manage")) {
+    items.push({
+      key: "team",
+      label: "Invite your team",
+      desc: "Teammates join as members with a personal link",
+      href: "/settings/members",
+    });
+  }
+  if (hasModule("integrations") && can("integrations.manage")) {
+    items.push({
+      key: "integrations",
+      label: "Connect your store",
+      desc: "Shopify, QuickBooks, ShipStation and more",
+      href: "/integrations",
+    });
+  }
 
-      <QuickJump
-        numeral="06"
-        cards={[
-          CARD.analytics,
-          CARD.inventory,
-          CARD.orders,
-          CARD.facilities,
-          CARD.integrations,
-        ]}
-      />
-    </>
-  );
+  // 8 is the maximum this function can produce (the "import" item only
+  // appears while productCount === 0, which is the only time the checklist
+  // renders at all). Slicing at 7 silently dropped "Connect your store"
+  // every time for a fully-enabled workspace.
+  return items.slice(0, 8);
 }
 
 /* ════════════════════════════════════════════════════════════════════════
@@ -552,11 +658,16 @@ function PickQueueSection({
           title="Pick queue is clear"
           description="Orders assigned for picking will appear here."
           icon={<ClipboardList size={20} strokeWidth={1.5} />}
+          action={
+            <CornerLink href="/orders/new" variant="ghost" size="sm">
+              New order →
+            </CornerLink>
+          }
         />
       ) : (
         <ul className="hairline bg-[var(--surface)] divide-y divide-[var(--border-subtle)]">
           {pickQueue.slice(0, 6).map((o, i) => (
-            <li key={i} className="px-20 py-12 flex items-center gap-14">
+            <li key={o.order_number ?? i} className="px-20 py-12 flex items-center gap-14">
               <span
                 className="flex-1 min-w-0 truncate text-text"
                 style={{ fontFamily: "var(--display)", fontSize: 13 }}
@@ -602,11 +713,16 @@ function PoSection({
           title="Nothing inbound"
           description="Purchase orders that have shipped will appear here until received."
           icon={<Truck size={20} strokeWidth={1.5} />}
+          action={
+            <CornerLink href="/purchase-orders/new" variant="ghost" size="sm">
+              New purchase order →
+            </CornerLink>
+          }
         />
       ) : (
         <ul className="hairline bg-[var(--surface)] divide-y divide-[var(--border-subtle)]">
           {posInTransit.slice(0, 6).map((po, i) => (
-            <li key={i} className="px-20 py-12 flex items-center gap-14">
+            <li key={po.po_number ?? i} className="px-20 py-12 flex items-center gap-14">
               <span
                 className="flex-1 min-w-0 truncate text-text"
                 style={{ fontFamily: "var(--display)", fontSize: 13 }}
@@ -660,6 +776,11 @@ function MoversSection({
           title="No movement yet"
           description="Once scanning activity builds up, your most-active SKUs will rank here."
           icon={<TrendingUp size={20} strokeWidth={1.5} />}
+          action={
+            <CornerLink href="/scan" variant="ghost" size="sm">
+              Open the scanner →
+            </CornerLink>
+          }
         />
       ) : (
         <ul className="hairline bg-[var(--surface)] divide-y divide-[var(--border-subtle)]">
@@ -704,6 +825,11 @@ function RecentScansSection({
           }
           description="Once your team starts scanning, recent activity will stream here in real time."
           icon={<Activity size={20} strokeWidth={1.5} />}
+          action={
+            <CornerLink href="/scan" variant="ghost" size="sm">
+              Open the scanner →
+            </CornerLink>
+          }
         />
       ) : (
         <ul className="hairline bg-[var(--surface)] divide-y divide-[var(--border-subtle)]">
@@ -750,7 +876,15 @@ function RecentScansSection({
 
 /* ── Quick-jump cards ──────────────────────────────────────────────────── */
 
-const CARD = {
+const CARD: Record<
+  CardKey,
+  {
+    href: string;
+    icon: React.ReactNode;
+    label: string;
+    description: string;
+  }
+> = {
   inventory: {
     href: "/inventory",
     icon: <Boxes size={16} strokeWidth={1.5} />,
@@ -781,19 +915,13 @@ const CARD = {
     label: "Integrations",
     description: "Shopify, QuickBooks, ShipStation, and more.",
   },
-} as const;
+};
 
-function QuickJump({
-  numeral,
-  cards,
-}: {
-  numeral: string;
-  cards: Array<(typeof CARD)[keyof typeof CARD]>;
-}) {
+function QuickJump({ numeral, cards }: { numeral: string; cards: CardKey[] }) {
   return (
     <section aria-labelledby="quick-jump">
       <SectionTitle numeral={numeral} eyebrow="Navigate" title="Quick jump" />
-      <GlowCardGrid cards={cards.map((c) => ({ ...c }))} />
+      <GlowCardGrid cards={cards.map((c) => ({ ...CARD[c] }))} />
     </section>
   );
 }

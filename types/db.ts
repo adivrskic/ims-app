@@ -37,6 +37,23 @@ export interface OrgRow {
   onboarded_at: string | null;
   /** Internal staff notes captured at onboarding. */
   notes: string | null;
+  /** ISO currency code for money display. Defaults 'USD'. */
+  base_currency: string;
+  /** Manual-adjustment approval threshold (units) or null = no approvals. */
+  adjustment_approval_threshold: number | null;
+  /** Opt-in for the scheduled auto-cycle-count cron. Defaults false. */
+  auto_cycle_counts_enabled: boolean;
+  /**
+   * Nav-key module slugs enabled at onboarding (lib/modules.ts), or null =
+   * everything on (pre-wizard orgs). Drives sidenav + dashboard widgets.
+   */
+  enabled_modules: string[] | null;
+  /** Ordered dashboard priorities picked at onboarding (max 3), or null. */
+  priorities: string[] | null;
+  /** Raw onboarding-wizard answers (industry, activities, size, …). */
+  onboarding: unknown;
+  /** Self-serve wizard completion (onboarded_at is the staff marker). */
+  onboarding_completed_at: string | null;
 }
 
 export interface OrgMemberRow {
@@ -44,6 +61,8 @@ export interface OrgMemberRow {
   user_id: string;
   role: "owner" | "admin" | "member";
   joined_at: string | null;
+  /** Per-member permission overrides, or null = role defaults. */
+  permissions: string[] | null;
 }
 
 export interface ProfileRow {
@@ -58,6 +77,14 @@ export interface ProfileRow {
   updated_at: string | null;
   /** Per-user sidenav prefs (keys), or null = use industry defaults. */
   nav_prefs: { order: string[]; hidden: string[] } | null;
+  /** Daily email digest opt-in. Defaults false. */
+  digest_email_enabled: boolean;
+  digest_last_sent_at: string | null;
+  /**
+   * Per-user dashboard overrides, or null = derived from org choices.
+   * Currently: { dismissed_getting_started?: boolean }.
+   */
+  dashboard_prefs: { dismissed_getting_started?: boolean } | null;
 }
 
 export interface WarehouseRow {
@@ -74,6 +101,11 @@ export interface WarehouseRow {
   is_active: boolean | null;
   created_at: string | null;
   updated_at: string | null;
+  floor_canvas_width: number;
+  floor_canvas_height: number;
+  floor_unit: "ft" | "m" | "in";
+  /** Operation size picked at onboarding, or null. */
+  size_class: "single_room" | "single_site" | "multi_site" | null;
 }
 
 export interface SectionRow {

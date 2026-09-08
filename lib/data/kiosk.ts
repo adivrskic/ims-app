@@ -82,6 +82,12 @@ export interface KioskData {
   openOrdersCount: number;
   pickQueue: KioskOrder[];
   posInTransit: KioskPo[];
+  /**
+   * TRUE totals for the two capped lists above (which fetch at most 8 rows).
+   * KPI tiles must use these — a list length can never read above its cap.
+   */
+  pickQueueCount: number;
+  posInTransitCount: number;
 }
 
 function dayKey(d: Date): string {
@@ -164,7 +170,8 @@ export function getKioskData(
           admin
             .from("orders")
             .select(
-              "order_number, status, customer_name, items:order_items ( count )"
+              "order_number, status, customer_name, items:order_items ( count )",
+              { count: "exact" }
             )
             .eq("org_id", orgId)
             .in("status", PICK_QUEUE_STATUSES as unknown as string[])
@@ -174,7 +181,9 @@ export function getKioskData(
         scopeWarehouse(
           admin
             .from("purchase_orders")
-            .select("po_number, supplier_name, status, expected_date")
+            .select("po_number, supplier_name, status, expected_date", {
+              count: "exact",
+            })
             .eq("org_id", orgId)
             .in("status", PO_IN_TRANSIT_STATUSES as unknown as string[])
             .order("expected_date", { ascending: true, nullsFirst: false })
@@ -298,6 +307,8 @@ export function getKioskData(
         openOrdersCount: openCountRes.count ?? 0,
         pickQueue,
         posInTransit,
+        pickQueueCount: pickRes.count ?? pickQueue.length,
+        posInTransitCount: poRes.count ?? posInTransit.length,
       };
     },
     ["kiosk", orgId, facilityId ?? "all"],

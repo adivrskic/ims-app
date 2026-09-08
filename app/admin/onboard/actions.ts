@@ -5,6 +5,7 @@ import { headers } from "next/headers";
 import { appUrl } from "@/lib/appUrl";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getStaffUser } from "@/lib/staff";
+import { slugify } from "@/lib/workspace/helpers";
 
 export interface OnboardResult {
   error?: string;
@@ -16,14 +17,6 @@ export interface OnboardResult {
 }
 
 const VALID_TIERS = ["starter", "pro", "enterprise"] as const;
-
-function slugify(name: string): string {
-  return name
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/(^-|-$)/g, "")
-    .slice(0, 60);
-}
 
 /**
  * Provision a new workspace and invite its first owner.

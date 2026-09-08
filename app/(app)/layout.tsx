@@ -108,7 +108,11 @@ export default async function AppLayout({
             <KioskGate />
           </Suspense>
           <KeyboardShortcuts />
-          <MobileNav />
+          <MobileNav
+            industry={activeMembership.org?.industry ?? null}
+            navPrefs={profile?.nav_prefs ?? null}
+            orgModules={activeMembership.org?.enabled_modules ?? null}
+          />
 
           <SideRail
             user={userForNav}
@@ -121,6 +125,7 @@ export default async function AppLayout({
             currentFacilityId={facilityState.currentId}
             industry={activeMembership.org?.industry ?? null}
             navPrefs={profile?.nav_prefs ?? null}
+            orgModules={activeMembership.org?.enabled_modules ?? null}
           />
 
           <div className="flex-1 min-w-0 flex flex-col min-h-screen">

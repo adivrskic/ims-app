@@ -140,7 +140,7 @@ npm run dev
 ### 1.5 Pre-flight gate (one person, 10 minutes, before the team starts)
 | # | Check | Expected | Result |
 |---|---|---|---|
-| 1.5.1 | `npm test` in the dashboard repo | **88 tests pass, 12 files** (verified 2026-08-14) | ☐ |
+| 1.5.1 | `npm test` in the dashboard repo | **147 tests pass, 16 files** (verified 2026-09-08) | ☐ |
 | 1.5.2 | `npm run build` in the dashboard repo | Compiles, exit 0. **100 routes (4 prerendered static, 96 dynamic)** - the old "67 static pages" figure was stale (verified 2026-08-14) | ☐ |
 | 1.5.3 | `npm run build` in landing repo | Compiles, 102 static pages (verified) | ☐ |
 | 1.5.4 | Load both live URLs | Both 200 (verified) | ☐ |
@@ -309,13 +309,16 @@ Verified directly against the code. These **change what is testable**. Decide ho
 | 4.1.5 | Signup rate limit | 6 rapid signups from one IP | Blocked after 5 (5/IP/600s) | ☐ |
 | 4.1.6 | Happy path | Valid details | **Either** a "Check your email" banner **or** straight to `/onboarding`, depending on the Supabase email-confirmation setting. **Record which your environment does.** | ☐ |
 | 4.1.7 | Confirmation email | Click the link (if confirmation is on) | Authenticated, then `/onboarding` | ☐ |
-| 4.1.8 | Onboarding gating | Leave workspace or facility name blank | Submit stays **disabled** | ☐ |
-| 4.1.9 | Onboarding validation | 1-character workspace name | Rejected ("at least 2 characters") | ☐ |
-| 4.1.10 | Onboarding happy path | Workspace + facility, no invites | Redirect to `/` | ☐ |
-| 4.1.11 | **First impression** | Look at the overview as a brand-new owner | ⚠️ **Expect five empty panels and no "create your first product" CTA.** Answer honestly: would a customer know what to do next? **This is the single biggest demo risk.** | ☐ |
-| 4.1.12 | Onboarding with invites | Add 2 teammate emails | Copy-able `/invite/<token>` links shown | ☐ |
-| 4.1.13 | Idempotence | Return to `/onboarding` afterwards | Redirects to `/`; no second workspace | ☐ |
-| 4.1.14 | Facility-insert failure path | (If reproducible) force the facility insert to fail | "Workspace created, but the first facility failed…" — org and membership still exist | ☐ |
+| 4.1.8 | Wizard — step 1 | On `/onboarding`, a 5-step wizard opens (Workspace · How you work · Facility · Team · Review). Pick an industry card | Card highlights; nothing is pre-selected on load; "Next" advances | ☐ |
+| 4.1.9 | Wizard — name validation | Advance step 1 with a blank / 1-char workspace name | Inline error ("at least 2 characters"); button is never disabled, focus stays on the field | ☐ |
+| 4.1.10 | Wizard — step 2 tailoring | On "How you work", the activity chips arrive **pre-checked from the chosen industry**; toggle some and watch the "Your Nimbus, so far" preview | Preview sidebar + "dashboard leads with" update live to match the choices | ☐ |
+| 4.1.11 | Wizard — priorities | Pick 1–3 "see first" priorities | Chips number in click order; capped at 3 | ☐ |
+| 4.1.12 | Wizard — resume | Refresh mid-wizard, or click a completed step in the rail | Answers survive (localStorage draft); completed steps are clickable to jump back and edit | ☐ |
+| 4.1.13 | Wizard — review + create | Reach "Review", confirm the read-back rows, click "Create workspace" | Lands on `/` (no invites) **or** the success screen (with invites) | ☐ |
+| 4.1.14 | **First impression** | Look at the overview as the brand-new owner | ✅ **Expect a "Getting started" checklist** whose items match the modules you enabled and your role, KPI tiles, and CTA buttons in each empty panel. A customer should know exactly what to do next. | ☐ |
+| 4.1.15 | Customized layout | Compare the sidebar + dashboard to the wizard choices | Deselected modules sit under "More"; the dashboard leads with your priorities; a `single_room` size gives a leaner board | ☐ |
+| 4.1.16 | Onboarding with invites | Add 2 teammate emails; bad addresses turn red inline | Success screen shows per-invite **email sent / email failed** status + copy-able `/invite/<token>` links; same links recoverable at Settings → Members | ☐ |
+| 4.1.17 | Idempotence / double-submit | Return to `/onboarding` afterwards, or submit twice from two tabs | Redirects to `/`; exactly one workspace (advisory-locked in `provision_workspace`) | ☐ |
 
 ### 4.2 Login, session, recovery
 | # | Case | Expected | Result |
@@ -337,7 +340,7 @@ Verified directly against the code. These **change what is testable**. Decide ho
 |---|---|---|---|---|
 | 4.3.1 | Invite a teammate | `/settings/members` → invite B as **member** | Success message | ☐ |
 | 4.3.2 | Email arrives | Check B's inbox | Working link on the **correct host** (see `NEXT_PUBLIC_APP_URL`) | ☐ |
-| 4.3.3 | **Invite a brand-new person** | Invite someone with no account; have them follow their nose | ⚠️ **Known critical break:** `/login` → "New operator?" → `/signup` (no `next`) → hard redirect to `/onboarding` — **they create their own workspace instead of joining yours.** Confirm and rate severity | ☐ |
+| 4.3.3 | **Invite a brand-new person** (regression re-test) | Invite someone with no account; have them follow their nose from the emailed link | Fixed in `e81e9a6`: the invite link threads `next=/invite/<token>` through `/login` → `/signup`, so after signup they land on the invite and **join your workspace** — they are **not** dropped into the onboarding wizard to create their own. Confirm it still holds | ☐ |
 | 4.3.4 | Existing user accepts | Signed in as B, open the link | "Join <org>" → membership created | ☐ |
 | 4.3.5 | Wrong account | Open B's invite while signed in as A | "Email mismatch" naming both addresses | ☐ |
 | 4.3.6 | Re-use accepted invite | Open again | "Already accepted" | ☐ |

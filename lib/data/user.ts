@@ -31,7 +31,7 @@ export const getProfile = cache(async () => {
   const supabase = await createClient();
   const { data } = await supabase
     .from("profiles")
-    .select("id, email, full_name, phone, created_at, nav_prefs")
+    .select("id, email, full_name, phone, created_at, nav_prefs, dashboard_prefs")
     .eq("id", user.id)
     .maybeSingle();
   return data;
@@ -47,6 +47,12 @@ export interface Membership {
     name: string;
     slug: string;
     industry: string | null;
+    /** Nav-key modules enabled at onboarding; null = everything on. */
+    enabled_modules: string[] | null;
+    /** Ordered dashboard priorities from onboarding; null = default order. */
+    priorities: string[] | null;
+    /** Raw onboarding answers (size_class etc.); null for pre-wizard orgs. */
+    onboarding: { size_class?: string | null } | null;
   } | null;
 }
 
@@ -57,7 +63,7 @@ export const getMemberships = cache(async (): Promise<Membership[]> => {
   const { data } = await supabase
     .from("org_members")
     .select(
-      "org_id, role, joined_at, permissions, org:orgs ( id, name, slug, industry )"
+      "org_id, role, joined_at, permissions, org:orgs ( id, name, slug, industry, enabled_modules, priorities, onboarding )"
     )
     .eq("user_id", user.id);
   return (data ?? []).map((m) => {

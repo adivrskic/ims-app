@@ -55,6 +55,8 @@ interface Props {
   industry: string | null;
   /** Per-user nav customization (overrides industry defaults when set). */
   navPrefs: NavPrefs | null;
+  /** Org modules enabled at onboarding (between industry and user prefs). */
+  orgModules: string[] | null;
 }
 
 /**
@@ -81,6 +83,7 @@ export function SideRail({
   currentFacilityId,
   industry,
   navPrefs,
+  orgModules,
 }: Props) {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(initialCollapsed);
@@ -122,12 +125,13 @@ export function SideRail({
     [pathname]
   );
 
-  // Per-user nav (falls back to industry defaults): primary items render
-  // grouped (industry) or as one flat list (customized); the rest collapse
-  // into "More" so nothing's unreachable (⌘K finds everything regardless).
+  // Per-user nav (falls back to org modules, then industry defaults):
+  // primary items render grouped (workspace defaults) or as one flat list
+  // (customized); the rest collapse into "More" so nothing's unreachable
+  // (⌘K finds everything regardless).
   const { groups: navGroups, more: moreItems } = useMemo(
-    () => resolveUserNav(industry, navPrefs),
-    [industry, navPrefs]
+    () => resolveUserNav(industry, navPrefs, orgModules),
+    [industry, navPrefs, orgModules]
   );
 
   const width = collapsed ? COLLAPSED_WIDTH : EXPANDED_WIDTH;

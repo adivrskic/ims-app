@@ -4,6 +4,11 @@ import { revalidatePath } from "next/cache";
 import { getActionContext } from "@/lib/data/actionContext";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { isIndustrySlug, ALWAYS_PRIMARY } from "@/lib/industries";
+import {
+  isActivityKey,
+  modulesFromActivities,
+  normalizePriorities,
+} from "@/lib/modules";
 
 /**
  * Save the current user's sidenav prefs (per-user, on profiles.nav_prefs).
@@ -66,6 +71,37 @@ export async function updateIndustry(formData: FormData): Promise<void> {
 
   const admin = createAdminClient();
   await admin.from("orgs").update({ industry }).eq("id", ctx.orgId);
+
+  revalidatePath("/", "layout");
+}
+
+/**
+ * Update the workspace's enabled modules + dashboard priorities (the same
+ * choices the onboarding wizard captures) — owner/admin only. Drives the
+ * default sidenav for uncustomized members and the overview widget layout.
+ * Same admin-client + role-gate pattern as updateIndustry above.
+ */
+export async function updateWorkModules(formData: FormData): Promise<void> {
+  const ctx = await getActionContext();
+  if ("error" in ctx) return;
+  if (!ctx.can("settings.manage")) return;
+
+  const activities = formData
+    .getAll("activities")
+    .map(String)
+    .filter(isActivityKey);
+  const priorities = normalizePriorities(
+    formData.getAll("priorities").map(String)
+  );
+
+  const admin = createAdminClient();
+  await admin
+    .from("orgs")
+    .update({
+      enabled_modules: modulesFromActivities(activities),
+      priorities: priorities.length > 0 ? priorities : null,
+    })
+    .eq("id", ctx.orgId);
 
   revalidatePath("/", "layout");
 }

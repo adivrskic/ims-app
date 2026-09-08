@@ -214,6 +214,15 @@ textarea {
   font-family: inherit;
 }
 
+/* The [hidden] attribute must always win. Tailwind's display utilities
+   (.flex/.grid) share specificity with the UA [hidden]{display:none} rule
+   and, as author styles, would otherwise override it — so an element with
+   both `hidden` and `className="flex"` (e.g. a hidden wizard step) would
+   stay visible. Force it here. */
+[hidden] {
+  display: none !important;
+}
+
 input,
 textarea {
   caret-color: var(--accent);
