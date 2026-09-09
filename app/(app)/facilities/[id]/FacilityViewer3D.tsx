@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useRef, useState, useEffect } from "react";
+import { useThemeMode } from "@/lib/useThemeMode";
 import { Canvas, useThree, type ThreeEvent } from "@react-three/fiber";
 import { OrbitControls, Text, Billboard, Grid } from "@react-three/drei";
 import * as THREE from "three";
@@ -27,7 +28,37 @@ import type { ElementKind } from "@/app/(app)/facilities/[id]/builder/types";
  */
 
 const LEVEL_HEIGHT = 30; // floor units per rack level — tune later via section.level_height_m
-const ACCENT = "#D4A853";
+/**
+ * Scene palette. The WebGL canvas paints over the themed DOM behind it and
+ * cannot read CSS custom properties, so the role tokens are mirrored here as
+ * literals — one set per theme. Keep these in step with globals.css.
+ */
+const SCENE = {
+  dark: {
+    accent: "#d4a949",
+    clear: "#061124",
+    floor: "#0c1f3c",
+    grid: "#173253",
+    gridSection: "#24466e",
+    outline: "#3a5a80",
+    label: "#e6ecf5",
+    labelMuted: "#a8b8cc",
+    labelSoft: "#d4d4d4",
+    labelOutline: "#000000",
+  },
+  light: {
+    accent: "#8f6d24",
+    clear: "#f2f2ef",
+    floor: "#ffffff",
+    grid: "#e4e4df",
+    gridSection: "#cdcdc6",
+    outline: "#b0b0a8",
+    label: "#111110",
+    labelMuted: "#63635e",
+    labelSoft: "#3d3d3a",
+    labelOutline: "#ffffff",
+  },
+} as const;
 
 /** SVG-positive-CW degrees → Three.js Y-axis radians (right-hand-rule). */
 const ry = (deg: number) => -((deg || 0) * Math.PI) / 180;
@@ -49,6 +80,7 @@ export function FacilityViewer3D({
   elements,
   onSectionClick,
 }: Props) {
+  const c = SCENE[useThemeMode()];
   // Frame the camera around the canvas center. Distance is derived from the
   // canvas diagonal so small facilities don't get a wide-shot vibe.
   const center: [number, number, number] = useMemo(
@@ -75,7 +107,7 @@ export function FacilityViewer3D({
         gl={{ antialias: true, alpha: false }}
         camera={{ position: cameraPosition, fov: 42, near: 1, far: diag * 8 }}
         onCreated={({ gl }) => {
-          gl.setClearColor(new THREE.Color("#0a0a0a"));
+          gl.setClearColor(new THREE.Color(c.clear));
         }}
       >
         {/* Lights — warm key from above-right, cool fill, ambient lift. */}
@@ -101,7 +133,7 @@ export function FacilityViewer3D({
           receiveShadow
         >
           <planeGeometry args={[canvasWidth, canvasHeight]} />
-          <meshStandardMaterial color="#0e0e0e" roughness={1} metalness={0} />
+          <meshStandardMaterial color={c.floor} roughness={1} metalness={0} />
         </mesh>
 
         {/* Grid overlay — major every 200, minor every 50 (matches the 2D builder's feel). */}
@@ -110,10 +142,10 @@ export function FacilityViewer3D({
           args={[canvasWidth, canvasHeight]}
           cellSize={50}
           cellThickness={0.5}
-          cellColor="#1a1a1a"
+          cellColor={c.grid}
           sectionSize={200}
           sectionThickness={1}
-          sectionColor="#262626"
+          sectionColor={c.gridSection}
           fadeDistance={diag * 1.8}
           fadeStrength={1.4}
           infiniteGrid={false}
@@ -218,6 +250,7 @@ function FootprintOutline({
   width: number;
   height: number;
 }) {
+  const c = SCENE[useThemeMode()];
   const geom = useMemo(() => {
     const g = new THREE.BufferGeometry();
     const pts = new Float32Array([
@@ -244,7 +277,7 @@ function FootprintOutline({
   return (
     <line>
       <primitive object={geom} attach="geometry" />
-      <lineBasicMaterial color="#3a3a3a" />
+      <lineBasicMaterial color={c.outline} />
     </line>
   );
 }
@@ -258,6 +291,7 @@ function SectionMesh({
   s: ViewerSection;
   onClick: () => void;
 }) {
+  const c = SCENE[useThemeMode()];
   const [hover, setHover] = useState(false);
   const height = Math.max(LEVEL_HEIGHT, s.total_levels * LEVEL_HEIGHT);
   const occRatio =
@@ -312,7 +346,7 @@ function SectionMesh({
       {/* Edge outline */}
       <lineSegments position={[0, height / 2, 0]}>
         <primitive object={edges} attach="geometry" />
-        <lineBasicMaterial color={hover ? ACCENT : s.color} />
+        <lineBasicMaterial color={hover ? c.accent : s.color} />
       </lineSegments>
 
       {/* Shelf planes — one for each level boundary (skip the floor) */}
@@ -353,11 +387,11 @@ function SectionMesh({
       <Billboard position={[0, height + 16, 0]}>
         <Text
           fontSize={Math.min(22, Math.max(8, s.floor_width / 4))}
-          color="#ffffff"
+          color={c.label}
           anchorX="center"
           anchorY="middle"
           outlineWidth={0.4}
-          outlineColor="#000000"
+          outlineColor={c.labelOutline}
         >
           {s.code}
         </Text>
@@ -368,11 +402,11 @@ function SectionMesh({
         <Billboard position={[0, height + 6, 0]}>
           <Text
             fontSize={Math.min(10, Math.max(5, s.floor_width / 9))}
-            color="#a3a3a3"
+            color={c.labelMuted}
             anchorX="center"
             anchorY="middle"
             outlineWidth={0.25}
-            outlineColor="#000000"
+            outlineColor={c.labelOutline}
           >
             {s.name}
           </Text>
@@ -387,6 +421,7 @@ function SectionMesh({
 const BG_KINDS = new Set<ElementKind>(["walkway", "obstacle", "staging"]);
 
 function ElementMesh({ element: el }: { element: ViewerElement }) {
+  const c = SCENE[useThemeMode()];
   const cx = el.floor_x + el.floor_width / 2;
   const cz = el.floor_y + el.floor_height / 2;
 
@@ -435,11 +470,11 @@ function ElementMesh({ element: el }: { element: ViewerElement }) {
             <Billboard position={[0, h + 4, 0]}>
               <Text
                 fontSize={Math.min(10, el.floor_width / 8)}
-                color="#d4d4d4"
+                color={c.labelSoft}
                 anchorX="center"
                 anchorY="middle"
                 outlineWidth={0.2}
-                outlineColor="#000"
+                outlineColor={c.labelOutline}
               >
                 {el.label}
               </Text>
@@ -507,11 +542,11 @@ function ElementMesh({ element: el }: { element: ViewerElement }) {
                   10,
                   Math.max(el.floor_width, el.floor_height) / 6
                 )}
-                color="#ffffff"
+                color={c.label}
                 anchorX="center"
                 anchorY="middle"
                 outlineWidth={0.25}
-                outlineColor="#000"
+                outlineColor={c.labelOutline}
               >
                 {el.label}
               </Text>
@@ -556,7 +591,7 @@ function ElementMesh({ element: el }: { element: ViewerElement }) {
               anchorX="center"
               anchorY="middle"
               outlineWidth={0.3}
-              outlineColor="#000"
+              outlineColor={c.labelOutline}
             >
               {el.label || "Note"}
             </Text>

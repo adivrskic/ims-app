@@ -15,108 +15,142 @@
   box-sizing: border-box;
 }
 
-/* ═══ TOKENS ═══ */
+/* ═══ TOKENS ═══
+ *
+ * THEMING CONTRACT
+ * ----------------
+ * Every themeable colour resolves through a ROLE token defined here:
+ * --bg / --surface* / --text* / --border* / --accent* / the semantic set.
+ * Components must never reach for a PRIMITIVE (--black, --white, --gray-N)
+ * or a raw hex for anything that should change with the theme — primitives
+ * are fixed values and do not flip; role tokens do.
+ *
+ * Dark is the default (`:root`). Every light value lives in exactly ONE
+ * place: the `:root[data-theme="light"]` block below.
+ *
+ * That doubled selector is deliberate. `:root` and `[data-theme="light"]`
+ * have IDENTICAL specificity (0,1,0), so a plain `[data-theme="light"]`
+ * block loses to any `:root` block that comes later in source order —
+ * which is precisely how light mode silently broke once
+ * globals-underwater.css (imported after this file) began redefining role
+ * tokens in its own `:root`. Writing `:root[data-theme="light"]` scores
+ * (0,2,0) and therefore beats every plain `:root`, whatever the import
+ * order. Keep it that way.
+ */
 :root {
-  /* Neutrals */
+  /* ── Primitives ── fixed values; never theme-dependent. Use only to
+     build role tokens, or where a colour must NOT flip (e.g. ink on a
+     gold chip, which is gold in both themes). */
   --black: #000000;
-  --near-black: #0a0a0a;
-  --white: #ffffff;
-  --gray-1: #f5f5f5;
-  --gray-2: #a3a3a3;
-  --gray-3: #737373;
   --gray-4: #404040;
-  --gray-5: #262626;
-  --gray-6: #171717;
-  --gray-7: #0e0e0e;
 
-  /* Brand */
-  --accent: #d4a853;
+  /* ── Brand ── */
+  --accent: #d4a949;
   --accent-bright: #e7c074;
   --accent-deep: #9a7732;
-  --accent-dim: rgba(212, 168, 83, 0.15);
-  --accent-soft: rgba(212, 168, 83, 0.55);
-  --accent-glow: rgba(212, 168, 83, 0.08);
+  --accent-dim: rgba(212, 169, 73, 0.18);
+  --accent-soft: rgba(212, 169, 73, 0.55);
+  --accent-glow: rgba(212, 169, 73, 0.08);
+  /* Ink for content sitting ON an accent fill (badge counts, avatar
+     initials, the accent button). It must flip: black clears AA on the
+     bright dark-mode gold but only reaches 4.4:1 on the deeper gold light
+     mode uses, where white reaches 4.8:1. */
+  --on-accent: #000000;
 
-  /* Semantic */
-  --success: #22c55e;
-  --success-dim: rgba(34, 197, 94, 0.12);
-  --warning: #d97706;
-  --warning-dim: rgba(217, 119, 6, 0.12);
-  --danger: #ef4444;
-  --danger-dim: rgba(239, 68, 68, 0.1);
-  --info: #60a5fa;
-  --info-dim: rgba(96, 165, 250, 0.12);
+  /* ── Semantic ── */
+  --success: #4ade80;
+  --success-dim: rgba(74, 222, 128, 0.12);
+  --warning: #f5b545;
+  --warning-dim: rgba(245, 181, 69, 0.14);
+  --danger: #ef4f5e;
+  --danger-dim: rgba(239, 79, 94, 0.13);
+  --info: #5ba6e6;
+  --info-dim: rgba(91, 166, 230, 0.13);
+  /* Border companions for the *-dim fills. These were previously inlined as
+     border-[rgba(...,0.45)] at ~55 call sites, which froze them to dark
+     values (and had already drifted from the tokens they were meant to
+     match). One token per tone, so an alert banner flips whole. */
+  --success-border: rgba(74, 222, 128, 0.45);
+  --warning-border: rgba(245, 181, 69, 0.45);
+  --danger-border: rgba(239, 79, 94, 0.45);
+  --info-border: rgba(91, 166, 230, 0.45);
+  --accent-border: rgba(212, 169, 73, 0.45);
+  /* Modal / drawer backdrop */
+  --scrim: rgba(0, 0, 0, 0.55);
+  --scrim-heavy: rgba(0, 0, 0, 0.7);
+  /* Focus ring around a field. Alpha differs per theme: a wash that reads on
+     near-black is invisible on white. */
+  --focus-ring: rgba(212, 169, 73, 0.18);
+  /* Surface sheens — a light wash that lifts a panel off a dark ground. In
+     light mode the same trick has to darken instead, or it does nothing. */
+  --sheen: rgba(255, 255, 255, 0.025);
+  --sheen-faint: rgba(255, 255, 255, 0.008);
 
-  /* Roles */
-  --bg: var(--black);
-  --bg-elevated: var(--near-black);
-  --text: var(--white);
-  --text-secondary: var(--gray-2);
-  --text-muted: var(--gray-3);
-  --text-dim: var(--gray-4);
-  --border: var(--gray-5);
-  --border-hover: var(--gray-4);
-  --border-subtle: rgba(255, 255, 255, 0.06);
-  --border-faint: rgba(255, 255, 255, 0.04);
-  /* surface lifts ~4% off pure black — cards are defined by their hairline,
-     not their fill. avoids the muddy mid-grey "panel" look. */
-  --surface: var(--near-black);
-  --surface-2: rgba(255, 255, 255, 0.02);
+  /* ── Surfaces & ink ── the deep-water stack. These used to live in
+     globals-underwater.css; they are the app's real dark palette and
+     belong with every other role token. That file now owns only the
+     atmosphere effect. */
+  --bg: #061124;
+  --bg-elevated: #0c1f3c;
+  --surface: #0c1f3c;
+  --surface-2: #142a4d;
   --surface-3: rgba(255, 255, 255, 0.04);
-  --glass-bg: rgba(0, 0, 0, 0.8);
-  --glass-bg-heavy: rgba(0, 0, 0, 0.85);
-  --glass-border: rgba(255, 255, 255, 0.06);
+  --text: #e6ecf5;
+  --text-secondary: #a8b8cc;
+  --text-muted: #7388a8;
+  --text-dim: #4d6585;
+  --border: rgba(140, 175, 220, 0.16);
+  --border-subtle: rgba(140, 175, 220, 0.08);
+  --border-faint: rgba(255, 255, 255, 0.04);
+  --border-hover: rgba(160, 195, 240, 0.32);
 
-  /* Type */
+  /* Elevation for detached panels (the floating side rail). Low on
+     purpose — it lifts a panel off the page without turning the flat,
+     hairline-first language into drop-shadowed cards. */
+  --shadow-panel: 0 1px 2px rgba(0, 0, 0, 0.45),
+    0 14px 36px rgba(2, 7, 18, 0.45);
+
+  /* Loading shimmer */
+  --skeleton-from: rgba(255, 255, 255, 0.04);
+  --skeleton-to: rgba(255, 255, 255, 0.1);
+
+  /* ── Type ── */
   --display: var(--font-satoshi, "Satoshi"), -apple-system, "SF Pro Display",
     system-ui, sans-serif;
   --mono: var(--font-jetbrains, "JetBrains Mono"), "SF Mono", Menlo, Consolas,
     monospace;
 
-  /* Motion */
+  /* ── Motion ── */
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
-  --ease-smooth: cubic-bezier(0.16, 1, 0.3, 1);
   --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
-  --dur-instant: 120ms;
   --dur-quick: 200ms;
   --dur-base: 300ms;
   --dur-slow: 500ms;
 
-  /* Legacy aliases (parity with marketing site) */
-  --primary: var(--accent);
-  --light: var(--gray-1);
-  --dark: var(--black);
-  --divider: var(--gray-5);
-  --divider-light: var(--border-subtle);
-  /* Elevation for detached panels (the floating side rail). Kept very low
-     so the flat, hairline-first language still reads — this lifts a panel
-     off the page rather than making it a drop-shadowed card. */
-  --shadow-panel: 0 1px 2px rgba(0, 0, 0, 0.5), 0 12px 32px rgba(0, 0, 0, 0.28);
-  --dark-card-bg: rgba(255, 255, 255, 0.02);
-  --dark-card-border: rgba(255, 255, 255, 0.06);
-  --dark-grid-primary: rgba(212, 168, 83, 0.04);
-  --dark-grid-accent: rgba(212, 168, 83, 0.06);
 }
 
-/* ═══ LIGHT THEME (cream) ═══
-   Same gold accent, dark text on warm cream surfaces.
-   Triggered by [data-theme="light"] on the <html> element. */
-[data-theme="light"] {
-  /* Cream surface stack */
-  --cream-bg: #f5efde;
-  --cream-surface: #fdfaf0;
-  --cream-elevated: #ffffff;
-  --warm-ink: #1a1612;
+/* ═══ LIGHT THEME — paper, ink and gold ═══
+ *
+ * Paper-white page, near-black ink, the same gold. Panels are pure white
+ * so they lift off the paper the way they lift off the water in dark.
+ *
+ * Every role token above is re-stated here. If you add a role token to
+ * `:root`, add its light value here too — a token defined in only one
+ * block is a light-mode bug waiting to happen.
+ */
+:root[data-theme="light"] {
+  /* Brand — the display gold is darkened for contrast. #d4a949 on white
+     is ~1.9:1, which fails as text, as an icon, and as a 1px border. This
+     is still unmistakably gold but clears AA for body text. */
+  --accent: #8f6d24;
+  --accent-bright: #a8822f;
+  --accent-deep: #6f5419;
+  --accent-dim: rgba(143, 109, 36, 0.12);
+  --accent-soft: rgba(143, 109, 36, 0.5);
+  --accent-glow: rgba(143, 109, 36, 0.1);
+  --on-accent: #ffffff;
 
-  /* Brand — same gold; deep used for text-on-cream contexts */
-  --accent: #d4a853;
-  --accent-bright: #e7c074;
-  --accent-deep: #8b6a1f;
-  --accent-dim: rgba(212, 168, 83, 0.18);
-  --accent-soft: rgba(212, 168, 83, 0.7);
-  --accent-glow: rgba(212, 168, 83, 0.12);
-
-  /* Semantic colors deepened for AA contrast on cream */
+  /* Semantic — deepened to stay legible on white */
   --success: #15803d;
   --success-dim: rgba(21, 128, 61, 0.1);
   --warning: #b45309;
@@ -125,53 +159,51 @@
   --danger-dim: rgba(185, 28, 28, 0.08);
   --info: #1d4ed8;
   --info-dim: rgba(29, 78, 216, 0.1);
+  --success-border: rgba(21, 128, 61, 0.35);
+  --warning-border: rgba(180, 83, 9, 0.35);
+  --danger-border: rgba(185, 28, 28, 0.32);
+  --info-border: rgba(29, 78, 216, 0.32);
+  --accent-border: rgba(143, 109, 36, 0.42);
+  /* A black veil over paper reads as a bruise; ink at lower alpha instead. */
+  --scrim: rgba(17, 17, 16, 0.35);
+  --scrim-heavy: rgba(17, 17, 16, 0.45);
+  --focus-ring: rgba(143, 109, 36, 0.22);
+  --sheen: rgba(17, 17, 16, 0.03);
+  --sheen-faint: rgba(17, 17, 16, 0.012);
 
-  /* Roles */
-  --bg: var(--cream-bg);
-  --bg-elevated: var(--cream-surface);
-  --text: var(--warm-ink);
-  --text-secondary: #3d362e;
-  --text-muted: #6b6259;
-  --text-dim: #948b80;
-  --border: rgba(26, 22, 18, 0.18);
-  --border-hover: rgba(26, 22, 18, 0.32);
-  --border-subtle: rgba(26, 22, 18, 0.08);
-  --border-faint: rgba(26, 22, 18, 0.05);
+  /* Surfaces & ink */
+  --bg: #f2f2ef;
+  --bg-elevated: #ffffff;
+  --surface: #ffffff;
+  --surface-2: rgba(17, 17, 16, 0.04);
+  --surface-3: rgba(17, 17, 16, 0.07);
+  --text: #111110;
+  --text-secondary: #3d3d3a;
+  --text-muted: #63635e;
+  --text-dim: #92928c;
+  --border: rgba(17, 17, 16, 0.18);
+  --border-subtle: rgba(17, 17, 16, 0.11);
+  --border-faint: rgba(17, 17, 16, 0.06);
+  --border-hover: rgba(17, 17, 16, 0.32);
 
-  --surface: var(--cream-surface);
-  --surface-2: rgba(26, 22, 18, 0.03);
-  --surface-3: rgba(26, 22, 18, 0.06);
-  --shadow-panel: 0 1px 2px rgba(26, 22, 18, 0.06),
-    0 12px 32px rgba(26, 22, 18, 0.08);
-  --glass-bg: rgba(253, 250, 240, 0.85);
-  --glass-bg-heavy: rgba(253, 250, 240, 0.92);
-  --glass-border: rgba(26, 22, 18, 0.1);
+  --shadow-panel: 0 1px 2px rgba(17, 17, 16, 0.05),
+    0 12px 32px rgba(17, 17, 16, 0.1);
 
-  /* Legacy aliases */
-  --primary: var(--accent);
-  --light: var(--cream-elevated);
-  --dark: var(--warm-ink);
-  --divider: rgba(26, 22, 18, 0.18);
-  --divider-light: rgba(26, 22, 18, 0.08);
-  --dark-card-bg: rgba(26, 22, 18, 0.02);
-  --dark-card-border: rgba(26, 22, 18, 0.08);
-  --dark-grid-primary: rgba(212, 168, 83, 0.07);
-  --dark-grid-accent: rgba(212, 168, 83, 0.1);
+  --skeleton-from: rgba(17, 17, 16, 0.05);
+  --skeleton-to: rgba(17, 17, 16, 0.12);
+
 }
 
 /* Light-mode-specific tweaks for effects that depend on dark backgrounds */
-[data-theme="light"] body::before,
-[data-theme="light"] .grain-overlay {
-  opacity: 0.4;
+/* The grain lives on body::after. `overlay` blending brightens on a light
+   ground, so switch to multiply and lighten it for paper. */
+[data-theme="light"] body::after {
+  opacity: 0.025;
   mix-blend-mode: multiply;
 }
 
-[data-theme="light"] .dot-grid {
-  opacity: 0.5;
-}
-
 [data-theme="light"] .hairline {
-  box-shadow: 0 1px 0 rgba(26, 22, 18, 0.02);
+  box-shadow: 0 1px 0 rgba(17, 17, 16, 0.02);
 }
 
 [data-theme="light"] .glow-card::before {
@@ -388,7 +420,7 @@ table,
 .glow-card::before {
   background: radial-gradient(
     600px circle at var(--mouse-x) var(--mouse-y),
-    rgba(212, 168, 83, 0.06),
+    var(--accent-glow),
     transparent 40%
   );
   z-index: 3;
@@ -396,7 +428,7 @@ table,
 .glow-card > .glow-card-border {
   background: radial-gradient(
     600px circle at var(--mouse-x) var(--mouse-y),
-    rgba(212, 168, 83, 0.25),
+    color-mix(in srgb, var(--accent) 25%, transparent),
     transparent 40%
   );
   z-index: 1;
@@ -436,7 +468,7 @@ table,
   background: radial-gradient(
     circle at center,
     var(--accent-glow) 0%,
-    rgba(212, 168, 83, 0.03) 30%,
+    color-mix(in srgb, var(--accent) 3%, transparent) 30%,
     transparent 70%
   );
   pointer-events: none;
@@ -490,8 +522,8 @@ table,
     180deg,
     transparent 0px,
     transparent 3px,
-    rgba(255, 255, 255, 0.008) 3px,
-    rgba(255, 255, 255, 0.008) 4px
+    var(--sheen-faint) 3px,
+    var(--sheen-faint) 4px
   );
 }
 
@@ -502,7 +534,7 @@ table,
   font-weight: 600;
   line-height: 1.02;
   letter-spacing: -2px;
-  color: var(--white);
+  color: var(--text);
 }
 .heading-lg {
   font-family: var(--display);
@@ -510,7 +542,7 @@ table,
   font-weight: 700;
   line-height: 1.06;
   letter-spacing: -2px;
-  color: var(--white);
+  color: var(--text);
 }
 .heading-md {
   font-family: var(--display);
@@ -518,7 +550,7 @@ table,
   font-weight: 700;
   line-height: 1.08;
   letter-spacing: -1.5px;
-  color: var(--white);
+  color: var(--text);
 }
 .heading-sm {
   font-family: var(--display);
@@ -663,7 +695,7 @@ table,
 .surface-elevated {
   background: linear-gradient(
       180deg,
-      rgba(255, 255, 255, 0.025) 0%,
+      var(--sheen) 0%,
       transparent 100%
     ),
     var(--surface);
@@ -691,14 +723,14 @@ table,
 .field-shell:focus-within {
   border-color: var(--accent-soft);
   background: var(--surface-3);
-  box-shadow: 0 0 0 4px rgba(212, 168, 83, 0.08);
+  box-shadow: 0 0 0 4px var(--focus-ring);
 }
 .field-shell[data-error="true"] {
-  border-color: rgba(239, 68, 68, 0.55);
+  border-color: color-mix(in srgb, var(--danger) 55%, transparent);
   background: var(--danger-dim);
 }
 .field-shell[data-error="true"]:focus-within {
-  box-shadow: 0 0 0 4px rgba(239, 68, 68, 0.1);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--danger) 12%, transparent);
 }
 .field-input {
   width: 100%;
@@ -797,7 +829,7 @@ table,
   cursor: pointer;
   opacity: 0.55;
   transition: opacity var(--dur-quick) var(--ease-out);
-  filter: var(--calendar-indicator-filter, invert(0.85));
+  filter: invert(0.85);
 }
 .field-input::-webkit-calendar-picker-indicator:hover {
   opacity: 1;
@@ -806,17 +838,7 @@ table,
   filter: none;
 }
 
-/* ═══ SKELETON / LOADING ═══ */
-:root {
-  --skeleton-from: rgba(255, 255, 255, 0.04);
-  --skeleton-to: rgba(255, 255, 255, 0.1);
-}
-
-[data-theme="light"] {
-  --skeleton-from: rgba(26, 22, 18, 0.05);
-  --skeleton-to: rgba(26, 22, 18, 0.12);
-}
-
+/* ═══ SKELETON / LOADING ═══ (tokens live in the theme blocks above) */
 .skeleton {
   display: block;
   background: linear-gradient(
@@ -846,34 +868,27 @@ table,
 }
 
 /* ═══ TEXT SELECTION ═══ */
-::selection {
-  background: var(--accent-dim);
-  color: var(--text);
-}
-
 /* ═══ LIGHT THEME — additional polish ═══ */
 
-/* Dot grid uses near-white dots which vanish on cream. Re-tint with
-   warm ink at low alpha so the texture still reads but matches the
-   surface tone. */
+/* The dot grid is near-white dots, which vanish on paper. Re-tint to ink. */
 [data-theme="light"] .dot-grid {
   background-image: radial-gradient(
     circle at 1px 1px,
-    rgba(26, 22, 18, 0.06) 1px,
+    rgba(17, 17, 16, 0.07) 1px,
     transparent 0
   );
   opacity: 1;
 }
 
-/* dot-offline uses --gray-4 (#404040) — opaque dark splotch on cream.
+/* dot-offline uses --gray-4 (#404040) — an opaque splotch on paper.
    Replace with a translucent ink so it harmonizes. */
 [data-theme="light"] .dot-offline {
-  background: rgba(26, 22, 18, 0.28);
+  background: rgba(17, 17, 16, 0.28);
 }
 
-/* Override the underwater body background (defined in globals-underwater.css)
-   when the user is in light mode. Replicates the simple cream bg the
-   light theme expects. */
+/* The underwater gradient (globals-underwater.css) is gated to dark, but
+   restate the flat paper background here so light mode never inherits a
+   background-attachment or gradient from it. */
 [data-theme="light"] body {
   background: var(--bg);
   background-attachment: initial;
@@ -895,7 +910,7 @@ table,
 }
 .dot-online {
   background: var(--success);
-  box-shadow: 0 0 6px rgba(34, 197, 94, 0.5);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--success) 50%, transparent);
 }
 .dot-offline {
   background: var(--gray-4);
@@ -903,7 +918,7 @@ table,
 .dot-alert {
   background: var(--danger);
   border-radius: 0;
-  box-shadow: 0 0 8px rgba(239, 68, 68, 0.5);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--danger) 50%, transparent);
   animation: pulse 1s var(--ease-in-out) infinite;
 }
 

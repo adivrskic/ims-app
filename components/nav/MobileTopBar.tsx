@@ -71,7 +71,7 @@ export function MobileTopBar({ unreadCount }: Props) {
         <Bell size={13} strokeWidth={1.5} />
         {unreadCount > 0 && (
           <span
-            className="absolute -top-2 -right-2 bg-[var(--accent)] text-[var(--black)] tnum"
+            className="absolute -top-2 -right-2 bg-[var(--accent)] text-[var(--on-accent)] tnum"
             style={{
               fontFamily: "var(--mono)",
               fontSize: 8,

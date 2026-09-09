@@ -83,7 +83,7 @@ export default async function ShopifyPage({ searchParams }: PageProps) {
       {unmappedCount > 0 && (
         <Link
           href="/integrations/shopify/mapping"
-          className="hairline-subtle border-[rgba(245,181,69,0.45)] bg-[var(--warning-dim)] px-16 py-12 flex items-center gap-12 hover:border-[var(--warning)] transition-colors"
+          className="hairline-subtle border-[var(--warning-border)] bg-[var(--warning-dim)] px-16 py-12 flex items-center gap-12 hover:border-[var(--warning)] transition-colors"
         >
           <AlertTriangle
             size={16}

@@ -68,7 +68,7 @@ export function MobileNav({ industry, navPrefs, orgModules }: Props) {
         }`}
         style={{
           zIndex: 90,
-          background: "rgba(0,0,0,0.7)",
+          background: "var(--scrim-heavy)",
           backdropFilter: "blur(4px)",
           WebkitBackdropFilter: "blur(4px)",
         }}

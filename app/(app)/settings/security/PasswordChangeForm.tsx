@@ -100,7 +100,7 @@ export function PasswordChangeForm() {
       {feedback?.kind === "error" && (
         <p
           role="alert"
-          className="hairline-subtle border-[rgba(239,68,68,0.45)] bg-[var(--danger-dim)] px-12 py-10 mono-sm text-[var(--danger)] inline-flex items-start gap-8"
+          className="hairline-subtle border-[var(--danger-border)] bg-[var(--danger-dim)] px-12 py-10 mono-sm text-[var(--danger)] inline-flex items-start gap-8"
         >
           <AlertTriangle
             size={11}
@@ -113,7 +113,7 @@ export function PasswordChangeForm() {
       {feedback?.kind === "success" && (
         <p
           role="status"
-          className="hairline-subtle border-[rgba(34,197,94,0.45)] bg-[var(--success-dim)] px-12 py-10 mono-sm text-[var(--success)] inline-flex items-center gap-8"
+          className="hairline-subtle border-[var(--success-border)] bg-[var(--success-dim)] px-12 py-10 mono-sm text-[var(--success)] inline-flex items-center gap-8"
         >
           <Check size={11} strokeWidth={1.5} />
           <span>{feedback.message}</span>

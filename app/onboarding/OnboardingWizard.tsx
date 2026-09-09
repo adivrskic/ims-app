@@ -532,7 +532,7 @@ export function OnboardingWizard({ fullName, email, userId }: Props) {
               {inviteParsed.invalid.map((v, i) => (
                 <span
                   key={`${v}${i}`}
-                  className="hairline-subtle border-[rgba(239,68,68,0.45)] bg-[var(--danger-dim)] px-8 py-4 mono-sm text-[var(--danger)]"
+                  className="hairline-subtle border-[var(--danger-border)] bg-[var(--danger-dim)] px-8 py-4 mono-sm text-[var(--danger)]"
                   title="Doesn't look like an email address"
                 >
                   {v} ?
@@ -620,7 +620,7 @@ export function OnboardingWizard({ fullName, email, userId }: Props) {
           <p
             ref={errorRef}
             role="alert"
-            className="hairline-subtle border-[rgba(239,68,68,0.45)] bg-[var(--danger-dim)] px-14 py-12 mono-sm text-[var(--danger)] inline-flex items-start gap-8"
+            className="hairline-subtle border-[var(--danger-border)] bg-[var(--danger-dim)] px-14 py-12 mono-sm text-[var(--danger)] inline-flex items-start gap-8"
           >
             <AlertTriangle size={11} strokeWidth={1.5} className="mt-2 shrink-0" />
             <span>{state?.error ?? fieldError}</span>

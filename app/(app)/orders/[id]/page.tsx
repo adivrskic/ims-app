@@ -197,7 +197,7 @@ export default async function OrderDetailPage({
     <div className="flex flex-col gap-32">
       <OrderDetailRealtime orderId={id} />
       {actionError && (
-        <div className="hairline border-[rgba(239,68,68,0.45)] bg-[var(--danger-dim)] px-16 py-12 flex items-start gap-12">
+        <div className="hairline border-[var(--danger-border)] bg-[var(--danger-dim)] px-16 py-12 flex items-start gap-12">
           <X
             size={14}
             strokeWidth={1.5}
@@ -266,7 +266,7 @@ export default async function OrderDetailPage({
 
       {/* Status timeline */}
       {isCancelled ? (
-        <div className="hairline border-[rgba(239,68,68,0.45)] bg-[var(--danger-dim)] p-20 flex items-start gap-14">
+        <div className="hairline border-[var(--danger-border)] bg-[var(--danger-dim)] p-20 flex items-start gap-14">
           <X
             size={16}
             strokeWidth={1.5}
@@ -690,9 +690,9 @@ function Timeline({ current }: { current: OrderStatus }) {
               <span
                 className={`flex items-center justify-center transition-colors ${
                   isCurrent
-                    ? "bg-[var(--accent)] text-[var(--black)]"
+                    ? "bg-[var(--accent)] text-[var(--on-accent)]"
                     : isComplete
-                    ? "bg-[var(--success-dim)] text-[var(--success)] hairline-subtle border-[rgba(34,197,94,0.45)]"
+                    ? "bg-[var(--success-dim)] text-[var(--success)] hairline-subtle border-[var(--success-border)]"
                     : "hairline-subtle text-text-dim"
                 }`}
                 style={{

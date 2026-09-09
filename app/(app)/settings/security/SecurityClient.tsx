@@ -423,7 +423,7 @@ export function SecurityClient() {
       {stage.kind === "error" && (
         <div
           role="alert"
-          className="hairline border-[rgba(239,68,68,0.45)] bg-[var(--danger-dim)] p-16 flex items-start gap-12"
+          className="hairline border-[var(--danger-border)] bg-[var(--danger-dim)] p-16 flex items-start gap-12"
         >
           <AlertTriangle
             size={14}

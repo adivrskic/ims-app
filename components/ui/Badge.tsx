@@ -12,19 +12,19 @@ interface Props {
 const OUTLINE: Record<Tone, string> = {
   neutral: "border-[var(--border)] text-text-secondary",
   accent: "border-[var(--accent-soft)] text-[var(--accent)]",
-  success: "border-[rgba(34,197,94,0.45)] text-[var(--success)]",
-  warning: "border-[rgba(217,119,6,0.45)] text-[var(--warning)]",
-  danger: "border-[rgba(239,68,68,0.45)] text-[var(--danger)]",
-  info: "border-[rgba(96,165,250,0.45)] text-[var(--info)]",
+  success: "border-[var(--success-border)] text-[var(--success)]",
+  warning: "border-[var(--warning-border)] text-[var(--warning)]",
+  danger: "border-[var(--danger-border)] text-[var(--danger)]",
+  info: "border-[var(--info-border)] text-[var(--info)]",
 };
 
 const FILLED: Record<Tone, string> = {
   neutral: "bg-[var(--surface-2)] border-[var(--border-subtle)] text-text-secondary",
   accent: "bg-[var(--accent-dim)] border-[var(--accent-soft)] text-[var(--accent)]",
-  success: "bg-[var(--success-dim)] border-[rgba(34,197,94,0.45)] text-[var(--success)]",
-  warning: "bg-[var(--warning-dim)] border-[rgba(217,119,6,0.45)] text-[var(--warning)]",
-  danger: "bg-[var(--danger-dim)] border-[rgba(239,68,68,0.45)] text-[var(--danger)]",
-  info: "bg-[var(--info-dim)] border-[rgba(96,165,250,0.45)] text-[var(--info)]",
+  success: "bg-[var(--success-dim)] border-[var(--success-border)] text-[var(--success)]",
+  warning: "bg-[var(--warning-dim)] border-[var(--warning-border)] text-[var(--warning)]",
+  danger: "bg-[var(--danger-dim)] border-[var(--danger-border)] text-[var(--danger)]",
+  info: "bg-[var(--info-dim)] border-[var(--info-border)] text-[var(--info)]",
 };
 
 export function Badge({

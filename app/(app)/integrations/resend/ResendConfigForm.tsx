@@ -182,7 +182,7 @@ export function ResendConfigForm({ existing }: Props) {
         {state?.error && (
           <p
             role="alert"
-            className="hairline-subtle border-[rgba(239,68,68,0.45)] bg-[var(--danger-dim)] px-14 py-12 mono-sm text-[var(--danger)] inline-flex items-start gap-8"
+            className="hairline-subtle border-[var(--danger-border)] bg-[var(--danger-dim)] px-14 py-12 mono-sm text-[var(--danger)] inline-flex items-start gap-8"
           >
             <AlertTriangle
               size={11}
@@ -195,7 +195,7 @@ export function ResendConfigForm({ existing }: Props) {
         {state?.success && (
           <p
             role="status"
-            className="hairline-subtle border-[rgba(34,197,94,0.45)] bg-[var(--success-dim)] px-14 py-12 mono-sm text-[var(--success)] inline-flex items-start gap-8"
+            className="hairline-subtle border-[var(--success-border)] bg-[var(--success-dim)] px-14 py-12 mono-sm text-[var(--success)] inline-flex items-start gap-8"
           >
             <Check size={11} strokeWidth={1.5} className="mt-2 shrink-0" />
             <span>{state.success}</span>

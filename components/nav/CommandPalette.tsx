@@ -652,7 +652,7 @@ export function CommandPalette() {
       className="fixed inset-0 flex items-start justify-center px-16 pt-[12vh]"
       style={{
         zIndex: 200,
-        background: "rgba(0,0,0,0.55)",
+        background: "var(--scrim)",
         backdropFilter: "blur(8px)",
         WebkitBackdropFilter: "blur(8px)",
       }}

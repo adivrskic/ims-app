@@ -87,7 +87,7 @@ export function InviteForm() {
       {state?.error && (
         <p
           role="alert"
-          className="hairline-subtle border-[rgba(239,68,68,0.45)] bg-[var(--danger-dim)] px-12 py-10 mono-sm text-[var(--danger)]"
+          className="hairline-subtle border-[var(--danger-border)] bg-[var(--danger-dim)] px-12 py-10 mono-sm text-[var(--danger)]"
         >
           {state.error}
         </p>
@@ -97,8 +97,8 @@ export function InviteForm() {
           role="status"
           className={`hairline-subtle px-12 py-10 mono-sm flex flex-col gap-10 ${
             fallbackUrl
-              ? "border-[rgba(212,168,83,0.45)] bg-[var(--accent-dim)] text-[var(--accent)]"
-              : "border-[rgba(34,197,94,0.45)] bg-[var(--success-dim)] text-[var(--success)]"
+              ? "border-[var(--accent-border)] bg-[var(--accent-dim)] text-[var(--accent)]"
+              : "border-[var(--success-border)] bg-[var(--success-dim)] text-[var(--success)]"
           }`}
         >
           <span>{state.success}</span>

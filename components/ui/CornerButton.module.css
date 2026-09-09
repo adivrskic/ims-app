@@ -47,7 +47,7 @@
 }
 .primary:hover {
   background: var(--accent);
-  color: var(--black);
+  color: var(--on-accent);
   /* border-color: var(--border-hover); */
 }
 
@@ -76,7 +76,7 @@
  */
 .accent {
   background: var(--accent);
-  color: var(--black);
+  color: var(--on-accent);
   border: 1px solid var(--accent);
 }
 .accent:hover {
@@ -95,7 +95,7 @@
   border: 1px solid var(--danger);
 }
 .danger:hover {
-  background: rgba(239, 68, 68, 0.08);
+  background: var(--danger-dim);
 }
 
 .disabled {

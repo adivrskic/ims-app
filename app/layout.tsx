@@ -31,11 +31,13 @@ export const metadata: Metadata = {
   description: "Warehouse operations dashboard.",
 };
 
+// NOTE: no `themeColor` here. The theme is chosen by the user and stored in
+// localStorage — it is NOT a prefers-color-scheme signal, so a media-keyed
+// themeColor would show a dark address bar above a paper-white page for
+// anyone whose OS preference disagrees with their choice. The init script
+// below writes the meta tag imperatively instead, and ThemeToggle keeps it
+// in sync on switch.
 export const viewport: Viewport = {
-  themeColor: [
-    { media: "(prefers-color-scheme: dark)", color: "#000000" },
-    { media: "(prefers-color-scheme: light)", color: "#f5efde" },
-  ],
   width: "device-width",
   initialScale: 1,
 };
@@ -45,13 +47,19 @@ export const viewport: Viewport = {
 // back to "dark" (matches Bloomberg-terminal default).
 const themeInitScript = `
 (function() {
+  var theme = "dark";
   try {
     var stored = localStorage.getItem("Nautilus_theme");
-    var theme = (stored === "light" || stored === "dark") ? stored : "dark";
-    document.documentElement.setAttribute("data-theme", theme);
-  } catch (e) {
-    document.documentElement.setAttribute("data-theme", "dark");
+    if (stored === "light" || stored === "dark") theme = stored;
+  } catch (e) {}
+  document.documentElement.setAttribute("data-theme", theme);
+  var meta = document.querySelector('meta[name="theme-color"]');
+  if (!meta) {
+    meta = document.createElement("meta");
+    meta.setAttribute("name", "theme-color");
+    document.head.appendChild(meta);
   }
+  meta.setAttribute("content", theme === "light" ? "#f2f2ef" : "#061124");
 })();
 `;
 

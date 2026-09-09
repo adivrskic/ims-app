@@ -37,7 +37,7 @@ export default async function ReceivingPage({
   return (
     <div className="flex flex-col gap-32">
       {actionError && (
-        <div className="hairline border-[rgba(239,68,68,0.45)] bg-[var(--danger-dim)] px-16 py-12 flex items-start gap-12">
+        <div className="hairline border-[var(--danger-border)] bg-[var(--danger-dim)] px-16 py-12 flex items-start gap-12">
           <X
             size={14}
             strokeWidth={1.5}

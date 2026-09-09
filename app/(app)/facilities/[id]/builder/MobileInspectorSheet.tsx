@@ -63,7 +63,7 @@ export function MobileInspectorSheet({
     <>
       {/* Backdrop — tap to deselect */}
       <div
-        className={`absolute inset-0 z-20 bg-black/35 transition-opacity duration-200 ${
+        className={`absolute inset-0 z-20 bg-[var(--scrim)] transition-opacity duration-200 ${
           open ? "opacity-100" : "opacity-0 pointer-events-none"
         }`}
         onClick={onClose}

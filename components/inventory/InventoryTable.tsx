@@ -92,7 +92,7 @@ export function InventoryTable({ products, sort, order, baseParams }: Props) {
                 <tr
                   key={p.id}
                   className={`hairline-b row-interactive group ${
-                    i % 2 === 1 ? "bg-[rgba(255,255,255,0.01)]" : ""
+                    i % 2 === 1 ? "bg-[var(--surface-2)]" : ""
                   }`}
                 >
                   <Td>

@@ -33,6 +33,7 @@ import { signOut } from "@/app/(auth)/actions";
 import { FacilitiesNavItem } from "./FacilitiesNavItem";
 import type { FacilityOption } from "@/lib/currentFacility";
 import { SidebarDeviceBar } from "./SidebarDeviceBar";
+import { ThemeToggle } from "./ThemeToggle";
 
 /** Cookie key shared with the server-side layout. */
 const SIDEBAR_COOKIE = "Nautilus-sidebar-collapsed";
@@ -343,8 +344,8 @@ export function SideRail({
                 <span
                   className={
                     collapsed
-                      ? "absolute -top-2 -right-2 bg-[var(--accent)] text-[var(--black)] tnum"
-                      : "bg-[var(--accent)] text-[var(--black)] tnum"
+                      ? "absolute -top-2 -right-2 bg-[var(--accent)] text-[var(--on-accent)] tnum"
+                      : "bg-[var(--accent)] text-[var(--on-accent)] tnum"
                   }
                   style={{
                     fontFamily: "var(--mono)",
@@ -371,6 +372,11 @@ export function SideRail({
             >
               <Monitor size={12} strokeWidth={1.5} />
             </Link>
+            <ThemeToggle
+              className={`hairline-subtle hover:border-[var(--border-hover)] text-text-secondary hover:text-text transition-colors flex items-center justify-center shrink-0 h-32 ${
+                collapsed ? "w-full" : "w-32"
+              }`}
+            />
           </div>
 
           {/* ── Devices section ─────────────────────────────────────────
@@ -561,7 +567,7 @@ function SidebarUserMenu({
         title={collapsed ? user.email : undefined}
       >
         <span
-          className="w-20 h-20 rounded-full bg-[var(--accent)] text-[var(--black)] flex items-center justify-center shrink-0"
+          className="w-20 h-20 rounded-full bg-[var(--accent)] text-[var(--on-accent)] flex items-center justify-center shrink-0"
           aria-hidden
         >
           <span

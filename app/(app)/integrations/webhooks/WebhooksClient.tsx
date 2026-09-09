@@ -378,7 +378,7 @@ function SecretRevealCard({
           className="w-32 h-32 hairline-subtle bg-[var(--accent)] flex items-center justify-center shrink-0"
           aria-hidden
         >
-          <Check size={14} strokeWidth={1.5} className="text-[var(--black)]" />
+          <Check size={14} strokeWidth={1.5} className="text-[var(--on-accent)]" />
         </span>
         <div className="flex-1 min-w-0">
           <p

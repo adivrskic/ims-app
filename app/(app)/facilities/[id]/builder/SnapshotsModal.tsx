@@ -147,7 +147,7 @@ export function SnapshotsModal({
   return (
     <>
       <div
-        className="fixed inset-0 z-40 bg-black/55"
+        className="fixed inset-0 z-40 bg-[var(--scrim)]"
         onClick={onClose}
         aria-hidden
       />

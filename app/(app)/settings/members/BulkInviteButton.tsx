@@ -135,7 +135,7 @@ export function BulkInviteButton({ orgId }: Props) {
         <div
           className="fixed inset-0 z-50 flex items-center justify-center p-16"
           style={{
-            background: "rgba(0,0,0,0.65)",
+            background: "var(--scrim-heavy)",
             backdropFilter: "blur(4px)",
           }}
           onClick={(e) => {
@@ -380,7 +380,7 @@ function IdlePanel({
       </div>
 
       <div
-        className="hairline-subtle border-[rgba(245,181,69,0.45)] bg-[var(--warning-dim)] px-14 py-12 flex items-start gap-10"
+        className="hairline-subtle border-[var(--warning-border)] bg-[var(--warning-dim)] px-14 py-12 flex items-start gap-10"
         role="note"
       >
         <AlertCircle
@@ -433,7 +433,7 @@ function LoadingPanel({ label }: { label: string }) {
 function PreviewPanel({ preview }: { preview: BulkPreviewResult }) {
   if (preview.fatal_error) {
     return (
-      <div className="hairline-subtle border-[rgba(239,79,94,0.45)] bg-[var(--danger-dim)] px-14 py-12 flex items-start gap-10">
+      <div className="hairline-subtle border-[var(--danger-border)] bg-[var(--danger-dim)] px-14 py-12 flex items-start gap-10">
         <AlertCircle
           size={14}
           strokeWidth={1.5}

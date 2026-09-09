@@ -86,7 +86,7 @@ export function CreateKeyForm() {
         {state?.error && (
           <p
             role="alert"
-            className="hairline-subtle border-[rgba(239,68,68,0.45)] bg-[var(--danger-dim)] px-12 py-10 mono-sm text-[var(--danger)]"
+            className="hairline-subtle border-[var(--danger-border)] bg-[var(--danger-dim)] px-12 py-10 mono-sm text-[var(--danger)]"
           >
             {state.error}
           </p>

@@ -119,7 +119,7 @@ export default async function BillingPage({
         <div
           className={`hairline px-16 py-12 flex items-center gap-12 ${
             notice.tone === "danger"
-              ? "border-[rgba(239,68,68,0.45)] bg-[var(--danger-dim)]"
+              ? "border-[var(--danger-border)] bg-[var(--danger-dim)]"
               : "border-[var(--border-subtle)] bg-[var(--surface-2)]"
           }`}
         >

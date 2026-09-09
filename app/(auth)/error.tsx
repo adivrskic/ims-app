@@ -24,16 +24,16 @@ export default function AuthError({
       <div
         className="hairline p-28 max-w-[420px] w-full flex flex-col gap-18"
         style={{
-          background: "rgba(255, 255, 255, 0.04)",
-          borderColor: "rgba(255, 255, 255, 0.18)",
+          background: "var(--field-bg)",
+          borderColor: "var(--auth-border-subtle)",
         }}
       >
         <header className="flex items-start gap-12">
           <span
             className="w-32 h-32 hairline-subtle flex items-center justify-center shrink-0"
             style={{
-              background: "rgba(239, 79, 94, 0.12)",
-              color: "rgba(239, 79, 94, 0.9)",
+              background: "var(--danger-dim)",
+              color: "var(--danger)",
             }}
             aria-hidden
           >
@@ -42,7 +42,7 @@ export default function AuthError({
           <div className="min-w-0 flex-1">
             <p
               className="label-text"
-              style={{ color: "rgba(239, 79, 94, 0.9)", marginBottom: 4 }}
+              style={{ color: "var(--danger)", marginBottom: 4 }}
             >
               Couldn&apos;t sign in
             </p>
@@ -51,7 +51,7 @@ export default function AuthError({
                 fontFamily: "var(--display)",
                 fontSize: 18,
                 fontWeight: 500,
-                color: "rgba(255, 255, 255, 0.92)",
+                color: "var(--auth-text)",
                 margin: "0 0 8px",
               }}
             >
@@ -61,7 +61,7 @@ export default function AuthError({
               className="mono-sm"
               style={{
                 lineHeight: 1.6,
-                color: "rgba(255, 255, 255, 0.6)",
+                color: "var(--auth-text-muted)",
               }}
             >
               {error.message ||
@@ -72,7 +72,7 @@ export default function AuthError({
                 className="mono-sm"
                 style={{
                   marginTop: 12,
-                  color: "rgba(255, 255, 255, 0.4)",
+                  color: "var(--auth-text-dim)",
                 }}
               >
                 Reference: <code>{error.digest}</code>
@@ -94,7 +94,7 @@ export default function AuthError({
           <Link
             href="/login"
             className="label-text transition-colors"
-            style={{ color: "rgba(255, 255, 255, 0.75)" }}
+            style={{ color: "var(--auth-text-secondary)" }}
           >
             Back to sign in →
           </Link>

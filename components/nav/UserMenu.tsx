@@ -49,7 +49,7 @@ export function UserMenu({ user }: Props) {
         aria-expanded={open}
       >
         <span
-          className="w-20 h-20 rounded-full bg-[var(--accent)] text-[var(--black)] flex items-center justify-center"
+          className="w-20 h-20 rounded-full bg-[var(--accent)] text-[var(--on-accent)] flex items-center justify-center"
           aria-hidden
         >
           <span

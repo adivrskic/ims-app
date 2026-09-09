@@ -187,8 +187,8 @@ export function NavCustomizer({ initialPrefs, isCustom, industryLabel }: Props) 
           role={msg.kind === "err" ? "alert" : "status"}
           className={`hairline-subtle px-12 py-10 mono-sm ${
             msg.kind === "err"
-              ? "border-[rgba(239,68,68,0.45)] bg-[var(--danger-dim)] text-[var(--danger)]"
-              : "border-[rgba(34,197,94,0.45)] bg-[var(--success-dim)] text-[var(--success)]"
+              ? "border-[var(--danger-border)] bg-[var(--danger-dim)] text-[var(--danger)]"
+              : "border-[var(--success-border)] bg-[var(--success-dim)] text-[var(--success)]"
           }`}
         >
           {msg.text}

@@ -120,7 +120,7 @@ export default async function MembersPage() {
                 >
                   <div className="flex items-center gap-14">
                   <span
-                    className="w-28 h-28 rounded-full bg-[var(--accent)] text-[var(--black)] flex items-center justify-center shrink-0"
+                    className="w-28 h-28 rounded-full bg-[var(--accent)] text-[var(--on-accent)] flex items-center justify-center shrink-0"
                     aria-hidden
                   >
                     <span
