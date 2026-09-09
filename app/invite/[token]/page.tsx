@@ -6,6 +6,7 @@ import { AlertTriangle, Inbox } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { InviteAcceptClient } from "./InviteAcceptClient";
+import { ThemeToggle } from "@/components/nav/ThemeToggle";
 
 export const metadata = { title: "Accept invite · Nautilus" };
 
@@ -72,7 +73,10 @@ export default async function InvitePage({ params }: PageProps) {
             Nautilus
           </span>
         </Link>
-        <span className="label-text text-text-muted">Team invite</span>
+        <div className="flex items-center gap-16">
+          <span className="label-text text-text-muted">Team invite</span>
+          <ThemeToggle />
+        </div>
       </header>
 
       <section className="relative z-10 flex-1 flex items-center justify-center px-20 py-40">

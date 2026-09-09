@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { Menu, Search, Bell } from "lucide-react";
 import { Logo } from "@/components/ui/Logo";
+import { ThemeToggle } from "@/components/nav/ThemeToggle";
 
 interface Props {
   unreadCount: number;
@@ -51,6 +52,8 @@ export function MobileTopBar({ unreadCount }: Props) {
       </Link>
 
       <div className="flex-1" />
+
+      <ThemeToggle className="hairline-subtle p-7 hover:border-[var(--border-hover)] text-text-secondary transition-colors flex items-center justify-center" />
 
       <button
         type="button"

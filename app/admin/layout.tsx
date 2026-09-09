@@ -4,6 +4,7 @@ import { Logo } from "@/components/ui/Logo";
 import { getStaffUser } from "@/lib/staff";
 import { signOut } from "@/app/(auth)/actions";
 import { ArrowLeftRight, Building2, UserPlus, LogOut } from "lucide-react";
+import { ThemeToggle } from "@/components/nav/ThemeToggle";
 
 export const metadata = { title: "Staff · Nautilus" };
 
@@ -81,6 +82,7 @@ export default async function AdminLayout({
         </div>
 
         <div className="flex items-center gap-14">
+          <ThemeToggle />
           <Link
             href="/"
             className="hairline-subtle px-10 py-6 inline-flex items-center gap-6 mono-sm text-text-muted hover:text-text transition-colors"

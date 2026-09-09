@@ -1,6 +1,7 @@
 import { LogOut } from "lucide-react";
 import { LogoWordmark } from "@/components/ui/LogoWordmark";
 import { signOut } from "@/app/(auth)/actions";
+import { ThemeToggle } from "@/components/nav/ThemeToggle";
 
 export const metadata = { title: "Set up workspace · Nautilus" };
 
@@ -25,6 +26,7 @@ export default function OnboardingLayout({
           <span className="label-text text-text-muted hidden sm:inline">
             First-time setup
           </span>
+          <ThemeToggle />
           {/* Escape hatch for wrong-account signins. */}
           <form action={signOut}>
             <button

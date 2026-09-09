@@ -1,16 +1,18 @@
 import Link from "next/link";
 import { LogoWordmark } from "@/components/ui/LogoWordmark";
 import { CornerLink as ButtonLink } from "@/components/ui/CornerButton";
+import { ThemeToggle } from "@/components/nav/ThemeToggle";
 
 export const metadata = { title: "Not found" };
 
 export default function NotFound() {
   return (
     <main className="min-h-screen flex flex-col">
-      <header className="h-56 hairline-b flex items-center px-32">
+      <header className="h-56 hairline-b flex items-center justify-between px-32">
         <Link href="/" className="flex items-center text-text">
           <LogoWordmark size="sm" />
         </Link>
+        <ThemeToggle />
       </header>
 
       <section className="flex-1 relative flex items-center px-32 lg:px-80 overflow-hidden glow-tl">

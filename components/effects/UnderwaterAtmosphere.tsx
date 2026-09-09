@@ -3,14 +3,15 @@
 /**
  * Underwater atmosphere — depth gradient, surface halo, volumetric god rays.
  *
- * All gradient stops are CSS variables (declared in globals-underwater.css)
- * so the palette flips between deep ocean (dark mode) and shallow sunlit
- * water (light mode) via the [data-theme] attribute on <html>.
+ * Dark mode only. Light mode is a flat paper sheet across the whole product,
+ * so globals-underwater.css hides `.ua-atmosphere` there rather than tinting
+ * the auth pages blue while every other surface is white. Gradient stops come
+ * from --ua-* in that same file.
  */
 export function UnderwaterAtmosphere() {
   return (
     <div
-      className="absolute inset-0 overflow-hidden pointer-events-none"
+      className="ua-atmosphere absolute inset-0 overflow-hidden pointer-events-none"
       aria-hidden="true"
     >
       <svg

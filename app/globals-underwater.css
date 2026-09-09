@@ -81,46 +81,32 @@
  * globals.css restates the flat background for light.
  * ============================================================ */
 :root[data-theme="light"] {
-  /* Atmosphere — light tropical-water stack */
-  --ua-depth-1: #d8edf6;
-  --ua-depth-2: #a8d2e8;
-  --ua-depth-3: #76b2d4;
-  --ua-depth-4: #4e93bd;
+  /* Light mode is paper everywhere, auth included — the atmosphere is hidden
+     below, so the --ua-* stops are never painted and the auth chrome simply
+     mirrors the app's ink ramp. Values are literals rather than
+     var(--text) etc. because the auth layout remaps --text ONTO --auth-text,
+     which would otherwise be a circular reference. Keep in step with the
+     light block in globals.css. */
+  --auth-text: #111110;
+  --auth-text-secondary: #3d3d3a;
+  --auth-text-muted: #63635e;
+  --auth-text-dim: #92928c;
+  --auth-border: rgba(17, 17, 16, 0.18);
+  --auth-border-subtle: rgba(17, 17, 16, 0.11);
+  --auth-border-hover: rgba(17, 17, 16, 0.32);
 
-  --ua-halo-1: #ffffff;
-  --ua-halo-2: #e0f0f7;
-  --ua-halo-3: #b6d8ea;
-  --ua-halo-4: #d8edf6;
-  --ua-halo-1-op: 0.55;
-  --ua-halo-2-op: 0.22;
-  --ua-halo-3-op: 0.06;
-
-  --ua-ray-wide-1: #ffffff;
-  --ua-ray-wide-2: #f0f8fc;
-  --ua-ray-wide-3: #cde4f0;
-  --ua-ray-wide-4: #a8d2e8;
-  --ua-ray-wide-5: #d8edf6;
-
-  --ua-ray-beam-1: #ffffff;
-  --ua-ray-beam-2: #ffffff;
-  --ua-ray-beam-3: #e6f2f8;
-  --ua-ray-beam-4: #bcdcec;
-  --ua-ray-beam-5: #d8edf6;
-
-  /* Auth chrome — dark ink on the lighter water */
-  --auth-text: rgba(8, 35, 65, 0.95);
-  --auth-text-secondary: rgba(8, 35, 65, 0.75);
-  --auth-text-muted: rgba(8, 35, 65, 0.55);
-  --auth-text-dim: rgba(8, 35, 65, 0.38);
-  --auth-border: rgba(8, 35, 65, 0.28);
-  --auth-border-subtle: rgba(8, 35, 65, 0.16);
-  --auth-border-hover: rgba(8, 35, 65, 0.4);
-
-  /* Field shell — pale fill, ink-blue border for contrast on pale water */
-  --field-bg: rgba(255, 255, 255, 0.45);
-  --field-bg-hover: rgba(255, 255, 255, 0.6);
-  --field-bg-focus: rgba(255, 255, 255, 0.75);
-  --field-border: rgba(8, 35, 65, 0.2);
-  --field-border-hover: rgba(8, 35, 65, 0.35);
-  --field-placeholder: rgba(8, 35, 65, 0.38);
+  /* Manifest field shell — matches the app's field-shell on paper. */
+  --field-bg: rgba(17, 17, 16, 0.04);
+  --field-bg-hover: rgba(17, 17, 16, 0.06);
+  --field-bg-focus: #ffffff;
+  --field-border: rgba(17, 17, 16, 0.14);
+  --field-border-hover: rgba(17, 17, 16, 0.28);
+  --field-placeholder: rgba(17, 17, 16, 0.42);
 }
+
+/* The god rays are a deep-water effect; on paper they read as a blue wash
+   over an otherwise white product. Dark mode keeps them. */
+:root[data-theme="light"] .ua-atmosphere {
+  display: none;
+}
+
