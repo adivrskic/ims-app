@@ -37,6 +37,8 @@ import { SidebarDeviceBar } from "./SidebarDeviceBar";
 /** Cookie key shared with the server-side layout. */
 const SIDEBAR_COOKIE = "Nautilus-sidebar-collapsed";
 
+/** Space between the floating rail and the viewport / main content. */
+const GUTTER = 12;
 const EXPANDED_WIDTH = 240;
 const COLLAPSED_WIDTH = 56;
 
@@ -138,264 +140,276 @@ export function SideRail({
 
   return (
     <aside
-      className="hidden md:flex shrink-0 hairline-r  sticky top-0 self-start h-screen flex-col"
+      className="hidden md:flex shrink-0 sticky top-0 self-start h-screen flex-col"
       style={{
-        width,
+        width: width + GUTTER * 2,
+        padding: GUTTER,
         transition: "width 180ms cubic-bezier(0.4, 0, 0.2, 1)",
       }}
       aria-label="Primary navigation"
       data-collapsed={collapsed}
     >
       {/* ── Header ──────────────────────────────────────────────────── */}
-      <div
-        className={`h-56 hairline-b flex items-center shrink-0 ${
-          collapsed ? "justify-center px-0" : "px-14"
-        }`}
-      >
-        <Link
-          href="/"
-          className="flex items-center text-text"
-          aria-label="Nautilus Inventory home"
-          title={collapsed ? "Nautilus Inventory home" : undefined}
+      {/*
+        Three detached panels rather than one flush-left column: the rail
+        floats clear of the viewport edge and each zone (identity /
+        navigate / tools) is separated by space instead of a divider line.
+        Fewer rules, more air.
+      */}
+      <div className="flex-1 min-h-0 flex flex-col gap-8">
+        {/* ── Panel 1 · Identity ──────────────────────────────────── */}
+        <div className="hairline panel-float bg-[var(--surface)] shrink-0 flex flex-col">
+        <div
+          className={`h-52 flex items-center shrink-0 ${
+            collapsed ? "justify-center px-0" : "px-14"
+          }`}
         >
-          {collapsed ? <Logo size={18} title="Nautilus" /> : <LogoWordmark size="sm" />}
-        </Link>
-      </div>
-
-      {/* ── Workspace switcher ──────────────────────────────────────── */}
-      {workspace && !collapsed && (
-        <div className="px-10 py-10 hairline-b">
-          <WorkspaceSwitcher current={workspace} workspaces={workspaces} />
+          <Link
+            href="/"
+            className="flex items-center text-text"
+            aria-label="Nautilus Inventory home"
+            title={collapsed ? "Nautilus Inventory home" : undefined}
+          >
+            {collapsed ? <Logo size={18} title="Nautilus" /> : <LogoWordmark size="sm" />}
+          </Link>
         </div>
-      )}
-      {workspace && collapsed && (
-        <Link
-          href="/settings"
-          className="h-44 flex items-center justify-center hairline-b hover:bg-[var(--surface-2)] transition-colors"
-          title={`${workspace.name} · open settings to switch`}
-          aria-label={`Workspace: ${workspace.name}`}
-        >
-          <span
-            className="w-22 h-22 bg-[var(--accent-dim)] flex items-center justify-center"
-            aria-hidden
+
+        {/* ── Workspace switcher ──────────────────────────────────────── */}
+        {workspace && !collapsed && (
+          <div className="px-10 pb-10">
+            <WorkspaceSwitcher current={workspace} workspaces={workspaces} />
+          </div>
+        )}
+        {workspace && collapsed && (
+          <Link
+            href="/settings"
+            className="h-40 flex items-center justify-center hairline-t hover:bg-[var(--surface-2)] transition-colors"
+            title={`${workspace.name} · open settings to switch`}
+            aria-label={`Workspace: ${workspace.name}`}
           >
             <span
-              className="text-[var(--accent)]"
-              style={{
-                fontFamily: "var(--mono)",
-                fontSize: 10,
-                fontWeight: 600,
-              }}
+              className="w-22 h-22 bg-[var(--accent-dim)] flex items-center justify-center"
+              aria-hidden
             >
-              {workspace.name.slice(0, 1).toUpperCase()}
-            </span>
-          </span>
-        </Link>
-      )}
-
-      {/* ── Nav groups ──────────────────────────────────────────────── */}
-      <nav
-        className={`flex-1 overflow-y-auto flex flex-col ${
-          collapsed ? "px-6 py-10 gap-10" : "px-10 py-14 gap-18"
-        }`}
-      >
-        {navGroups.map((group, gi) => (
-          <div key={group.label ?? `g${gi}`}>
-            {!collapsed && group.label && (
-              <div className="px-10 mb-6">
-                <span className="label-text">{group.label}</span>
-              </div>
-            )}
-            <ul className="flex flex-col gap-1">
-              {group.items.map((item) =>
-                renderNavItem(item, {
-                  activeHref,
-                  collapsed,
-                  facilities,
-                  currentFacilityId,
-                })
-              )}
-            </ul>
-          </div>
-        ))}
-
-        {/* More — items not primary for this industry. Expanded: a toggle.
-            Collapsed: appended as icons so nothing is unreachable. */}
-        {moreItems.length > 0 &&
-          (collapsed ? (
-            <ul className="flex flex-col gap-1">
-              {moreItems.map((item) =>
-                renderNavItem(item, {
-                  activeHref,
-                  collapsed,
-                  facilities,
-                  currentFacilityId,
-                })
-              )}
-            </ul>
-          ) : (
-            <div>
-              <button
-                type="button"
-                onClick={() => setMoreOpen((o) => !o)}
-                className="w-full flex items-center gap-6 px-10 mb-6 text-text-muted hover:text-text transition-colors"
-                aria-expanded={moreOpen}
-              >
-                <span className="label-text">More</span>
-                <ChevronDown
-                  size={11}
-                  strokeWidth={1.5}
-                  className={`transition-transform ${moreOpen ? "rotate-180" : ""}`}
-                />
-              </button>
-              {moreOpen && (
-                <ul className="flex flex-col gap-1">
-                  {moreItems.map((item) =>
-                    renderNavItem(item, {
-                      activeHref,
-                      collapsed,
-                      facilities,
-                      currentFacilityId,
-                    })
-                  )}
-                </ul>
-              )}
-            </div>
-          ))}
-      </nav>
-
-      {/* ── Footer ──────────────────────────────────────────────────── */}
-      <div
-        className={`hairline-t shrink-0 flex flex-col ${
-          collapsed ? "px-6 py-8 gap-6" : "px-10 py-10 gap-6"
-        }`}
-      >
-        {/* Search → command palette */}
-        <button
-          type="button"
-          onClick={openPalette}
-          className={`hairline-subtle bg-[var(--surface-2)] hover:border-[var(--border-hover)] transition-colors text-text-secondary flex items-center h-32 ${
-            collapsed ? "justify-center w-full" : "gap-8 px-10"
-          }`}
-          aria-label="Open command palette"
-          title={collapsed ? "Search · ⌘K" : undefined}
-        >
-          <Search size={12} strokeWidth={1.5} className="shrink-0" />
-          {!collapsed && (
-            <>
               <span
-                className="flex-1 text-left text-text-dim"
-                style={{ fontFamily: "var(--mono)", fontSize: 11 }}
-              >
-                Search…
-              </span>
-              <span
-                className="inline-flex items-center gap-3 text-text-dim shrink-0"
-                style={{ fontFamily: "var(--mono)", fontSize: 10 }}
-              >
-                <Command size={9} strokeWidth={1.5} />
-                <span>K</span>
-              </span>
-            </>
-          )}
-        </button>
-
-        {/* Notifications (link, not dropdown) + kiosk */}
-        <div
-          className={`flex items-center ${
-            collapsed ? "flex-col gap-6" : "gap-6"
-          }`}
-        >
-          <Link
-            href="/notifications"
-            className={`relative hairline-subtle hover:border-[var(--border-hover)] text-text-secondary transition-colors flex items-center h-32 ${
-              collapsed ? "justify-center w-full" : "gap-8 px-10 flex-1"
-            }`}
-            aria-label={`Notifications${
-              unreadCount > 0 ? `, ${unreadCount} unread` : ""
-            }`}
-            title={collapsed ? "Notifications" : undefined}
-          >
-            <Bell size={12} strokeWidth={1.5} className="shrink-0" />
-            {!collapsed && (
-              <span
-                className="flex-1 text-left text-text-secondary"
-                style={{ fontFamily: "var(--mono)", fontSize: 11 }}
-              >
-                Notifications
-              </span>
-            )}
-            {unreadCount > 0 && (
-              <span
-                className={
-                  collapsed
-                    ? "absolute -top-2 -right-2 bg-[var(--accent)] text-[var(--black)] tnum"
-                    : "bg-[var(--accent)] text-[var(--black)] tnum"
-                }
+                className="text-[var(--accent)]"
                 style={{
                   fontFamily: "var(--mono)",
-                  fontSize: 8,
+                  fontSize: 10,
                   fontWeight: 600,
-                  padding: "1px 4px",
-                  minWidth: 12,
-                  textAlign: "center",
-                  lineHeight: 1.2,
                 }}
-                aria-hidden
               >
-                {unreadCount > 99 ? "99+" : unreadCount}
+                {workspace.name.slice(0, 1).toUpperCase()}
               </span>
-            )}
+            </span>
           </Link>
-          <Link
-            href="/kiosk"
-            className={`hairline-subtle hover:border-[var(--border-hover)] text-text-secondary hover:text-text transition-colors flex items-center justify-center shrink-0 h-32 ${
-              collapsed ? "w-full" : "w-32"
-            }`}
-            aria-label="Open kiosk mode"
-            title="Kiosk mode"
-          >
-            <Monitor size={12} strokeWidth={1.5} />
-          </Link>
+        )}
+
         </div>
 
-        {/* ── Devices section ─────────────────────────────────────────
-           Scan + Print as 50/50 tiles when expanded, stacked icons when
-           collapsed. Separated from the row above by a subtle divider
-           and a touch of vertical breathing room so it reads as its own
-           operational tools section. */}
-        <div className="hairline-t pt-6" aria-label="Devices">
-          <SidebarDeviceBar collapsed={collapsed} />
-        </div>
-
-        {/* User menu (custom, opens upward) */}
-        {user && <SidebarUserMenu user={user} collapsed={collapsed} />}
-
-        {/* Collapse toggle */}
-        <button
-          type="button"
-          onClick={() => setCollapsed((c) => !c)}
-          className={`hairline-subtle hover:border-[var(--border-hover)] text-text-muted hover:text-text transition-colors flex items-center h-32 ${
-            collapsed ? "justify-center w-full" : "justify-center gap-6 px-10"
+        {/* ── Panel 2 · Navigate ──────────────────────────────────── */}
+        <nav
+          className={`hairline panel-float bg-[var(--surface)] flex-1 min-h-0 overflow-y-auto flex flex-col ${
+            collapsed ? "px-6 py-10 gap-10" : "px-10 py-12 gap-16"
           }`}
-          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-          title={`${collapsed ? "Expand" : "Collapse"} sidebar · ⌘B`}
         >
-          {collapsed ? (
-            <ChevronsRight size={11} strokeWidth={1.5} />
-          ) : (
-            <>
-              <ChevronsLeft size={11} strokeWidth={1.5} />
-              <span className="label-text">Collapse</span>
-              <span
-                className="ml-auto inline-flex items-center gap-3 text-text-dim"
-                style={{ fontFamily: "var(--mono)", fontSize: 9 }}
-              >
-                <Command size={8} strokeWidth={1.5} />B
-              </span>
-            </>
-          )}
-        </button>
+          {navGroups.map((group, gi) => (
+            <div key={group.label ?? `g${gi}`}>
+              {!collapsed && group.label && (
+                <div className="px-10 mb-6">
+                  <span className="label-text">{group.label}</span>
+                </div>
+              )}
+              <ul className="flex flex-col gap-1">
+                {group.items.map((item) =>
+                  renderNavItem(item, {
+                    activeHref,
+                    collapsed,
+                    facilities,
+                    currentFacilityId,
+                  })
+                )}
+              </ul>
+            </div>
+          ))}
+
+          {/* More — items not primary for this industry. Expanded: a toggle.
+              Collapsed: appended as icons so nothing is unreachable. */}
+          {moreItems.length > 0 &&
+            (collapsed ? (
+              <ul className="flex flex-col gap-1">
+                {moreItems.map((item) =>
+                  renderNavItem(item, {
+                    activeHref,
+                    collapsed,
+                    facilities,
+                    currentFacilityId,
+                  })
+                )}
+              </ul>
+            ) : (
+              <div>
+                <button
+                  type="button"
+                  onClick={() => setMoreOpen((o) => !o)}
+                  className="w-full flex items-center gap-6 px-10 mb-6 text-text-muted hover:text-text transition-colors"
+                  aria-expanded={moreOpen}
+                >
+                  <span className="label-text">More</span>
+                  <ChevronDown
+                    size={11}
+                    strokeWidth={1.5}
+                    className={`transition-transform ${moreOpen ? "rotate-180" : ""}`}
+                  />
+                </button>
+                {moreOpen && (
+                  <ul className="flex flex-col gap-1">
+                    {moreItems.map((item) =>
+                      renderNavItem(item, {
+                        activeHref,
+                        collapsed,
+                        facilities,
+                        currentFacilityId,
+                      })
+                    )}
+                  </ul>
+                )}
+              </div>
+            ))}
+        </nav>
+
+        {/* ── Panel 3 · Tools ─────────────────────────────────────── */}
+        <div
+          className={`hairline panel-float bg-[var(--surface)] shrink-0 flex flex-col ${
+            collapsed ? "px-6 py-8 gap-6" : "px-10 py-10 gap-6"
+          }`}
+        >
+          {/* Search → command palette */}
+          <button
+            type="button"
+            onClick={openPalette}
+            className={`hairline-subtle bg-[var(--surface-2)] hover:border-[var(--border-hover)] transition-colors text-text-secondary flex items-center h-32 ${
+              collapsed ? "justify-center w-full" : "gap-8 px-10"
+            }`}
+            aria-label="Open command palette"
+            title={collapsed ? "Search · ⌘K" : undefined}
+          >
+            <Search size={12} strokeWidth={1.5} className="shrink-0" />
+            {!collapsed && (
+              <>
+                <span
+                  className="flex-1 text-left text-text-dim"
+                  style={{ fontFamily: "var(--mono)", fontSize: 11 }}
+                >
+                  Search…
+                </span>
+                <span
+                  className="inline-flex items-center gap-3 text-text-dim shrink-0"
+                  style={{ fontFamily: "var(--mono)", fontSize: 10 }}
+                >
+                  <Command size={9} strokeWidth={1.5} />
+                  <span>K</span>
+                </span>
+              </>
+            )}
+          </button>
+
+          {/* Notifications (link, not dropdown) + kiosk */}
+          <div
+            className={`flex items-center ${
+              collapsed ? "flex-col gap-6" : "gap-6"
+            }`}
+          >
+            <Link
+              href="/notifications"
+              className={`relative hairline-subtle hover:border-[var(--border-hover)] text-text-secondary transition-colors flex items-center h-32 ${
+                collapsed ? "justify-center w-full" : "gap-8 px-10 flex-1"
+              }`}
+              aria-label={`Notifications${
+                unreadCount > 0 ? `, ${unreadCount} unread` : ""
+              }`}
+              title={collapsed ? "Notifications" : undefined}
+            >
+              <Bell size={12} strokeWidth={1.5} className="shrink-0" />
+              {!collapsed && (
+                <span
+                  className="flex-1 text-left text-text-secondary"
+                  style={{ fontFamily: "var(--mono)", fontSize: 11 }}
+                >
+                  Notifications
+                </span>
+              )}
+              {unreadCount > 0 && (
+                <span
+                  className={
+                    collapsed
+                      ? "absolute -top-2 -right-2 bg-[var(--accent)] text-[var(--black)] tnum"
+                      : "bg-[var(--accent)] text-[var(--black)] tnum"
+                  }
+                  style={{
+                    fontFamily: "var(--mono)",
+                    fontSize: 8,
+                    fontWeight: 600,
+                    padding: "1px 4px",
+                    minWidth: 12,
+                    textAlign: "center",
+                    lineHeight: 1.2,
+                  }}
+                  aria-hidden
+                >
+                  {unreadCount > 99 ? "99+" : unreadCount}
+                </span>
+              )}
+            </Link>
+            <Link
+              href="/kiosk"
+              className={`hairline-subtle hover:border-[var(--border-hover)] text-text-secondary hover:text-text transition-colors flex items-center justify-center shrink-0 h-32 ${
+                collapsed ? "w-full" : "w-32"
+              }`}
+              aria-label="Open kiosk mode"
+              title="Kiosk mode"
+            >
+              <Monitor size={12} strokeWidth={1.5} />
+            </Link>
+          </div>
+
+          {/* ── Devices section ─────────────────────────────────────────
+             Scan + Print as 50/50 tiles when expanded, stacked icons when
+             collapsed. Spacing alone separates it from the row above — the
+             panel edge already does the dividing work. */}
+          <div aria-label="Devices">
+            <SidebarDeviceBar collapsed={collapsed} />
+          </div>
+
+          {/* User menu (custom, opens upward) */}
+          {user && <SidebarUserMenu user={user} collapsed={collapsed} />}
+
+          {/* Collapse toggle */}
+          <button
+            type="button"
+            onClick={() => setCollapsed((c) => !c)}
+            className={`hairline-subtle hover:border-[var(--border-hover)] text-text-muted hover:text-text transition-colors flex items-center h-32 ${
+              collapsed ? "justify-center w-full" : "justify-center gap-6 px-10"
+            }`}
+            aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+            title={`${collapsed ? "Expand" : "Collapse"} sidebar · ⌘B`}
+          >
+            {collapsed ? (
+              <ChevronsRight size={11} strokeWidth={1.5} />
+            ) : (
+              <>
+                <ChevronsLeft size={11} strokeWidth={1.5} />
+                <span className="label-text">Collapse</span>
+                <span
+                  className="ml-auto inline-flex items-center gap-3 text-text-dim"
+                  style={{ fontFamily: "var(--mono)", fontSize: 9 }}
+                >
+                  <Command size={8} strokeWidth={1.5} />B
+                </span>
+              </>
+            )}
+          </button>
+        </div>
       </div>
     </aside>
   );
@@ -457,7 +471,7 @@ function NavItemLink({
         href={item.href}
         title={collapsed ? item.label : undefined}
         className={`relative flex items-center transition-all duration-200 ${
-          collapsed ? "justify-center h-32 w-full" : "gap-10 px-10 py-7"
+          collapsed ? "justify-center h-32 w-full" : "gap-10 px-10 py-8"
         } ${
           active
             ? "bg-[var(--accent-dim)] text-[var(--accent)]"
@@ -465,12 +479,6 @@ function NavItemLink({
         } ${soon ? "opacity-50" : ""}`}
         aria-current={active ? "page" : undefined}
       >
-        {active && !collapsed && (
-          <span
-            className="absolute left-0 top-2 bottom-2 w-px bg-[var(--accent)]"
-            aria-hidden
-          />
-        )}
         <Icon size={13} strokeWidth={1.5} />
         {!collapsed && (
           <span

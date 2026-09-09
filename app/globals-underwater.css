@@ -14,6 +14,14 @@
   --surface: #0c1f3c;
   --surface-2: #142a4d;
 
+  /* Elevation for detached panels (the floating side rail). Defined here
+     because this file owns the real surface colors — the generic values in
+     globals.css are calibrated for the black/cream stack and read far too
+     weak against deep blue. This one applies in both themes, since app
+     surfaces stay in the underwater palette either way. */
+  --shadow-panel: 0 1px 2px rgba(0, 0, 0, 0.45),
+    0 14px 36px rgba(2, 7, 18, 0.45);
+
   --border-subtle: rgba(140, 175, 220, 0.08);
   --border-default: rgba(140, 175, 220, 0.16);
   --border-hover: rgba(160, 195, 240, 0.32);
