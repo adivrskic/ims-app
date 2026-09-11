@@ -1,4 +1,4 @@
-import { Plus } from "lucide-react";
+import { Plus, Upload } from "lucide-react";
 import { CornerLink } from "@/components/ui/CornerButton";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { ListSearchToolbar } from "@/components/ui/ListSearchToolbar";
@@ -62,10 +62,16 @@ export default async function CustomersPage({
         description="People and businesses you sell to. Linked to orders and pickups."
         meta={[{ label: "Total", value: totalCount }]}
         actions={
-          <CornerLink href="/customers/new" variant="primary" size="sm">
-            <Plus size={11} strokeWidth={1.5} />
-            New customer
-          </CornerLink>
+          <div className="flex items-center gap-10 flex-wrap justify-end">
+            <CornerLink href="/customers/import" variant="ghost" size="sm">
+              <Upload size={11} strokeWidth={1.5} />
+              Import
+            </CornerLink>
+            <CornerLink href="/customers/new" variant="primary" size="sm">
+              <Plus size={11} strokeWidth={1.5} />
+              New customer
+            </CornerLink>
+          </div>
         }
       />
 

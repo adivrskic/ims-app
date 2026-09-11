@@ -140,7 +140,7 @@ npm run dev
 ### 1.5 Pre-flight gate (one person, 10 minutes, before the team starts)
 | # | Check | Expected | Result |
 |---|---|---|---|
-| 1.5.1 | `npm test` in the dashboard repo | **147 tests pass, 16 files** (verified 2026-09-08) | ☐ |
+| 1.5.1 | `npm test` in the dashboard repo | **238 tests pass, 19 files** (verified 2026-09-11) | ☐ |
 | 1.5.2 | `npm run build` in the dashboard repo | Compiles, exit 0. **100 routes (4 prerendered static, 96 dynamic)** - the old "67 static pages" figure was stale (verified 2026-08-14) | ☐ |
 | 1.5.3 | `npm run build` in landing repo | Compiles, 102 static pages (verified) | ☐ |
 | 1.5.4 | Load both live URLs | Both 200 (verified) | ☐ |
@@ -309,13 +309,17 @@ Verified directly against the code. These **change what is testable**. Decide ho
 | 4.1.5 | Signup rate limit | 6 rapid signups from one IP | Blocked after 5 (5/IP/600s) | ☐ |
 | 4.1.6 | Happy path | Valid details | **Either** a "Check your email" banner **or** straight to `/onboarding`, depending on the Supabase email-confirmation setting. **Record which your environment does.** | ☐ |
 | 4.1.7 | Confirmation email | Click the link (if confirmation is on) | Authenticated, then `/onboarding` | ☐ |
-| 4.1.8 | Wizard — step 1 | On `/onboarding`, a 5-step wizard opens (Workspace · How you work · Facility · Team · Review). Pick an industry card | Card highlights; nothing is pre-selected on load; "Next" advances | ☐ |
+| 4.1.8 | Wizard — step 1 | On `/onboarding`, a 4-step wizard opens (Workspace · How you work · Team · Review). Step 1 holds the workspace name, the first facility (pre-filled "Main warehouse", address collapsed) and the industry cards. Pick an industry card | Card highlights; nothing is pre-selected on load; "Next" advances; blanking the facility name blocks with an inline error | ☐ |
 | 4.1.9 | Wizard — name validation | Advance step 1 with a blank / 1-char workspace name | Inline error ("at least 2 characters"); button is never disabled, focus stays on the field | ☐ |
+| 4.1.9b | Second workspace | From inside the app, open `/workspaces/new` | The **same** 4-step wizard (own draft); on create you land in the new workspace with its own tailored sidebar/dashboard | ☐ |
 | 4.1.10 | Wizard — step 2 tailoring | On "How you work", the activity chips arrive **pre-checked from the chosen industry**; toggle some and watch the "Your Nimbus, so far" preview | Preview sidebar + "dashboard leads with" update live to match the choices | ☐ |
 | 4.1.11 | Wizard — priorities | Pick 1–3 "see first" priorities | Chips number in click order; capped at 3 | ☐ |
 | 4.1.12 | Wizard — resume | Refresh mid-wizard, or click a completed step in the rail | Answers survive (localStorage draft); completed steps are clickable to jump back and edit | ☐ |
 | 4.1.13 | Wizard — review + create | Reach "Review", confirm the read-back rows, click "Create workspace" | Lands on `/` (no invites) **or** the success screen (with invites) | ☐ |
 | 4.1.14 | **First impression** | Look at the overview as the brand-new owner | ✅ **Expect a "Getting started" checklist** whose items match the modules you enabled and your role, KPI tiles, and CTA buttons in each empty panel. A customer should know exactly what to do next. | ☐ |
+| 4.1.14b | Sample data | On the checklist card footer, click **Explore with sample data** | Banner "You're exploring with sample data" appears; inventory shows ~10 products with stock in bays A/B/C, reorder alerts, a PO in transit, 2 open orders, a 14-day activity sparkline. Checklist stays (it judges your OWN data). **Clear sample data** removes exactly those rows; anything you added stays | ☐ |
+| 4.1.14c | Quick add | Inventory → Register product | Only Barcode / On hand / Name are visible; "More details" is collapsed. Registering with On hand = 12 shows 12 on hand (holding area) and a REG entry in recent activity | ☐ |
+| 4.1.14d | Supplier-first PO step | Checklist with zero suppliers | "Add your first supplier" links to `/suppliers/new` (not a PO form that can only say "add a supplier first"); "Count what you have" is the scan step | ☐ |
 | 4.1.15 | Customized layout | Compare the sidebar + dashboard to the wizard choices | Deselected modules sit under "More"; the dashboard leads with your priorities; a `single_room` size gives a leaner board | ☐ |
 | 4.1.16 | Onboarding with invites | Add 2 teammate emails; bad addresses turn red inline | Success screen shows per-invite **email sent / email failed** status + copy-able `/invite/<token>` links; same links recoverable at Settings → Members | ☐ |
 | 4.1.17 | Idempotence / double-submit | Return to `/onboarding` afterwards, or submit twice from two tabs | Redirects to `/`; exactly one workspace (advisory-locked in `provision_workspace`) | ☐ |
@@ -393,9 +397,13 @@ Verified directly against the code. These **change what is testable**. Decide ho
 | 5.11 | Register a product | `/inventory` → Register (barcode + name required) | Created | ☐ |
 | 5.12 | Duplicate barcode | Same barcode twice | "Barcode X is already registered" | ☐ |
 | 5.13 | Set unit cost | Give ≥3 products a `unit_cost` | ⚠️ **Required or the whole Valuation report is empty** | ☐ |
-| 5.14 | **CSV import** | `/inventory/import` — ⚠️ reachable **only via ⌘K command palette**. Upload 1 good + 1 missing-barcode + 1 duplicate + 1 existing row | Good row imports; each bad row reported specifically | ☐ |
-| 5.15 | Import limits | >1000 rows or >5 MB | Whole file rejected clearly | ☐ |
-| 5.16 | Import category typo | category "Widgest" | ⚠️ Silently creates a new category — record | ☐ |
+| 5.14 | **Spreadsheet import** | Inventory header → **Import** (also the empty-state CTA). Upload 1 good + 1 missing-barcode + 1 duplicate + 1 existing row, click **Check first** | Nothing written; panel shows rows ready / problems by spreadsheet row number, and "How your columns matched". Then **Import N products** writes; the existing row is reported as skipped | ☐ |
+| 5.14b | Paste from a spreadsheet | Copy cells (header included) from Excel/Sheets, switch to "Paste", paste, Check | Tab-separated paste parses; headers like `UPC`, `Product Name`, `Qty on hand`, `Vendor`, `Cost` match without renaming | ☐ |
+| 5.14c | Quantities + locations | Rows with `quantity` and `location` = `A-3-2` (existing section) / `Z-1-1` (no such section) | First lands in A-3-2 with a REG scan; second row is reported ("no section Z") and skipped; blank location = holding area | ☐ |
+| 5.14d | Update existing | Re-import with "Update products that already exist" on, one cell changed, one cell blank | Changed cell applies; blank cell does NOT erase; quantity is NOT re-applied | ☐ |
+| 5.14e | Suppliers / customers | `/suppliers/import`, `/customers/import` (header **Import** links) | Same check → import flow; matched by name; `Net 30`/`NET30`/`n30` all map to Net 30 | ☐ |
+| 5.15 | Import limits | >1000 rows or >5 MB | Whole file rejected clearly at Check | ☐ |
+| 5.16 | Import category typo | category "Widgest" | Creates a new category and SAYS so in the result notes ("Created 1 category: Widgest") — record whether that is acceptable | ☐ |
 | 5.17 | **Export CSV** | `/inventory` → Export CSV | 🔴 **CONFIRMED BUG — 404.** Link is `/api/inventory/export`; route is `/inventory/export` | ☐ |
 | 5.18 | Create supplier | `/suppliers/new` | Created | ☐ |
 | 5.19 | Create customer | Business type with no company name | Rejected; valid one saves | ☐ |

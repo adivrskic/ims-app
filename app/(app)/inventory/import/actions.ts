@@ -2,362 +2,507 @@
 
 import { revalidatePath, revalidateTag } from "next/cache";
 import { getActionContext } from "@/lib/data/actionContext";
+import { getActiveScope } from "@/lib/facilityScope";
 import { tags } from "@/lib/cache-tags";
+import { PRODUCT_SPEC } from "@/lib/import/specs";
+import {
+  emptyOutcome,
+  prepareImport,
+  type ImportOutcome,
+} from "@/lib/import/prepare";
+import type { BuiltRow } from "@/lib/import/spec";
+import {
+  chunk,
+  patchFrom,
+  readExistingMode,
+  readImportInput,
+  readImportMode,
+} from "@/lib/import/server";
 
-export interface ImportError {
-  row: number;
-  barcode: string;
-  message: string;
+export type { ImportOutcome };
+
+interface SectionInfo {
+  id: string;
+  total_bays: number;
+  total_levels: number;
 }
 
-export interface ImportResult {
-  imported: number;
-  skipped: number;
-  errors: ImportError[];
+interface Placement {
+  section_id: string | null;
+  bay: number;
+  level: number;
 }
-
-const MAX_ROWS = 1000;
-const MAX_BYTES = 5 * 1024 * 1024; // 5MB
 
 /**
- * Minimal CSV parser that handles quoted cells, escaped quotes, and
- * commas inside quotes. Doesn't support multi-line cells — for our
- * use case (product imports) that's fine; if needed later we'd swap
- * to papaparse server-side.
+ * Resolve a "SECTION-BAY-LEVEL" cell against the facility's sections.
+ * "A" alone means bay 1 / level 1; "A-3" means level 1. Blank = holding area.
  */
-function parseCsv(text: string): string[][] {
-  const rows: string[][] = [];
-  let row: string[] = [];
-  let cell = "";
-  let inQuotes = false;
-  let i = 0;
-  while (i < text.length) {
-    const ch = text[i];
-    if (inQuotes) {
-      if (ch === '"') {
-        if (text[i + 1] === '"') {
-          cell += '"';
-          i += 2;
-          continue;
-        }
-        inQuotes = false;
-        i++;
-        continue;
-      }
-      cell += ch;
-      i++;
-      continue;
-    }
-    if (ch === '"') {
-      inQuotes = true;
-      i++;
-      continue;
-    }
-    if (ch === ",") {
-      row.push(cell);
-      cell = "";
-      i++;
-      continue;
-    }
-    if (ch === "\r") {
-      i++;
-      continue;
-    }
-    if (ch === "\n") {
-      row.push(cell);
-      rows.push(row);
-      row = [];
-      cell = "";
-      i++;
-      continue;
-    }
-    cell += ch;
-    i++;
+function resolvePlacement(
+  raw: string | null,
+  sections: Map<string, SectionInfo>
+): { placement: Placement } | { error: string } {
+  if (!raw) return { placement: { section_id: null, bay: 1, level: 1 } };
+  const parts = raw
+    .trim()
+    .split(/[\s\-/.:]+/)
+    .filter(Boolean);
+  const code = (parts[0] ?? "").toLowerCase();
+  const section = sections.get(code);
+  if (!section) {
+    return {
+      error: `Location “${raw}”: no section “${parts[0] ?? raw}” in this facility (lay one out under Facilities, or leave the cell blank for the holding area)`,
+    };
   }
-  // Final row (no trailing newline)
-  if (cell.length > 0 || row.length > 0) {
-    row.push(cell);
-    rows.push(row);
+  const bay = parts[1] === undefined ? 1 : Number(parts[1]);
+  const level = parts[2] === undefined ? 1 : Number(parts[2]);
+  if (!Number.isInteger(bay) || bay < 1 || bay > section.total_bays) {
+    return {
+      error: `Location “${raw}”: section ${parts[0]} has bays 1–${section.total_bays}`,
+    };
   }
-  return rows;
+  if (!Number.isInteger(level) || level < 1 || level > section.total_levels) {
+    return {
+      error: `Location “${raw}”: section ${parts[0]} has levels 1–${section.total_levels}`,
+    };
+  }
+  return { placement: { section_id: section.id, bay, level } };
 }
 
-export async function importProductsCsv(
+const PRODUCT_COLUMNS = [
+  "name",
+  "internal_sku",
+  "manufacturer",
+  "reorder_point",
+  "safety_stock",
+  "lead_time_days",
+  "unit_cost",
+  "unit_price",
+  "dimensions",
+  "weight",
+  "notes",
+];
+
+/**
+ * Product import — file or pasted rows, dry-run "check" then "import".
+ *
+ * - Rows are validated by the shared engine (lib/import); each bad row is
+ *   reported by its spreadsheet row number and the good rows still import.
+ * - Existing products (same barcode) are skipped, or updated when the
+ *   "existing=update" switch is on. Blank cells never overwrite.
+ * - `quantity` on a NEW product creates its on-hand row: in the given
+ *   SECTION-BAY-LEVEL when that resolves in the active facility, else in
+ *   the facility's holding area. Existing products never get stock this
+ *   way — re-importing a file must not double-count.
+ * - Categories and suppliers are matched by name (case-insensitive) and
+ *   created when missing (suppliers only if the caller may manage them).
+ */
+export async function importProducts(
   formData: FormData
-): Promise<ImportResult> {
+): Promise<ImportOutcome> {
+  const mode = readImportMode(formData);
+  const existingMode = readExistingMode(formData);
+
   const ctx = await getActionContext();
-  if ("error" in ctx) {
-    return {
-      imported: 0,
-      skipped: 0,
-      errors: [{ row: 0, barcode: "", message: ctx.error }],
-    };
-  }
+  if ("error" in ctx) return emptyOutcome(mode, ctx.error);
   if (!ctx.can("inventory.manage")) {
-    return {
-      imported: 0,
-      skipped: 0,
-      errors: [
-        { row: 0, barcode: "", message: "Only admins can import products" },
-      ],
-    };
+    return emptyOutcome(mode, "Only admins can import products.");
   }
 
-  const file = formData.get("file") as File | null;
-  if (!file || file.size === 0) {
-    return {
-      imported: 0,
-      skipped: 0,
-      errors: [{ row: 0, barcode: "", message: "No file uploaded" }],
-    };
-  }
-  if (file.size > MAX_BYTES) {
-    return {
-      imported: 0,
-      skipped: 0,
-      errors: [
-        {
-          row: 0,
-          barcode: "",
-          message: `File exceeds 5MB limit (${(file.size / 1024 / 1024).toFixed(
-            1
-          )}MB)`,
-        },
-      ],
-    };
-  }
+  const input = await readImportInput(formData);
+  if ("fatal" in input) return emptyOutcome(mode, input.fatal);
 
-  const text = await file.text();
-  const rows = parseCsv(text).filter((r) => r.some((c) => c.trim().length > 0));
+  const { preview, rows } = prepareImport(input.text, PRODUCT_SPEC);
+  const out: ImportOutcome = {
+    ...preview,
+    mode,
+    imported: 0,
+    updated: 0,
+    skipped: 0,
+    notes: [],
+  };
+  if (preview.fatal) return out;
 
-  if (rows.length === 0) {
-    return {
-      imported: 0,
-      skipped: 0,
-      errors: [{ row: 0, barcode: "", message: "Empty CSV" }],
-    };
+  // ── Existing products by barcode, and SKU ownership ──────────────────
+  const existingByBarcode = new Map<string, string>();
+  for (const part of chunk(
+    rows.map((r) => r.key),
+    500
+  )) {
+    const { data } = await ctx.supabase
+      .from("products")
+      .select("id, barcode")
+      .eq("org_id", ctx.orgId)
+      .in("barcode", part);
+    for (const p of data ?? []) existingByBarcode.set(p.barcode, p.id);
   }
 
-  // First row = headers. Normalize: lowercase, trim, snake_case.
-  const headers = rows[0].map((h) =>
-    h
-      .trim()
-      .toLowerCase()
-      .replace(/[\s-]+/g, "_")
-  );
-  const dataRows = rows.slice(1);
-
-  if (dataRows.length > MAX_ROWS) {
-    return {
-      imported: 0,
-      skipped: 0,
-      errors: [
-        {
-          row: 0,
-          barcode: "",
-          message: `Row count exceeds ${MAX_ROWS} limit (got ${dataRows.length}). Split the file and re-upload.`,
-        },
-      ],
-    };
-  }
-
-  // Header → column index map
-  const idx = (name: string) => headers.indexOf(name);
-  const iBarcode = idx("barcode");
-  const iName = idx("name");
-  const iSku = idx("internal_sku");
-  const iManufacturer = idx("manufacturer");
-  const iCategory = idx("category");
-  const iReorder = idx("reorder_point");
-  const iDimensions = idx("dimensions");
-  const iWeight = idx("weight");
-  const iNotes = idx("notes");
-
-  if (iBarcode < 0) {
-    return {
-      imported: 0,
-      skipped: 0,
-      errors: [
-        { row: 0, barcode: "", message: "Missing required column: barcode" },
-      ],
-    };
-  }
-  if (iName < 0) {
-    return {
-      imported: 0,
-      skipped: 0,
-      errors: [
-        { row: 0, barcode: "", message: "Missing required column: name" },
-      ],
-    };
-  }
-
-  // Resolve category names → IDs, creating any that don't exist.
-  // First pass: collect distinct non-empty category names from the file.
-  const categoryNames = new Set<string>();
-  if (iCategory >= 0) {
-    for (const r of dataRows) {
-      const n = (r[iCategory] ?? "").trim();
-      if (n) categoryNames.add(n);
+  const skuOwner = new Map<string, string>(); // sku → barcode
+  const skus = rows
+    .map((r) => r.record.internal_sku)
+    .filter((s): s is string => typeof s === "string");
+  for (const part of chunk(skus, 500)) {
+    const { data } = await ctx.supabase
+      .from("products")
+      .select("barcode, internal_sku")
+      .eq("org_id", ctx.orgId)
+      .in("internal_sku", part);
+    for (const p of data ?? []) {
+      if (p.internal_sku) skuOwner.set(p.internal_sku, p.barcode);
     }
   }
 
-  const { data: existingCats } = await ctx.supabase
-    .from("categories")
-    .select("id, name");
-  const catMap = new Map<string, string>(
-    (existingCats ?? []).map((c) => [c.name.toLowerCase(), c.id])
+  // ── Facility + sections, only if any row carries stock ───────────────
+  const wantsStock = rows.some(
+    (r) => ((r.record.quantity as number | null) ?? 0) > 0
   );
+  let warehouse: { id: string; name: string } | null = null;
+  const sections = new Map<string, SectionInfo>();
+  if (wantsStock) {
+    const scope = await getActiveScope();
+    if (scope.mode === "single") {
+      warehouse = { id: scope.id, name: scope.name };
+    } else {
+      const { data } = await ctx.supabase
+        .from("warehouses")
+        .select("id, name")
+        .eq("org_id", ctx.orgId)
+        .eq("is_active", true)
+        .order("created_at", { ascending: true })
+        .limit(1)
+        .maybeSingle();
+      warehouse = data ?? null;
+    }
+    if (warehouse) {
+      const { data } = await ctx.supabase
+        .from("sections")
+        .select("id, code, total_bays, total_levels")
+        .eq("org_id", ctx.orgId)
+        .eq("warehouse_id", warehouse.id);
+      for (const s of data ?? []) {
+        // sections.code is char(n) — trim the padding before matching.
+        sections.set(String(s.code).trim().toLowerCase(), {
+          id: s.id,
+          total_bays: s.total_bays,
+          total_levels: s.total_levels,
+        });
+      }
+    }
+  }
 
-  // Create any missing categories in one batch.
-  const missingCats = Array.from(categoryNames).filter(
-    (n) => !catMap.has(n.toLowerCase())
-  );
-  if (missingCats.length > 0) {
-    const { data: newCats } = await ctx.supabase
+  // ── Partition: create / update / skip / error ────────────────────────
+  const toCreate: Array<BuiltRow & { placement: Placement | null }> = [];
+  const toUpdate: BuiltRow[] = [];
+  const seenSku = new Set<string>();
+
+  for (const r of rows) {
+    const sku = r.record.internal_sku as string | null;
+    if (sku) {
+      if (seenSku.has(sku)) {
+        out.errors.push({
+          row: r.row,
+          key: r.key,
+          message: `Duplicate SKU “${sku}” within this file`,
+        });
+        continue;
+      }
+      seenSku.add(sku);
+      const owner = skuOwner.get(sku);
+      if (owner && owner !== r.key) {
+        out.errors.push({
+          row: r.row,
+          key: r.key,
+          message: `SKU “${sku}” already belongs to barcode ${owner}`,
+        });
+        continue;
+      }
+    }
+
+    if (existingByBarcode.has(r.key)) {
+      if (existingMode === "update") {
+        toUpdate.push(r);
+      } else {
+        out.skipped += 1;
+        out.errors.push({
+          row: r.row,
+          key: r.key,
+          message:
+            "Already in catalog — skipped (turn on “Update existing” to overwrite)",
+        });
+      }
+      continue;
+    }
+
+    const qty = (r.record.quantity as number | null) ?? 0;
+    let placement: Placement | null = null;
+    if (qty > 0) {
+      if (!warehouse) {
+        out.errors.push({
+          row: r.row,
+          key: r.key,
+          message:
+            "Has a quantity but the workspace has no facility to put it in — add one under Facilities, or clear the quantity column",
+        });
+        continue;
+      }
+      const resolved = resolvePlacement(
+        (r.record.location as string | null) ?? null,
+        sections
+      );
+      if ("error" in resolved) {
+        out.errors.push({ row: r.row, key: r.key, message: resolved.error });
+        continue;
+      }
+      placement = resolved.placement;
+    }
+    toCreate.push({ ...r, placement });
+  }
+
+  out.errors.sort((a, b) => a.row - b.row);
+  out.valid = toCreate.length + toUpdate.length;
+
+  const summary: string[] = [];
+  if (toCreate.length > 0) summary.push(`${toCreate.length} new`);
+  if (toUpdate.length > 0) summary.push(`${toUpdate.length} to update`);
+  if (out.skipped > 0) summary.push(`${out.skipped} already in catalog`);
+  if (warehouse && wantsStock) {
+    summary.push(`stock goes to ${warehouse.name}`);
+  }
+  if (summary.length > 0) out.notes.push(summary.join(" · "));
+
+  if (mode === "check") return out;
+
+  // ── Categories: match or create ──────────────────────────────────────
+  const wanted = [...toCreate, ...toUpdate];
+  const categoryNames = new Set<string>();
+  const supplierNames = new Set<string>();
+  for (const r of wanted) {
+    const c = r.record.category as string | null;
+    if (c) categoryNames.add(c);
+    const s = r.record.supplier as string | null;
+    if (s) supplierNames.add(s);
+  }
+
+  const catMap = new Map<string, string>();
+  if (categoryNames.size > 0) {
+    const { data: existingCats } = await ctx.supabase
       .from("categories")
+      .select("id, name")
+      .eq("org_id", ctx.orgId);
+    for (const c of existingCats ?? []) catMap.set(c.name.toLowerCase(), c.id);
+    const missing = [...categoryNames].filter(
+      (n) => !catMap.has(n.toLowerCase())
+    );
+    if (missing.length > 0) {
+      const { data: created, error } = await ctx.supabase
+        .from("categories")
+        .insert(missing.map((name) => ({ org_id: ctx.orgId, name })))
+        .select("id, name");
+      if (error) {
+        out.notes.push(`Couldn't create categories: ${error.message}`);
+      } else {
+        for (const c of created ?? []) catMap.set(c.name.toLowerCase(), c.id);
+        out.notes.push(
+          `Created ${created?.length ?? 0} ${
+            (created?.length ?? 0) === 1 ? "category" : "categories"
+          }: ${missing.join(", ")}`
+        );
+      }
+    }
+  }
+
+  // ── Suppliers: match, create if allowed ──────────────────────────────
+  const supplierMap = new Map<string, string>();
+  if (supplierNames.size > 0) {
+    const { data: existingSup } = await ctx.supabase
+      .from("suppliers")
+      .select("id, name")
+      .eq("org_id", ctx.orgId);
+    for (const s of existingSup ?? []) {
+      supplierMap.set(s.name.toLowerCase(), s.id);
+    }
+    const missing = [...supplierNames].filter(
+      (n) => !supplierMap.has(n.toLowerCase())
+    );
+    if (missing.length > 0) {
+      if (ctx.can("suppliers.manage")) {
+        const { data: created, error } = await ctx.supabase
+          .from("suppliers")
+          .insert(
+            missing.map((name) => ({
+              org_id: ctx.orgId,
+              name,
+              created_by: ctx.user.id,
+            }))
+          )
+          .select("id, name");
+        if (error) {
+          out.notes.push(`Couldn't create suppliers: ${error.message}`);
+        } else {
+          for (const s of created ?? []) {
+            supplierMap.set(s.name.toLowerCase(), s.id);
+          }
+          out.notes.push(
+            `Created ${created?.length ?? 0} supplier${
+              (created?.length ?? 0) === 1 ? "" : "s"
+            }: ${missing.join(", ")}`
+          );
+        }
+      } else {
+        out.notes.push(
+          `Left the preferred supplier blank for ${missing.length} unknown name${
+            missing.length === 1 ? "" : "s"
+          } (you can't create suppliers): ${missing.join(", ")}`
+        );
+      }
+    }
+  }
+
+  const categoryIdFor = (r: BuiltRow) => {
+    const c = r.record.category as string | null;
+    return c ? catMap.get(c.toLowerCase()) ?? null : null;
+  };
+  const supplierIdFor = (r: BuiltRow) => {
+    const s = r.record.supplier as string | null;
+    return s ? supplierMap.get(s.toLowerCase()) ?? null : null;
+  };
+
+  // ── Inserts (batched, a failed batch reports and continues) ──────────
+  const createdIds = new Map<string, string>(); // barcode → id
+  for (const part of chunk(toCreate, 200)) {
+    const { data, error } = await ctx.supabase
+      .from("products")
       .insert(
-        missingCats.map((name) => ({
+        part.map((r) => ({
           org_id: ctx.orgId,
-          name,
+          barcode: r.key,
+          name: r.record.name,
+          internal_sku: r.record.internal_sku ?? null,
+          manufacturer: r.record.manufacturer ?? null,
+          category_id: categoryIdFor(r),
+          reorder_point: (r.record.reorder_point as number | null) ?? 0,
+          safety_stock: (r.record.safety_stock as number | null) ?? 0,
+          lead_time_days: r.record.lead_time_days ?? null,
+          unit_cost: r.record.unit_cost ?? null,
+          unit_price: r.record.unit_price ?? null,
+          preferred_supplier_id: supplierIdFor(r),
+          dimensions: r.record.dimensions ?? null,
+          weight: r.record.weight ?? null,
+          notes: r.record.notes ?? null,
         }))
       )
-      .select("id, name");
-    for (const c of newCats ?? []) {
-      catMap.set(c.name.toLowerCase(), c.id);
-    }
-  }
-
-  // Pre-check duplicates in the workspace
-  const fileBarcodes = dataRows
-    .map((r) => (r[iBarcode] ?? "").trim())
-    .filter(Boolean);
-  const { data: existingProducts } = await ctx.supabase
-    .from("products")
-    .select("barcode")
-    .in("barcode", fileBarcodes);
-  const existingBarcodes = new Set(
-    (existingProducts ?? []).map((p) => p.barcode)
-  );
-
-  // Validate + collect inserts
-  const errors: ImportError[] = [];
-  const seenInFile = new Set<string>();
-  const inserts: Array<Record<string, unknown>> = [];
-  let skipped = 0;
-
-  for (let i = 0; i < dataRows.length; i++) {
-    const r = dataRows[i];
-    const rowNum = i + 2; // 1-based, +1 for header
-    const barcode = (r[iBarcode] ?? "").trim();
-    const name = (r[iName] ?? "").trim();
-
-    if (!barcode) {
-      errors.push({ row: rowNum, barcode: "", message: "Missing barcode" });
-      continue;
-    }
-    if (!name) {
-      errors.push({ row: rowNum, barcode, message: "Missing name" });
-      continue;
-    }
-    if (seenInFile.has(barcode)) {
-      errors.push({
-        row: rowNum,
-        barcode,
-        message: "Duplicate barcode within this file",
-      });
-      continue;
-    }
-    if (existingBarcodes.has(barcode)) {
-      skipped++;
-      errors.push({
-        row: rowNum,
-        barcode,
-        message: "Already in catalog — skipped",
-      });
-      continue;
-    }
-    seenInFile.add(barcode);
-
-    let reorderPoint = 0;
-    if (iReorder >= 0) {
-      const raw = (r[iReorder] ?? "").trim();
-      if (raw) {
-        const n = parseInt(raw, 10);
-        if (Number.isNaN(n) || n < 0) {
-          errors.push({
-            row: rowNum,
-            barcode,
-            message: `reorder_point must be a non-negative integer (got "${raw}")`,
-          });
-          continue;
-        }
-        reorderPoint = n;
-      }
-    }
-
-    let categoryId: string | null = null;
-    if (iCategory >= 0) {
-      const catName = (r[iCategory] ?? "").trim();
-      if (catName) {
-        categoryId = catMap.get(catName.toLowerCase()) ?? null;
-        if (!categoryId) {
-          // Shouldn't happen since we pre-created — but defensive
-          errors.push({
-            row: rowNum,
-            barcode,
-            message: `Category "${catName}" could not be created`,
-          });
-          continue;
-        }
-      }
-    }
-
-    inserts.push({
-      org_id: ctx.orgId,
-      barcode,
-      name,
-      internal_sku: iSku >= 0 ? (r[iSku] ?? "").trim() || null : null,
-      manufacturer:
-        iManufacturer >= 0 ? (r[iManufacturer] ?? "").trim() || null : null,
-      category_id: categoryId,
-      reorder_point: reorderPoint,
-      dimensions:
-        iDimensions >= 0 ? (r[iDimensions] ?? "").trim() || null : null,
-      weight: iWeight >= 0 ? (r[iWeight] ?? "").trim() || null : null,
-      notes: iNotes >= 0 ? (r[iNotes] ?? "").trim() || null : null,
-    });
-  }
-
-  // Bulk insert. If this fails midway (e.g. constraint violation that
-  // slipped past our checks), Postgres rolls back the batch — we'd get
-  // 0 imported. For robustness in pathological cases we could chunk
-  // into 100-row batches, but for the v1 import workflow this is fine.
-  let imported = 0;
-  if (inserts.length > 0) {
-    const { data: inserted, error } = await ctx.supabase
-      .from("products")
-      .insert(inserts)
-      .select("id");
+      .select("id, barcode");
     if (error) {
-      errors.push({
-        row: 0,
-        barcode: "",
-        message: `Insert failed: ${error.message}`,
+      out.errors.push({
+        row: part[0].row,
+        key: "",
+        message: `Rows ${part[0].row}–${
+          part[part.length - 1].row
+        } failed together: ${error.message}`,
       });
-    } else {
-      imported = inserted?.length ?? 0;
+      continue;
+    }
+    for (const p of data ?? []) createdIds.set(p.barcode, p.id);
+    out.imported += data?.length ?? 0;
+  }
+
+  // ── Updates (only provided cells; blank never overwrites) ────────────
+  for (const part of chunk(toUpdate, 20)) {
+    await Promise.all(
+      part.map(async (r) => {
+        const id = existingByBarcode.get(r.key)!;
+        const patch = patchFrom(r.record, PRODUCT_COLUMNS);
+        const cat = categoryIdFor(r);
+        if (cat) patch.category_id = cat;
+        const sup = supplierIdFor(r);
+        if (sup) patch.preferred_supplier_id = sup;
+        const { error } = await ctx.supabase
+          .from("products")
+          .update(patch)
+          .eq("id", id)
+          .eq("org_id", ctx.orgId);
+        if (error) {
+          out.errors.push({
+            row: r.row,
+            key: r.key,
+            message: `Update failed: ${error.message}`,
+          });
+        } else {
+          out.updated += 1;
+        }
+      })
+    );
+  }
+
+  // ── Initial stock for the products we just created ───────────────────
+  if (warehouse) {
+    const placed = toCreate.filter(
+      (r) => r.placement && createdIds.has(r.key)
+    );
+    let placedCount = 0;
+    for (const part of chunk(placed, 200)) {
+      const now = new Date().toISOString();
+      const { error } = await ctx.supabase.from("locations").insert(
+        part.map((r) => ({
+          org_id: ctx.orgId,
+          warehouse_id: warehouse!.id,
+          section_id: r.placement!.section_id,
+          bay: r.placement!.bay,
+          level: r.placement!.level,
+          product_id: createdIds.get(r.key)!,
+          quantity: r.record.quantity as number,
+          is_active: true,
+          placed_by: ctx.user.id,
+          placed_at: now,
+        }))
+      );
+      if (error) {
+        out.errors.push({
+          row: part[0].row,
+          key: "",
+          message: `Products imported, but their on-hand rows failed: ${error.message}`,
+        });
+        continue;
+      }
+      placedCount += part.length;
+      // Audit trail — the same "register" event a floor scan would write.
+      await ctx.supabase.from("scan_history").insert(
+        part.map((r) => ({
+          org_id: ctx.orgId,
+          product_id: createdIds.get(r.key)!,
+          warehouse_id: warehouse!.id,
+          scanned_by: ctx.user.id,
+          action: "register",
+          to_location: r.placement!.section_id
+            ? {
+                section_id: r.placement!.section_id,
+                bay: r.placement!.bay,
+                level: r.placement!.level,
+              }
+            : null,
+          quantity: r.record.quantity as number,
+          notes: "Imported with an initial count",
+        }))
+      );
+    }
+    if (placedCount > 0) {
+      out.notes.push(
+        `Recorded on-hand stock for ${placedCount} product${
+          placedCount === 1 ? "" : "s"
+        } at ${warehouse.name}`
+      );
     }
   }
 
-  if (imported > 0) {
+  out.errors.sort((a, b) => a.row - b.row);
+
+  if (out.imported > 0 || out.updated > 0) {
     revalidatePath("/inventory");
-    // The Inventory list is served from unstable_cache keyed by these tags;
-    // the path revalidation alone won't refresh it, so imported products can
-    // stay hidden until the TTL. Bust the same tags createProduct does.
     revalidateTag(tags.products(ctx.orgId));
     revalidateTag(tags.inventory(ctx.orgId));
+    revalidateTag(tags.categories(ctx.orgId));
+    revalidateTag(tags.suppliers(ctx.orgId));
+    revalidateTag(tags.scans(ctx.orgId));
   }
 
-  return { imported, skipped, errors };
+  return out;
 }

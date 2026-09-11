@@ -1,4 +1,5 @@
 import "server-only";
+import type { SampleDataMarker } from "@/lib/sampleData/types";
 import { cache } from "react";
 import { cookies } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
@@ -53,6 +54,8 @@ export interface Membership {
     priorities: string[] | null;
     /** Raw onboarding answers (size_class etc.); null for pre-wizard orgs. */
     onboarding: { size_class?: string | null } | null;
+    /** Present while "Explore with sample data" rows are loaded. */
+    sample_data: SampleDataMarker | null;
   } | null;
 }
 
@@ -63,7 +66,7 @@ export const getMemberships = cache(async (): Promise<Membership[]> => {
   const { data } = await supabase
     .from("org_members")
     .select(
-      "org_id, role, joined_at, permissions, org:orgs ( id, name, slug, industry, enabled_modules, priorities, onboarding )"
+      "org_id, role, joined_at, permissions, org:orgs ( id, name, slug, industry, enabled_modules, priorities, onboarding, sample_data )"
     )
     .eq("user_id", user.id);
   return (data ?? []).map((m) => {

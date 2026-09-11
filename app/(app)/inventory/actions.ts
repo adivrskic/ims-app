@@ -2,6 +2,7 @@
 
 import { revalidatePath, revalidateTag } from "next/cache";
 import { getActionContext } from "@/lib/data/actionContext";
+import { getActiveScope } from "@/lib/facilityScope";
 import { tags } from "@/lib/cache-tags";
 
 /**
@@ -60,9 +61,15 @@ export async function createProduct(
   const preferredSupplierId = String(
     formData.get("preferred_supplier_id") ?? ""
   ).trim();
+  const initialQuantityRaw = String(formData.get("initial_quantity") ?? "");
 
   if (!barcode) return { error: "Barcode is required" };
   if (!name) return { error: "Name is required" };
+
+  const initialQuantity = parseOptionalNonNegInt(initialQuantityRaw);
+  if (initialQuantity === undefined) {
+    return { error: "On hand must be a whole number, 0 or more" };
+  }
 
   const reorderPoint = reorderPointRaw ? parseInt(reorderPointRaw, 10) : 0;
   if (Number.isNaN(reorderPoint) || reorderPoint < 0) {
@@ -113,7 +120,67 @@ export async function createProduct(
     return { error: error.message };
   }
 
+  // Quick-add: "how many do you have" becomes the product's first on-hand
+  // row, in the holding area of the active facility (or the first one).
+  if (initialQuantity && initialQuantity > 0) {
+    await placeInitialStock(ctx, newProduct.id, initialQuantity);
+  }
+
   revalidatePath("/inventory");
   revalidateTag(tags.products(ctx.orgId));
   return { success: "Product registered", id: newProduct.id };
+}
+
+/**
+ * Record a freshly registered product's initial count as a holding-area row
+ * (no section, bay 1 / level 1 — the same pseudo-slot PO receiving uses) plus
+ * a "register" scan for the audit trail. Best-effort: the product exists
+ * either way, and the count can be added from its page.
+ */
+async function placeInitialStock(
+  ctx: Extract<Awaited<ReturnType<typeof getActionContext>>, { orgId: string }>,
+  productId: string,
+  quantity: number
+): Promise<void> {
+  const scope = await getActiveScope();
+  let warehouseId: string | null = scope.mode === "single" ? scope.id : null;
+  if (!warehouseId) {
+    const { data } = await ctx.supabase
+      .from("warehouses")
+      .select("id")
+      .eq("org_id", ctx.orgId)
+      .eq("is_active", true)
+      .order("created_at", { ascending: true })
+      .limit(1)
+      .maybeSingle();
+    warehouseId = data?.id ?? null;
+  }
+  if (!warehouseId) return;
+
+  const { error } = await ctx.supabase.from("locations").insert({
+    org_id: ctx.orgId,
+    warehouse_id: warehouseId,
+    section_id: null,
+    bay: 1,
+    level: 1,
+    product_id: productId,
+    quantity,
+    is_active: true,
+    placed_by: ctx.user.id,
+  });
+  if (error) {
+    console.error("[createProduct] initial stock insert failed:", error.message);
+    return;
+  }
+  await ctx.supabase.from("scan_history").insert({
+    org_id: ctx.orgId,
+    product_id: productId,
+    warehouse_id: warehouseId,
+    scanned_by: ctx.user.id,
+    action: "register",
+    quantity,
+    notes: "Initial count at registration",
+  });
+  revalidateTag(tags.inventory(ctx.orgId));
+  revalidateTag(tags.scans(ctx.orgId));
 }

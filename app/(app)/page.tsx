@@ -43,6 +43,11 @@ import {
   type CardKey,
 } from "@/lib/dashboardWidgets";
 import { ALWAYS_ON_MODULES } from "@/lib/modules";
+import { getSuppliers } from "@/lib/data/org";
+import { sampleCounts } from "@/lib/sampleData/types";
+import { SampleDataBanner } from "@/components/dashboard/SampleDataBanner";
+import { SampleDataOffer } from "@/components/dashboard/SampleDataControls";
+import type { ReactNode } from "react";
 import type { Permission } from "@/lib/permissions";
 
 export const metadata = { title: "Overview" };
@@ -242,15 +247,37 @@ export default async function OverviewPage() {
     : null;
   const hasModule = (m: string) => !moduleSet || moduleSet.has(m);
 
+  // Sample data (if loaded) must not count as "started": the checklist and
+  // its done-states are judged on what the customer added themselves, so the
+  // sample rows are subtracted from every count they touch.
+  const sample = org?.sample_data ?? null;
+  const sampleN = sampleCounts(sample);
+  const own = (total: number, sampled: number) => Math.max(0, total - sampled);
+  const supplierCount = ctx ? (await getSuppliers(ctx.orgId)).length : 0;
+  const ownVm: OverviewVM = {
+    ...vm,
+    productCount: own(vm.productCount, sampleN.products),
+    sectionCount: own(vm.sectionCount, sampleN.sections),
+    scansTodayCount: 0,
+    totalScans14: own(vm.totalScans14, sampleN.scansInWindow),
+    openOrdersCount: own(vm.openOrdersCount, sampleN.orders),
+  };
+  const canManageSample =
+    Boolean(ctx) && ctx!.role !== "member" && ctx!.can("inventory.manage");
+  const sampleOffer: ReactNode =
+    !sample && canManageSample && warehouseCount > 0 ? <SampleDataOffer /> : null;
+
   const dismissed =
     profile?.dashboard_prefs?.dismissed_getting_started === true;
-  // "Not started yet" = no products in the catalog. Once a workspace has
-  // products it's operating, so the checklist retires itself (and it's
-  // always manually dismissible before then).
-  const youngWorkspace = productCount === 0;
+  // "Not started yet" = no products of their own in the catalog. Once a
+  // workspace has products it's operating, so the checklist retires itself
+  // (and it's always manually dismissible before then).
+  const youngWorkspace = ownVm.productCount === 0;
   const checklist =
     !dismissed && youngWorkspace && ctx
-      ? buildChecklist(vm, hasModule, (p) => ctx.can(p))
+      ? buildChecklist(ownVm, hasModule, (p) => ctx.can(p), {
+          supplierCount: own(supplierCount, sampleN.suppliers),
+        })
       : [];
 
   let blocks = resolveDashboard(role, enabledModules, priorities, { compact });
@@ -298,6 +325,7 @@ export default async function OverviewPage() {
       }
     >
       <OverviewRealtime warehouseId={facilityId} />
+      {sample && <SampleDataBanner marker={sample} canClear={canManageSample} />}
 
       {blocks.map((block, i) => (
         <Block
@@ -306,6 +334,7 @@ export default async function OverviewPage() {
           vm={vm}
           role={role}
           checklist={checklist}
+          sampleOffer={sampleOffer}
           nextNumeral={nextNumeral}
         />
       ))}
@@ -329,12 +358,14 @@ function Block({
   vm,
   role,
   checklist,
+  sampleOffer,
   nextNumeral,
 }: {
   block: DashboardBlock;
   vm: OverviewVM;
   role: DashboardRole;
   checklist: GettingStartedItem[];
+  sampleOffer: ReactNode;
   nextNumeral: () => string;
 }) {
   if (block.kind === "kpis") {
@@ -370,6 +401,7 @@ function Block({
             sectionKey={key}
             vm={vm}
             checklist={checklist}
+            sampleOffer={sampleOffer}
             numeral={nextNumeral()}
           />
         ))}
@@ -386,6 +418,7 @@ function Block({
       sectionKey={block.key}
       vm={vm}
       checklist={checklist}
+      sampleOffer={sampleOffer}
       numeral={nextNumeral()}
     />
   );
@@ -395,16 +428,24 @@ function Section({
   sectionKey,
   vm,
   checklist,
+  sampleOffer,
   numeral,
 }: {
   sectionKey: SectionKey;
   vm: OverviewVM;
   checklist: GettingStartedItem[];
+  sampleOffer: ReactNode;
   numeral: string;
 }) {
   switch (sectionKey) {
     case "section.getting_started":
-      return <GettingStarted numeral={numeral} items={checklist} />;
+      return (
+        <GettingStarted
+          numeral={numeral}
+          items={checklist}
+          footer={sampleOffer}
+        />
+      );
     case "section.reorder_alerts":
       return <ReorderSection vm={vm} numeral={numeral} />;
     case "section.pick_queue":
@@ -527,7 +568,8 @@ function buildKpi(key: KpiKey, vm: OverviewVM, role: DashboardRole): GlowKpi {
 function buildChecklist(
   vm: OverviewVM,
   hasModule: (m: string) => boolean,
-  can: (permission: Permission) => boolean
+  can: (permission: Permission) => boolean,
+  opts: { supplierCount: number }
 ): GettingStartedItem[] {
   const items: GettingStartedItem[] = [];
 
@@ -558,12 +600,23 @@ function buildChecklist(
     });
   }
   if (hasModule("purchase-orders") && can("purchasing.manage")) {
-    items.push({
-      key: "po",
-      label: "Receive your first purchase order",
-      desc: "Add a supplier, then bring stock in the front door",
-      href: "/purchase-orders/new",
-    });
+    // A PO needs a supplier; sending a day-0 owner to a form that can only
+    // say "add a supplier first" is a dead end, so start where they can act.
+    if (opts.supplierCount === 0 && can("suppliers.manage")) {
+      items.push({
+        key: "supplier",
+        label: "Add your first supplier",
+        desc: "Who you buy from — then receive a purchase order from them",
+        href: "/suppliers/new",
+      });
+    } else {
+      items.push({
+        key: "po",
+        label: "Receive your first purchase order",
+        desc: "Bring stock in the front door",
+        href: "/purchase-orders/new",
+      });
+    }
   }
   if (hasModule("orders") && can("orders.manage")) {
     items.push({
@@ -576,8 +629,8 @@ function buildChecklist(
   }
   items.push({
     key: "scan",
-    label: "Do your first scan",
-    desc: "Scanning keeps counts honest — try it on anything",
+    label: "Count what you have",
+    desc: "Scan or count anything — it keeps on-hand honest",
     href: "/scan",
     done: vm.scansTodayCount > 0 || vm.totalScans14 > 0,
   });

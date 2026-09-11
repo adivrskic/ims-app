@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { OnboardingWizard } from "./OnboardingWizard";
+import { setUpWorkspace } from "./actions";
 
 export default async function OnboardingPage() {
   const supabase = await createClient();
@@ -40,6 +41,7 @@ export default async function OnboardingPage() {
       fullName={fullName}
       email={user.email ?? ""}
       userId={user.id}
+      action={setUpWorkspace}
     />
   );
 }

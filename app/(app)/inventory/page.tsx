@@ -6,10 +6,11 @@ import { ListPagination } from "@/components/ui/ListPagination";
 import { CornerLink as ButtonLink } from "@/components/ui/CornerButton";
 import { BulkProductLabelButton } from "@/components/print/BulkProductLabelButton";
 import { RegisterProductButton } from "./RegisterProductButton";
-import { Boxes, Download } from "lucide-react";
+import { Boxes, Download, Upload } from "lucide-react";
 import { getActiveScope, scopeDescription } from "@/lib/facilityScope";
 import { InventoryRealtime } from "@/components/realtime/PageRealtime";
-import { getCurrentOrgContext } from "@/lib/data/user";
+import { getActiveMembership, getCurrentOrgContext } from "@/lib/data/user";
+import { LoadSampleDataButton } from "@/components/dashboard/SampleDataControls";
 import { getCategories } from "@/lib/data/org";
 import { createClient } from "@/lib/supabase/server";
 import {
@@ -70,6 +71,10 @@ export default async function InventoryPage({
   const scope = await getActiveScope();
   const ctx = await getCurrentOrgContext();
   const facilityId = scope.mode === "single" ? scope.id : null;
+  const canManage = ctx?.can("inventory.manage") ?? false;
+  const membership = ctx ? await getActiveMembership() : null;
+  const canSeedSample =
+    canManage && ctx?.role !== "member" && !membership?.org?.sample_data;
 
   // Categories (id + name) drive both the filter dropdown and the register form.
   const categories = ctx ? await getCategories(ctx.orgId) : [];
@@ -168,6 +173,12 @@ export default async function InventoryPage({
                 }))}
               />
             )}
+            {canManage && (
+              <ButtonLink href="/inventory/import" variant="ghost" size="sm">
+                <Upload size={11} strokeWidth={1.5} />
+                Import
+              </ButtonLink>
+            )}
             <ButtonLink href={exportHref} variant="ghost" size="sm">
               <Download size={11} strokeWidth={1.5} />
               Export CSV
@@ -192,8 +203,31 @@ export default async function InventoryPage({
               ? `No products at ${scope.name} yet`
               : "No products yet"
           }
-          description="Register your first product to start tracking inventory across the floor."
+          description={
+            q || category || low
+              ? "Try widening the filters."
+              : "Register products one at a time, or bring your whole catalog in from a spreadsheet — quantities, costs and suppliers included."
+          }
           icon={<Boxes size={20} strokeWidth={1.5} />}
+          action={
+            !(q || category || low) && canManage ? (
+              <div className="flex items-center gap-10 flex-wrap justify-center">
+                <ButtonLink href="/inventory/import" variant="primary" size="sm">
+                  <Upload size={11} strokeWidth={1.5} />
+                  Import a spreadsheet
+                </ButtonLink>
+                <ButtonLink
+                  href="/api/import-template/products"
+                  variant="ghost"
+                  size="sm"
+                >
+                  <Download size={11} strokeWidth={1.5} />
+                  Template
+                </ButtonLink>
+                {canSeedSample && <LoadSampleDataButton />}
+              </div>
+            ) : undefined
+          }
         />
       ) : (
         <div className="flex flex-col">

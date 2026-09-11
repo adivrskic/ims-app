@@ -1,4 +1,5 @@
 import Link from "next/link";
+import type { ReactNode } from "react";
 import { ArrowRight, Check, X } from "lucide-react";
 import { SectionTitle } from "@/components/ui/SectionTitle";
 import { dismissGettingStarted } from "@/app/(app)/actions";
@@ -15,6 +16,8 @@ export interface GettingStartedItem {
 interface Props {
   numeral: string;
   items: GettingStartedItem[];
+  /** Optional row beneath the list — the sample-data offer. */
+  footer?: ReactNode;
 }
 
 /**
@@ -23,7 +26,7 @@ interface Props {
  * permissions (a day-0 member never gets a link that 403s). Server-rendered;
  * dismissal is a one-click server action writing profiles.dashboard_prefs.
  */
-export function GettingStarted({ numeral, items }: Props) {
+export function GettingStarted({ numeral, items, footer }: Props) {
   const doneCount = items.filter((i) => i.done).length;
   return (
     <section aria-labelledby="getting-started">
@@ -93,6 +96,7 @@ export function GettingStarted({ numeral, items }: Props) {
             </li>
           ))}
         </ul>
+        {footer && <div className="px-20 py-14 hairline-t">{footer}</div>}
       </div>
     </section>
   );

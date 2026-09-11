@@ -29,22 +29,39 @@ import {
 } from "@/lib/modules";
 import { resolveNav } from "@/lib/navData";
 import { resolveDashboard } from "@/lib/dashboardWidgets";
-import { setUpWorkspace, type OnboardingState } from "./actions";
+import type {
+  WorkspaceCreateAction,
+  WorkspaceCreateState,
+} from "@/lib/workspace/types";
 import { OnboardingSuccess } from "./OnboardingSuccess";
+
+export type WizardVariant = "onboarding" | "additional";
 
 interface Props {
   fullName: string | null;
   email: string;
   userId: string;
+  /** The server action that creates the workspace (differs per entry point). */
+  action: WorkspaceCreateAction;
+  /**
+   * `onboarding` — first workspace, greets the user. `additional` — a
+   * further workspace created from inside the app; same steps, its own
+   * draft, and the action switches the active workspace on success.
+   */
+  variant?: WizardVariant;
 }
 
 const STEPS = [
   { key: "workspace", label: "Workspace" },
   { key: "work", label: "How you work" },
-  { key: "facility", label: "Facility" },
   { key: "team", label: "Team" },
   { key: "review", label: "Review" },
 ];
+
+const STEP_WORKSPACE = 0;
+const STEP_WORK = 1;
+const STEP_TEAM = 2;
+const STEP_REVIEW = 3;
 
 interface Draft {
   step: number;
@@ -74,7 +91,10 @@ const emptyDraft = (): Draft => ({
   addr: { city: "", state: "", zip: "" },
 });
 
-const draftKey = (userId: string) => `nimbus-onboarding-draft:${userId}`;
+const draftKey = (variant: WizardVariant, userId: string) =>
+  variant === "onboarding"
+    ? `nimbus-onboarding-draft:${userId}`
+    : `nimbus-new-workspace-draft:${userId}`;
 
 // Sentinel for the explicit "Something else" pick. Not a real slug, so
 // isIndustrySlug() rejects it server-side → stored as null; distinct from ""
@@ -82,74 +102,110 @@ const draftKey = (userId: string) => `nimbus-onboarding-draft:${userId}`;
 const NO_INDUSTRY = "general";
 
 /** Human titles per step — the H1 swaps as you move through. */
-const STEP_TITLES: Array<{ pre: string; em: string; post: string }> = [
-  { pre: "Set up your ", em: "workspace", post: "." },
-  { pre: "How do you ", em: "work", post: "?" },
-  { pre: "Your first ", em: "facility", post: "." },
-  { pre: "Invite your ", em: "team", post: "." },
-  { pre: "Check and ", em: "create", post: "." },
-];
+const STEP_TITLES: Record<
+  WizardVariant,
+  Array<{ pre: string; em: string; post: string }>
+> = {
+  onboarding: [
+    { pre: "Set up your ", em: "workspace", post: "." },
+    { pre: "How do you ", em: "work", post: "?" },
+    { pre: "Invite your ", em: "team", post: "." },
+    { pre: "Check and ", em: "create", post: "." },
+  ],
+  additional: [
+    { pre: "Set up the new ", em: "workspace", post: "." },
+    { pre: "How does it ", em: "work", post: "?" },
+    { pre: "Invite its ", em: "team", post: "." },
+    { pre: "Check and ", em: "create", post: "." },
+  ],
+};
 
-const STEP_INTROS = [
-  "A workspace holds your facilities, inventory, and team. Two quick facts and you're moving.",
-  "Pick what applies to you — this decides which tools show up in your sidebar and what your dashboard leads with. Nothing here is permanent: change any of it later in Settings → Navigation.",
-  "A facility is one physical location — a warehouse, store, or a single storage room. You can add more anytime.",
-  "Optional. Teammates join as members with a personal link — you can also do this later from Settings → Members.",
-  "A quick read-back of your choices. Edit anything, then create your workspace.",
-];
+const STEP_INTROS: Record<WizardVariant, string[]> = {
+  onboarding: [
+    "A workspace holds your facilities, inventory, and team. Name it, name your first location, and tell us what you handle — three quick answers.",
+    "Pick what applies to you — this decides which tools show up in your sidebar and what your dashboard leads with. Nothing here is permanent: change any of it later in Settings → Navigation.",
+    "Optional. Teammates join as members with a personal link — you can also do this later from Settings → Members.",
+    "A quick read-back of your choices. Edit anything, then create your workspace.",
+  ],
+  additional: [
+    "Each workspace is fully separate — its own inventory, facilities, team and integrations. Name it, name its first location, and tell us what it handles.",
+    "Pick what applies to this workspace — it gets its own sidebar and dashboard, tuned to these answers. Changeable later in Settings → Navigation.",
+    "Optional. Invites are for this workspace only; you can also add people later from its Settings → Members.",
+    "A quick read-back. Edit anything, then create the workspace — you'll switch into it right away.",
+  ],
+};
 
-export function OnboardingWizard({ fullName, email, userId }: Props) {
+export function OnboardingWizard({
+  fullName,
+  email,
+  userId,
+  action,
+  variant = "onboarding",
+}: Props) {
   const router = useRouter();
   const formRef = useRef<HTMLFormElement>(null);
   const errorRef = useRef<HTMLParagraphElement>(null);
 
   const [state, formAction, pending] = useActionState<
-    OnboardingState | undefined,
+    WorkspaceCreateState | undefined,
     FormData
-  >(setUpWorkspace, undefined);
+  >(action, undefined);
 
   const [d, setD] = useState<Draft>(emptyDraft);
   const [restored, setRestored] = useState(false);
-  const [fieldError, setFieldError] = useState<string | null>(null);
+  const [fieldError, setFieldError] = useState<{
+    field: "workspace" | "facility";
+    message: string;
+  } | null>(null);
 
   const firstName = fullName?.split(" ")[0] ?? "there";
+  const storageKey = draftKey(variant, userId);
 
   // ── Draft persistence (refresh/back-button safe) ────────────────────────
   useEffect(() => {
     try {
-      const raw = localStorage.getItem(draftKey(userId));
+      const raw = localStorage.getItem(storageKey);
       if (raw) {
         const parsed = JSON.parse(raw) as Partial<Draft>;
-        setD((base) => ({ ...base, ...parsed }));
+        setD((base) => ({
+          ...base,
+          ...parsed,
+          // Drafts from the older 5-step layout can point past the end.
+          step: Math.min(parsed.step ?? 0, STEPS.length - 1),
+          maxReached: Math.min(parsed.maxReached ?? 0, STEPS.length - 1),
+        }));
       }
     } catch {
       // Blocked/corrupt storage — start fresh.
     }
     setRestored(true);
-  }, [userId]);
+  }, [storageKey]);
 
   useEffect(() => {
     if (!restored) return;
     try {
-      localStorage.setItem(draftKey(userId), JSON.stringify(d));
+      localStorage.setItem(storageKey, JSON.stringify(d));
     } catch {
       // Storage full/blocked — the wizard still works, just won't survive refresh.
     }
-  }, [d, restored, userId]);
+  }, [d, restored, storageKey]);
 
   // ── Success handling ────────────────────────────────────────────────────
   const succeeded = state?.success === true;
   useEffect(() => {
     if (!succeeded) return;
     try {
-      localStorage.removeItem(draftKey(userId));
+      localStorage.removeItem(storageKey);
     } catch {
       // best-effort
     }
     if (!state?.invites?.length && !state?.inviteError) {
       router.replace("/");
+      // The additional-workspace action switched the workspace cookie; make
+      // sure the app shell re-renders against the new org.
+      router.refresh();
     }
-  }, [succeeded, state, router, userId]);
+  }, [succeeded, state, router, storageKey]);
 
   // Server error → surface it (we're on the review step when it can happen).
   useEffect(() => {
@@ -228,13 +284,21 @@ export function OnboardingWizard({ fullName, email, userId }: Props) {
   };
 
   const next = () => {
-    if (d.step === 0 && d.workspaceName.trim().length < 2) {
-      setFieldError("Give your workspace a name (at least 2 characters).");
-      return;
-    }
-    if (d.step === 2 && !d.facilityName.trim()) {
-      setFieldError("Give your facility a name — “Main warehouse” works fine.");
-      return;
+    if (d.step === STEP_WORKSPACE) {
+      if (d.workspaceName.trim().length < 2) {
+        setFieldError({
+          field: "workspace",
+          message: "Give your workspace a name (at least 2 characters).",
+        });
+        return;
+      }
+      if (!d.facilityName.trim()) {
+        setFieldError({
+          field: "facility",
+          message: "Give your facility a name — “Main warehouse” works fine.",
+        });
+        return;
+      }
     }
     goTo(Math.min(d.step + 1, STEPS.length - 1));
   };
@@ -260,14 +324,17 @@ export function OnboardingWizard({ fullName, email, userId }: Props) {
     );
   }
 
-  const title = STEP_TITLES[d.step];
+  const title = STEP_TITLES[variant][d.step];
+  const errorMessage = state?.error ?? fieldError?.message ?? null;
 
   return (
     <div className="flex flex-col gap-24">
       {/* Greeting + step title */}
       <div className="flex flex-col gap-12">
         <span className="label-text text-text-muted">
-          — Welcome, {firstName}
+          {variant === "onboarding"
+            ? `— Welcome, ${firstName}`
+            : "— New workspace"}
         </span>
         <h1
           style={{
@@ -288,7 +355,7 @@ export function OnboardingWizard({ fullName, email, userId }: Props) {
           className="mono-sm"
           style={{ color: "var(--text-muted)", lineHeight: 1.6, maxWidth: 520 }}
         >
-          {STEP_INTROS[d.step]}
+          {STEP_INTROS[variant][d.step]}
         </p>
       </div>
 
@@ -310,10 +377,10 @@ export function OnboardingWizard({ fullName, email, userId }: Props) {
           <input key={p} type="hidden" name="priorities" value={p} />
         ))}
 
-        {/* ── Step 1 · Workspace ─────────────────────────────────── */}
+        {/* ── Step 1 · Workspace + first facility ────────────────── */}
         <section
-          hidden={d.step !== 0}
-          className="hairline bg-[var(--surface)] p-24 flex flex-col gap-16"
+          hidden={d.step !== STEP_WORKSPACE}
+          className="hairline bg-[var(--surface)] p-24 flex flex-col gap-20"
           aria-label="Workspace"
         >
           <Input
@@ -327,11 +394,52 @@ export function OnboardingWizard({ fullName, email, userId }: Props) {
               setFieldError(null);
               setD((prev) => ({ ...prev, workspaceName: e.target.value }));
             }}
-            error={d.step === 0 ? fieldError ?? undefined : undefined}
+            error={
+              d.step === STEP_WORKSPACE && fieldError?.field === "workspace"
+                ? fieldError.message
+                : undefined
+            }
             placeholder="Acme Flooring Supply"
             autoComplete="organization"
             hint="Usually your company name — you can rename it later."
           />
+
+          <div className="flex flex-col gap-12">
+            <Input
+              label="First facility"
+              labelNote="one physical location"
+              name="facility_name"
+              type="text"
+              aria-required="true"
+              maxLength={MAX_NAME_LENGTH}
+              value={d.facilityName}
+              onChange={(e) => {
+                setFieldError(null);
+                setD((prev) => ({ ...prev, facilityName: e.target.value }));
+              }}
+              error={
+                d.step === STEP_WORKSPACE && fieldError?.field === "facility"
+                  ? fieldError.message
+                  : undefined
+              }
+              placeholder="Main warehouse"
+              hint="A warehouse, store, or a single storage room. Add more anytime under Facilities."
+            />
+            <details className="flex flex-col gap-12">
+              <summary className="mono-sm text-text-muted cursor-pointer select-none">
+                Add its address (optional) — helps with labels &amp; paperwork
+              </summary>
+              <div className="mt-12">
+                <AddressFields
+                  key={restored ? "restored" : "initial"}
+                  namePrefix="facility"
+                  initialCity={d.addr.city}
+                  initialState={d.addr.state}
+                  initialZip={d.addr.zip}
+                />
+              </div>
+            </details>
+          </div>
 
           <div className="flex flex-col gap-8">
             <p className="label-text text-text-muted">What do you handle?</p>
@@ -373,7 +481,7 @@ export function OnboardingWizard({ fullName, email, userId }: Props) {
         </section>
 
         {/* ── Step 2 · How you work ──────────────────────────────── */}
-        <div hidden={d.step !== 1} className="flex flex-col gap-16">
+        <div hidden={d.step !== STEP_WORK} className="flex flex-col gap-16">
           <section
             className="hairline bg-[var(--surface)] p-24 flex flex-col gap-12"
             aria-label="What you do"
@@ -466,45 +574,9 @@ export function OnboardingWizard({ fullName, email, userId }: Props) {
           </aside>
         </div>
 
-        {/* ── Step 3 · Facility ──────────────────────────────────── */}
+        {/* ── Step 3 · Team ──────────────────────────────────────── */}
         <section
-          hidden={d.step !== 2}
-          className="hairline bg-[var(--surface)] p-24 flex flex-col gap-16"
-          aria-label="First facility"
-        >
-          <Input
-            label="Facility name"
-            name="facility_name"
-            type="text"
-            aria-required="true"
-            maxLength={MAX_NAME_LENGTH}
-            value={d.facilityName}
-            onChange={(e) => {
-              setFieldError(null);
-              setD((prev) => ({ ...prev, facilityName: e.target.value }));
-            }}
-            error={d.step === 2 ? fieldError ?? undefined : undefined}
-            placeholder="Main warehouse"
-          />
-          <details className="flex flex-col gap-12">
-            <summary className="mono-sm text-text-muted cursor-pointer select-none">
-              Add address (optional) — helps with labels &amp; paperwork
-            </summary>
-            <div className="mt-12">
-              <AddressFields
-                key={restored ? "restored" : "initial"}
-                namePrefix="facility"
-                initialCity={d.addr.city}
-                initialState={d.addr.state}
-                initialZip={d.addr.zip}
-              />
-            </div>
-          </details>
-        </section>
-
-        {/* ── Step 4 · Team ──────────────────────────────────────── */}
-        <section
-          hidden={d.step !== 3}
+          hidden={d.step !== STEP_TEAM}
           className="hairline bg-[var(--surface)] p-24 flex flex-col gap-16"
           aria-label="Invite teammates"
         >
@@ -555,9 +627,9 @@ export function OnboardingWizard({ fullName, email, userId }: Props) {
           )}
         </section>
 
-        {/* ── Step 5 · Review ────────────────────────────────────── */}
+        {/* ── Step 4 · Review ────────────────────────────────────── */}
         <section
-          hidden={d.step !== 4}
+          hidden={d.step !== STEP_REVIEW}
           className="hairline bg-[var(--surface)] flex flex-col"
           aria-label="Review your choices"
         >
@@ -566,7 +638,18 @@ export function OnboardingWizard({ fullName, email, userId }: Props) {
             value={`${d.workspaceName || "—"}${
               industryDef ? ` · ${industryDef.label}` : ""
             }`}
-            onEdit={() => goTo(0)}
+            onEdit={() => goTo(STEP_WORKSPACE)}
+          />
+          <ReviewRow
+            label="Facility"
+            value={`${d.facilityName || "—"}${
+              d.addr.city || d.addr.state
+                ? ` · ${[d.addr.city, d.addr.state, d.addr.zip]
+                    .filter(Boolean)
+                    .join(", ")}`
+                : ""
+            }`}
+            onEdit={() => goTo(STEP_WORKSPACE)}
           />
           <ReviewRow
             label="How you work"
@@ -579,7 +662,7 @@ export function OnboardingWizard({ fullName, email, userId }: Props) {
                     .join("; ")
                 : "Just the essentials — inventory, facilities, analytics"
             }
-            onEdit={() => goTo(1)}
+            onEdit={() => goTo(STEP_WORK)}
           />
           {d.priorities.length > 0 && (
             <ReviewRow
@@ -587,20 +670,9 @@ export function OnboardingWizard({ fullName, email, userId }: Props) {
               value={d.priorities
                 .map((k) => PRIORITIES.find((p) => p.key === k)?.label ?? k)
                 .join(" → ")}
-              onEdit={() => goTo(1)}
+              onEdit={() => goTo(STEP_WORK)}
             />
           )}
-          <ReviewRow
-            label="Facility"
-            value={`${d.facilityName || "—"}${
-              d.addr.city || d.addr.state
-                ? ` · ${[d.addr.city, d.addr.state, d.addr.zip]
-                    .filter(Boolean)
-                    .join(", ")}`
-                : ""
-            }`}
-            onEdit={() => goTo(2)}
-          />
           <ReviewRow
             label="Team"
             value={
@@ -610,20 +682,20 @@ export function OnboardingWizard({ fullName, email, userId }: Props) {
                   }`
                 : "Just you for now"
             }
-            onEdit={() => goTo(3)}
+            onEdit={() => goTo(STEP_TEAM)}
             last
           />
         </section>
 
         {/* Feedback */}
-        {(state?.error || fieldError) && (
+        {errorMessage && (
           <p
             ref={errorRef}
             role="alert"
             className="hairline-subtle border-[var(--danger-border)] bg-[var(--danger-dim)] px-14 py-12 mono-sm text-[var(--danger)] inline-flex items-start gap-8"
           >
             <AlertTriangle size={11} strokeWidth={1.5} className="mt-2 shrink-0" />
-            <span>{state?.error ?? fieldError}</span>
+            <span>{errorMessage}</span>
           </p>
         )}
 
@@ -637,13 +709,17 @@ export function OnboardingWizard({ fullName, email, userId }: Props) {
           ) : (
             <p className="mono-sm text-text-dim" style={{ lineHeight: 1.6 }}>
               Signed in as <span className="text-text-muted">{email}</span> ·
-              you&apos;ll be the owner.
+              {variant === "onboarding"
+                ? " you'll be the owner."
+                : " you'll own the new workspace; your current one stays as it is."}
             </p>
           )}
 
           {d.step < STEPS.length - 1 ? (
             <CornerButton type="button" variant="primary" onClick={next}>
-              {d.step === 1 || d.step === 3 ? "Looks right" : "Next"}
+              {d.step === STEP_WORK || d.step === STEP_TEAM
+                ? "Looks right"
+                : "Next"}
               <ArrowRight size={11} strokeWidth={1.5} />
             </CornerButton>
           ) : (
