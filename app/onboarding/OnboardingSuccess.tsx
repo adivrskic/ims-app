@@ -10,6 +10,7 @@ import {
   MailWarning,
   PartyPopper,
 } from "lucide-react";
+import { FormNotice } from "@/components/ui/FormNotice";
 import type { OnboardingInvite } from "./actions";
 
 interface Props {
@@ -58,15 +59,7 @@ export function OnboardingSuccess({ orgName, invites, inviteError }: Props) {
         </h1>
       </div>
 
-      {inviteError && (
-        <p
-          role="alert"
-          className="hairline-subtle border-[var(--danger-border)] bg-[var(--danger-dim)] px-14 py-12 mono-sm text-[var(--danger)] inline-flex items-start gap-8"
-        >
-          <MailWarning size={11} strokeWidth={1.5} className="mt-2 shrink-0" />
-          <span>{inviteError}</span>
-        </p>
-      )}
+      {inviteError && <FormNotice>{inviteError}</FormNotice>}
 
       {invites.length > 0 && (
         <section

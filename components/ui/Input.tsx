@@ -1,38 +1,43 @@
 "use client";
 
-import { forwardRef, useId, useState } from "react";
+import { forwardRef, useId } from "react";
 import type { InputHTMLAttributes, ReactNode } from "react";
+import { AlertCircle } from "lucide-react";
 
 interface Props extends Omit<InputHTMLAttributes<HTMLInputElement>, "size"> {
-  /** Floating field label. Optional — some inline usages omit it. */
+  /** Label shown above the control. Optional — some inline usages omit it. */
   label?: string;
+  /** Small note on the right of the label row, e.g. "optional". */
+  labelNote?: ReactNode;
   error?: string;
   hint?: string;
   /**
-   * Optional leading icon (typically a lucide-react icon at size ~13).
-   *
-   * When provided, the field-shell switches to a flex-row layout (via the
-   * `data-with-icon` attribute and matching globals.css rule) so the icon
-   * sits inline at the left of the field. The floating label position
-   * shifts right to clear the icon.
-   *
-   * Example: <Input label="Email" icon={<Mail size={13} strokeWidth={1.5} />} />
+   * Optional leading icon (typically a lucide-react icon at size ~13). The
+   * shell switches to an icon row via `data-with-icon`; see globals.css.
    */
   icon?: ReactNode;
+  /** Tighter control for inline / toolbar rows. */
+  compact?: boolean;
+  /** Applied to the outer wrapper (grid sizing etc.). */
+  className?: string;
 }
 
+/**
+ * Text input. Static label above, visible placeholder, helper or error copy
+ * beneath — the one field system every form uses (see the FIELDS block in
+ * globals.css). Controlled or uncontrolled is up to the caller.
+ */
 export const Input = forwardRef<HTMLInputElement, Props>(function Input(
   {
     label,
+    labelNote,
     error,
     hint,
+    icon,
+    compact = false,
     id,
     className,
-    onChange,
-    onBlur,
-    defaultValue,
-    value,
-    icon,
+    disabled,
     ...props
   },
   ref
@@ -42,65 +47,47 @@ export const Input = forwardRef<HTMLInputElement, Props>(function Input(
   const errorId = error ? `${inputId}-error` : undefined;
   const hintId = hint ? `${inputId}-hint` : undefined;
 
-  const [filled, setFilled] = useState(Boolean(defaultValue || value));
-  const hasIcon = Boolean(icon);
-
-  // Date/time inputs always render a native datetime-edit (e.g. "mm/dd/yyyy")
-  // that ::placeholder can't hide, so the resting label would sit on top of it.
-  // Treat them as always-filled so the label floats up out of the way.
-  const dateLike =
-    typeof props.type === "string" &&
-    ["date", "time", "datetime-local", "month", "week"].includes(props.type);
-
   return (
-    <div className={className}>
-      <label
-        className="field-shell block"
-        data-error={Boolean(error)}
-        data-filled={filled || Boolean(value) || dateLike}
-        data-with-icon={hasIcon || undefined}
+    <div className={`field ${className ?? ""}`}>
+      {label && (
+        <label htmlFor={inputId} className="field-label">
+          <span>{label}</span>
+          {labelNote && <span className="field-label-note">{labelNote}</span>}
+        </label>
+      )}
+      <div
+        className={`field-shell ${compact ? "field-shell--compact" : ""}`}
+        data-error={error ? "true" : undefined}
+        data-with-icon={icon ? true : undefined}
+        data-disabled={disabled ? "true" : undefined}
       >
-        {hasIcon && (
+        {icon && (
           <span className="field-icon" aria-hidden>
             {icon}
-          </span>
-        )}
-        {label && (
-          <span className="field-label" id={`${inputId}-label`}>
-            {label}
           </span>
         )}
         <input
           ref={ref}
           id={inputId}
           className="field-input"
-          aria-invalid={Boolean(error) || undefined}
+          disabled={disabled}
+          aria-invalid={error ? true : undefined}
           aria-describedby={
             [errorId, hintId].filter(Boolean).join(" ") || undefined
           }
-          defaultValue={defaultValue}
-          value={value}
-          onChange={(e) => {
-            setFilled(e.target.value.length > 0);
-            onChange?.(e);
-          }}
-          onBlur={(e) => {
-            setFilled(e.target.value.length > 0);
-            onBlur?.(e);
-          }}
           {...props}
         />
-      </label>
-      {error && (
+      </div>
+      {error ? (
         <p id={errorId} className="field-error" role="alert">
-          {error}
+          <AlertCircle size={11} strokeWidth={1.5} className="mt-2 shrink-0" aria-hidden />
+          <span>{error}</span>
         </p>
-      )}
-      {!error && hint && (
-        <p id={hintId} className="mt-6 mono-sm text-text-muted">
+      ) : hint ? (
+        <p id={hintId} className="field-help">
           {hint}
         </p>
-      )}
+      ) : null}
     </div>
   );
 });

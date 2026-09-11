@@ -5,6 +5,10 @@ import Link from "next/link";
 import { Plus, Trash2 } from "lucide-react";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
+import { Textarea } from "@/components/ui/Textarea";
+import { FormSection } from "@/components/ui/FormSection";
+import { FormActions } from "@/components/ui/FormActions";
+import { FormNotice } from "@/components/ui/FormNotice";
 import { CornerButton, CornerLink } from "@/components/ui/CornerButton";
 import { createPurchaseOrder } from "../actions";
 
@@ -119,31 +123,18 @@ export function CreatePoForm({ products, warehouses, suppliers }: Props) {
       <input type="hidden" name="items" value={itemsJson} />
 
       {/* Supplier */}
-      <section className="hairline bg-[var(--surface)] p-20 flex flex-col gap-14">
-        <header className="flex items-start justify-between gap-12">
-          <div>
-            <h2
-              className="text-text"
-              style={{
-                fontFamily: "var(--display)",
-                fontSize: 15,
-                fontWeight: 600,
-              }}
-            >
-              Supplier
-            </h2>
-            <p className="mono-sm text-text-muted mt-4">
-              Pick from your supplier directory. Contact info auto-populates on
-              the printed PO.
-            </p>
-          </div>
+      <FormSection
+        title="Supplier"
+        description="Pick from your supplier directory. Contact info auto-populates on the printed PO."
+        action={
           <Link
             href="/suppliers"
             className="mono-sm text-text-muted hover:text-[var(--accent)] transition-colors whitespace-nowrap"
           >
             Manage
           </Link>
-        </header>
+        }
+      >
 
         <Select
           label="Supplier"
@@ -175,25 +166,10 @@ export function CreatePoForm({ products, warehouses, suppliers }: Props) {
             </div>
           </div>
         )}
-      </section>
+      </FormSection>
 
       {/* Destination + schedule */}
-      <section className="hairline bg-[var(--surface)] p-20 flex flex-col gap-14">
-        <header>
-          <h2
-            className="text-text"
-            style={{
-              fontFamily: "var(--display)",
-              fontSize: 15,
-              fontWeight: 600,
-            }}
-          >
-            Destination + schedule
-          </h2>
-          <p className="mono-sm text-text-muted mt-4">
-            Which facility the shipment lands at and the target receiving date.
-          </p>
-        </header>
+      <FormSection title="Destination + schedule" description="Which facility the shipment lands at and the target receiving date.">
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
           <Select
@@ -206,38 +182,32 @@ export function CreatePoForm({ products, warehouses, suppliers }: Props) {
           />
           <Input label="Expected delivery" name="expected_date" type="date" />
         </div>
-      </section>
+      </FormSection>
 
       {/* Line items */}
-      <section className="hairline bg-[var(--surface)] flex flex-col">
-        <header className="px-20 py-14 hairline-b flex items-center justify-between">
-          <div>
-            <h2
-              className="text-text"
-              style={{
-                fontFamily: "var(--display)",
-                fontSize: 15,
-                fontWeight: 600,
-              }}
-            >
-              Line items
-            </h2>
-            <p className="mono-sm text-text-muted mt-4">
-              {validLineCount} {validLineCount === 1 ? "item" : "items"} ready
-            </p>
-          </div>
+      <FormSection
+        title="Line items"
+        description={`${validLineCount} ${validLineCount === 1 ? "item" : "items"} ready`}
+        action={
           <CornerButton
-            type="button"
-            variant="ghost"
-            size="sm"
-            onClick={addLine}
+          type="button"
+          variant="ghost"
+          size="sm"
+          onClick={addLine}
           >
-            <Plus size={11} strokeWidth={1.5} />
-            Add line
+          <Plus size={11} strokeWidth={1.5} />
+          Add line
           </CornerButton>
-        </header>
-
-        <ul className="divide-y divide-[var(--border-subtle)]">
+        }
+      >
+        {/* Column captions once, instead of a label on every row. */}
+        <div className="-mx-20 px-20 pb-8 hairline-b flex items-center gap-12">
+          <span className="w-16 shrink-0" aria-hidden />
+          <span className="label-text flex-1">Product</span>
+          <span className="label-text w-[104px] shrink-0">Qty</span>
+          <span className="w-[27px] shrink-0" aria-hidden />
+        </div>
+        <ul className="-mx-20 -mb-20 divide-y divide-[var(--border-subtle)]">
           {items.map((item, idx) => (
             <li key={item.uid} className="px-20 py-12 flex items-center gap-12">
               <span
@@ -249,7 +219,6 @@ export function CreatePoForm({ products, warehouses, suppliers }: Props) {
 
               <Select
                 className="flex-1 min-w-0"
-                label="Product"
                 value={item.product_id}
                 onChange={(v) => updateItem(item.uid, { product_id: v })}
                 ariaLabel={`Product for line ${idx + 1}`}
@@ -261,24 +230,19 @@ export function CreatePoForm({ products, warehouses, suppliers }: Props) {
                 }))}
               />
 
-              <label
-                className="field-shell shrink-0 block w-[120px]"
-                data-filled="true"
-              >
-                <span className="field-label">Qty</span>
-                <input
-                  type="number"
-                  min={1}
-                  value={item.quantity}
-                  onChange={(e) =>
-                    updateItem(item.uid, {
-                      quantity: Math.max(0, parseInt(e.target.value, 10) || 0),
-                    })
-                  }
-                  className="field-input tnum"
-                  aria-label={`Quantity for line ${idx + 1}`}
-                />
-              </label>
+              <Input
+                className="w-[104px] shrink-0"
+                type="number"
+                min={1}
+                inputMode="numeric"
+                value={item.quantity}
+                onChange={(e) =>
+                  updateItem(item.uid, {
+                    quantity: Math.max(0, parseInt(e.target.value, 10) || 0),
+                  })
+                }
+                aria-label={`Quantity for line ${idx + 1}`}
+              />
 
               <button
                 type="button"
@@ -292,31 +256,23 @@ export function CreatePoForm({ products, warehouses, suppliers }: Props) {
             </li>
           ))}
         </ul>
-      </section>
+      </FormSection>
 
-      {/* Notes */}
       <section className="hairline bg-[var(--surface)] p-20">
-        <label className="field-shell block">
-          <span className="field-label">Notes (optional)</span>
-          <textarea
-            name="notes"
-            rows={3}
-            className="field-input resize-none"
-            placeholder="Delivery instructions, ship-to contact, payment terms overrides…"
-          />
-        </label>
+        <Textarea
+          label="Notes"
+          labelNote="optional"
+          name="notes"
+          rows={3}
+          placeholder="Delivery instructions, ship-to contact, payment terms overrides…"
+        />
       </section>
 
       {state?.error && (
-        <p
-          role="alert"
-          className="hairline-subtle border-[var(--danger-border)] bg-[var(--danger-dim)] px-16 py-12 mono-sm text-[var(--danger)]"
-        >
-          {state.error}
-        </p>
+        <FormNotice>{state.error}</FormNotice>
       )}
 
-      <div className="flex items-center justify-end gap-10">
+      <FormActions>
         <CornerLink href="/purchase-orders" variant="ghost" size="sm">
           Cancel
         </CornerLink>
@@ -328,7 +284,7 @@ export function CreatePoForm({ products, warehouses, suppliers }: Props) {
         >
           Create draft PO →
         </CornerButton>
-      </div>
+      </FormActions>
     </form>
   );
 }

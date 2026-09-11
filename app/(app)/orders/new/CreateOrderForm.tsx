@@ -4,6 +4,10 @@ import { useActionState, useMemo, useState } from "react";
 import { Plus, Trash2 } from "lucide-react";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
+import { Textarea } from "@/components/ui/Textarea";
+import { FormSection } from "@/components/ui/FormSection";
+import { FormActions } from "@/components/ui/FormActions";
+import { FormNotice } from "@/components/ui/FormNotice";
 import { CornerButton, CornerLink } from "@/components/ui/CornerButton";
 import { createOrder } from "../actions";
 
@@ -123,18 +127,7 @@ export function CreateOrderForm({
       <input type="hidden" name="items" value={itemsJson} />
 
       {/* Type + facility */}
-      <section className="hairline bg-[var(--surface)] p-20 flex flex-col gap-14">
-        <header>
-          <h2
-            className="text-text"
-            style={{ fontFamily: "var(--display)", fontSize: 15, fontWeight: 600 }}
-          >
-            Order type + facility
-          </h2>
-          <p className="mono-sm text-text-muted mt-4">
-            What kind of order this is and which facility fulfills it.
-          </p>
-        </header>
+      <FormSection title="Order type + facility" description="What kind of order this is and which facility fulfills it.">
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
           <Select
@@ -168,27 +161,11 @@ export function CreateOrderForm({
             />
           )}
         </div>
-      </section>
+      </FormSection>
 
       {/* Customer — only for customer-facing order types */}
       {showCustomer && (
-        <section className="hairline bg-[var(--surface)] p-20 flex flex-col gap-14">
-          <header>
-            <h2
-              className="text-text"
-              style={{
-                fontFamily: "var(--display)",
-                fontSize: 15,
-                fontWeight: 600,
-              }}
-            >
-              Customer
-            </h2>
-            <p className="mono-sm text-text-muted mt-4">
-              Who this order is for. Name is required for installer jobs and
-              pickups.
-            </p>
-          </header>
+        <FormSection title="Customer" description="Who this order is for. Name is required for installer jobs and pickups.">
 
           <Input
             label="Customer name"
@@ -198,70 +175,56 @@ export function CreateOrderForm({
           />
           <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
             <Input
-              label="Phone (optional)"
+              label="Phone"
+              labelNote="optional"
               name="customer_phone"
               type="tel"
               autoComplete="tel"
               placeholder="(555) 123-4567"
             />
             <Input
-              label="Address (optional)"
+              label="Address"
+              labelNote="optional"
               name="customer_address"
               placeholder="123 Main St, Springfield"
             />
           </div>
-        </section>
+        </FormSection>
       )}
 
       {/* Schedule */}
-      <section className="hairline bg-[var(--surface)] p-20 flex flex-col gap-14">
-        <header>
-          <h2
-            className="text-text"
-            style={{ fontFamily: "var(--display)", fontSize: 15, fontWeight: 600 }}
-          >
-            Schedule
-          </h2>
-          <p className="mono-sm text-text-muted mt-4">
-            Target delivery / pickup date and an optional time window.
-          </p>
-        </header>
+      <FormSection title="Schedule" description="Target delivery / pickup date and an optional time window.">
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
           <Input label="Delivery date" name="delivery_date" type="date" />
           <Input
-            label="Delivery window (optional)"
+            label="Delivery window"
+            labelNote="optional"
             name="delivery_window"
             placeholder="e.g. 8am–12pm"
           />
         </div>
-      </section>
+      </FormSection>
 
       {/* Line items */}
-      <section className="hairline bg-[var(--surface)] flex flex-col">
-        <header className="px-20 py-14 hairline-b flex items-center justify-between">
-          <div>
-            <h2
-              className="text-text"
-              style={{
-                fontFamily: "var(--display)",
-                fontSize: 15,
-                fontWeight: 600,
-              }}
-            >
-              Line items
-            </h2>
-            <p className="mono-sm text-text-muted mt-4">
-              {validLineCount} {validLineCount === 1 ? "item" : "items"} ready
-            </p>
-          </div>
+      <FormSection
+        title="Line items"
+        description={`${validLineCount} ${validLineCount === 1 ? "item" : "items"} ready`}
+        action={
           <CornerButton type="button" variant="ghost" size="sm" onClick={addLine}>
             <Plus size={11} strokeWidth={1.5} />
             Add line
           </CornerButton>
-        </header>
-
-        <ul className="divide-y divide-[var(--border-subtle)]">
+        }
+      >
+        {/* Column captions once, instead of a label on every row. */}
+        <div className="-mx-20 px-20 pb-8 hairline-b flex items-center gap-12">
+          <span className="w-16 shrink-0" aria-hidden />
+          <span className="label-text flex-1">Product</span>
+          <span className="label-text w-[104px] shrink-0">Qty</span>
+          <span className="w-[27px] shrink-0" aria-hidden />
+        </div>
+        <ul className="-mx-20 -mb-20 divide-y divide-[var(--border-subtle)]">
           {items.map((item, idx) => (
             <li key={item.uid} className="px-20 py-12 flex items-center gap-12">
               <span
@@ -273,7 +236,6 @@ export function CreateOrderForm({
 
               <Select
                 className="flex-1 min-w-0"
-                label="Product"
                 value={item.product_id}
                 onChange={(v) => updateItem(item.uid, { product_id: v })}
                 ariaLabel={`Product for line ${idx + 1}`}
@@ -285,24 +247,19 @@ export function CreateOrderForm({
                 }))}
               />
 
-              <label
-                className="field-shell shrink-0 block w-[120px]"
-                data-filled="true"
-              >
-                <span className="field-label">Qty</span>
-                <input
-                  type="number"
-                  min={1}
-                  value={item.quantity}
-                  onChange={(e) =>
-                    updateItem(item.uid, {
-                      quantity: Math.max(0, parseInt(e.target.value, 10) || 0),
-                    })
-                  }
-                  className="field-input tnum"
-                  aria-label={`Quantity for line ${idx + 1}`}
-                />
-              </label>
+              <Input
+                className="w-[104px] shrink-0"
+                type="number"
+                min={1}
+                inputMode="numeric"
+                value={item.quantity}
+                onChange={(e) =>
+                  updateItem(item.uid, {
+                    quantity: Math.max(0, parseInt(e.target.value, 10) || 0),
+                  })
+                }
+                aria-label={`Quantity for line ${idx + 1}`}
+              />
 
               <button
                 type="button"
@@ -316,38 +273,28 @@ export function CreateOrderForm({
             </li>
           ))}
         </ul>
-      </section>
+      </FormSection>
 
-      {/* Notes */}
       <section className="hairline bg-[var(--surface)] p-20">
-        <label className="field-shell block">
-          <span className="field-label">Notes (optional)</span>
-          <textarea
-            name="notes"
-            rows={3}
-            className="field-input resize-none"
-            placeholder="Install instructions, gate codes, special handling…"
-          />
-        </label>
+        <Textarea
+          label="Notes"
+          labelNote="optional"
+          name="notes"
+          rows={3}
+          placeholder="Install instructions, gate codes, special handling…"
+        />
       </section>
 
-      {state?.error && (
-        <p
-          role="alert"
-          className="hairline-subtle border-[var(--danger-border)] bg-[var(--danger-dim)] px-16 py-12 mono-sm text-[var(--danger)]"
-        >
-          {state.error}
-        </p>
-      )}
+      {state?.error && <FormNotice>{state.error}</FormNotice>}
 
-      <div className="flex items-center justify-end gap-10">
+      <FormActions>
         <CornerLink href="/orders" variant="ghost" size="sm">
           Cancel
         </CornerLink>
         <CornerButton type="submit" variant="primary" size="sm" loading={pending}>
           Create order →
         </CornerButton>
-      </div>
+      </FormActions>
     </form>
   );
 }

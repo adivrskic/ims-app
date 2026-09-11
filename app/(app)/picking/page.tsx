@@ -9,6 +9,7 @@ import { SectionTitle } from "@/components/ui/SectionTitle";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Badge } from "@/components/ui/Badge";
 import { CornerButton } from "@/components/ui/CornerButton";
+import { Checkbox } from "@/components/ui/Checkbox";
 import { Layers, Waypoints, ChevronRight, Zap } from "lucide-react";
 
 export const metadata = { title: "Picking" };
@@ -109,12 +110,15 @@ export default async function PickingPage() {
                       {eligible.map((o) => (
                         <tr key={o.id} className="hairline-b">
                           <Td>
-                            <input
-                              type="checkbox"
+                            <Checkbox
                               name="order_id"
                               value={o.id}
                               defaultChecked
-                              aria-label={`Include ${o.orderNumber ?? o.id}`}
+                              label={
+                                <span className="sr-only">
+                                  Include {o.orderNumber ?? o.id}
+                                </span>
+                              }
                             />
                           </Td>
                           <Td>

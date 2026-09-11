@@ -4,6 +4,10 @@ import { useActionState, useState, useTransition } from "react";
 import { AlertTriangle, Check, Mail, Plug, Unplug, Zap } from "lucide-react";
 import { CornerButton } from "@/components/ui/CornerButton";
 import { Input } from "@/components/ui/Input";
+import { Checkbox } from "@/components/ui/Checkbox";
+import { FormSection } from "@/components/ui/FormSection";
+import { FormActions } from "@/components/ui/FormActions";
+import { FormNotice } from "@/components/ui/FormNotice";
 import {
   INTEGRATION_EVENTS,
   EVENT_META,
@@ -73,28 +77,29 @@ export function ResendConfigForm({ existing }: Props) {
     <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-24">
       <form action={formAction} className="flex flex-col gap-24">
         {/* ── Credentials ───────────────────────────────────────── */}
-        <section className="hairline bg-[var(--surface)] p-24 flex flex-col gap-16">
-          <header className="flex items-baseline justify-between gap-12">
-            <p className="label-text--lg">01 · API key + sender</p>
-            {existing?.status === "connected" && (
+        <FormSection
+          title="01 · API key + sender"
+          description={
+            <>
+              In Resend, go to <strong>API Keys → Create API Key</strong> with{" "}
+              <em>Sending access</em>. Paste the key below. The from-address must
+              use a domain you&apos;ve verified at{" "}
+              <strong>Domains → Add Domain</strong> (look for green DNS check
+              marks).
+            </>
+          }
+          action={
+            existing?.status === "connected" ? (
               <span className="label-text text-[var(--success)] inline-flex items-center gap-6">
                 <Check size={10} strokeWidth={1.5} /> Connected
               </span>
-            )}
-            {existing?.status === "error" && (
+            ) : existing?.status === "error" ? (
               <span className="label-text text-[var(--danger)] inline-flex items-center gap-6">
                 <AlertTriangle size={10} strokeWidth={1.5} /> Errored
               </span>
-            )}
-          </header>
-          <p className="mono-sm text-text-muted" style={{ lineHeight: 1.6 }}>
-            In Resend, go to <strong>API Keys → Create API Key</strong> with{" "}
-            <em>Sending access</em>. Paste the key below. The from-address must
-            use a domain you&apos;ve verified at{" "}
-            <strong>Domains → Add Domain</strong> (look for green DNS check
-            marks).
-          </p>
-
+            ) : undefined
+          }
+        >
           <Input
             label={
               existing ? "API key (leave blank to keep current)" : "API key"
@@ -124,89 +129,40 @@ export function ResendConfigForm({ existing }: Props) {
             defaultValue={existing?.config?.reply_to ?? ""}
             autoComplete="off"
           />
-        </section>
+        </FormSection>
 
         {/* ── Event subscriptions ───────────────────────────────── */}
-        <section className="hairline bg-[var(--surface)] p-24 flex flex-col gap-16">
-          <header>
-            <p className="label-text--lg">02 · Events to email</p>
-            <p
-              className="mono-sm text-text-muted mt-6"
-              style={{ lineHeight: 1.6 }}
-            >
-              Pick which Nautilus events should email your workspace admins.
-              Invite emails are sent automatically when Resend is connected and
-              don&apos;t need to be enabled here.
-            </p>
-          </header>
+        <FormSection
+          title="02 · Events to email"
+          description="Pick which Nautilus events should email your workspace admins. Invite emails are sent automatically when Resend is connected and don't need to be enabled here."
+        >
           <ul className="flex flex-col gap-12">
             {INTEGRATION_EVENTS.map((e) => {
               const meta = EVENT_META[e];
               const checked = enabled.includes(e);
               return (
-                <li key={e}>
-                  <label className="flex items-start gap-12 cursor-pointer hairline-subtle hover:border-[var(--border-hover)] px-14 py-12 transition-colors">
-                    <input
-                      type="checkbox"
-                      name="events"
-                      value={e}
-                      checked={checked}
-                      onChange={() => toggleEvent(e)}
-                      className="mt-2 shrink-0"
-                    />
-                    <div className="flex-1 min-w-0">
-                      <p
-                        className="text-text"
-                        style={{
-                          fontFamily: "var(--display)",
-                          fontSize: 13,
-                          fontWeight: 500,
-                        }}
-                      >
-                        {meta.label}
-                      </p>
-                      <p
-                        className="mono-sm text-text-muted mt-2"
-                        style={{ lineHeight: 1.55 }}
-                      >
-                        {meta.description}
-                      </p>
-                    </div>
-                  </label>
+                <li key={e} className="flex">
+                  <Checkbox
+                    name="events"
+                    value={e}
+                    checked={checked}
+                    onChange={() => toggleEvent(e)}
+                    label={meta.label}
+                    description={meta.description}
+                    className="flex-1 hairline-subtle hover:border-[var(--border-hover)] px-14 py-12 transition-colors"
+                  />
                 </li>
               );
             })}
           </ul>
-        </section>
+        </FormSection>
 
-        {state?.error && (
-          <p
-            role="alert"
-            className="hairline-subtle border-[var(--danger-border)] bg-[var(--danger-dim)] px-14 py-12 mono-sm text-[var(--danger)] inline-flex items-start gap-8"
-          >
-            <AlertTriangle
-              size={11}
-              strokeWidth={1.5}
-              className="mt-2 shrink-0"
-            />
-            <span>{state.error}</span>
-          </p>
-        )}
+        {state?.error && <FormNotice>{state.error}</FormNotice>}
         {state?.success && (
-          <p
-            role="status"
-            className="hairline-subtle border-[var(--success-border)] bg-[var(--success-dim)] px-14 py-12 mono-sm text-[var(--success)] inline-flex items-start gap-8"
-          >
-            <Check size={11} strokeWidth={1.5} className="mt-2 shrink-0" />
-            <span>{state.success}</span>
-          </p>
+          <FormNotice tone="success">{state.success}</FormNotice>
         )}
 
-        <footer className="flex items-center gap-10 flex-wrap">
-          <CornerButton type="submit" variant="primary" loading={pending}>
-            <Plug size={11} strokeWidth={1.5} />
-            {existing ? "Update connection" : "Connect Resend"}
-          </CornerButton>
+        <FormActions>
           {existing && (
             <CornerButton
               type="button"
@@ -219,7 +175,11 @@ export function ResendConfigForm({ existing }: Props) {
               Disconnect
             </CornerButton>
           )}
-        </footer>
+          <CornerButton type="submit" variant="primary" loading={pending}>
+            <Plug size={11} strokeWidth={1.5} />
+            {existing ? "Update connection" : "Connect Resend"}
+          </CornerButton>
+        </FormActions>
       </form>
 
       {/* ── Sidebar ─────────────────────────────────────────────── */}

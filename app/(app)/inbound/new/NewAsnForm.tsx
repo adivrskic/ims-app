@@ -2,8 +2,14 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, Trash2, Loader2 } from "lucide-react";
+import { Plus, Trash2 } from "lucide-react";
+import { CornerButton } from "@/components/ui/CornerButton";
+import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
+import { Textarea } from "@/components/ui/Textarea";
+import { FormSection } from "@/components/ui/FormSection";
+import { FormActions } from "@/components/ui/FormActions";
+import { FormNotice } from "@/components/ui/FormNotice";
 import { createAsn } from "../actions";
 
 interface Opt {
@@ -70,70 +76,60 @@ export function NewAsnForm({
     else router.refresh();
   }
 
-  const field =
-    "hairline-subtle bg-[var(--surface-2)] px-8 py-6 text-text w-full";
-  const fieldStyle = { fontFamily: "var(--mono)", fontSize: 12 } as const;
-
   return (
-    <form action={onSubmit} className="flex flex-col gap-16">
-      {error && (
-        <div className="hairline-subtle px-10 py-7 mono-sm" style={{ background: "var(--danger-dim)", color: "var(--danger)" }}>
-          {error}
-        </div>
-      )}
-
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-12">
-        <div className="flex flex-col gap-4">
-          <span className="label-text text-text-muted">Supplier</span>
+    <form action={onSubmit} className="flex flex-col gap-24">
+      <FormSection
+        title="Shipment"
+        description="Supplier, destination and carrier details for this inbound shipment."
+      >
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-12">
           <Select
+            label="Supplier"
             name="supplier_id"
             defaultValue=""
             ariaLabel="Supplier"
-            compact
             options={[
               { value: "", label: "— none —" },
               ...suppliers.map((s) => ({ value: s.id, label: s.name })),
             ]}
           />
-        </div>
-        <div className="flex flex-col gap-4">
-          <span className="label-text text-text-muted">Destination facility</span>
           <Select
+            label="Destination facility"
             name="warehouse_id"
             defaultValue={warehouses[0]?.id ?? ""}
             ariaLabel="Destination facility"
-            compact
             options={[
               { value: "", label: "— none —" },
               ...warehouses.map((w) => ({ value: w.id, label: w.name })),
             ]}
           />
+          <Input label="Supplier ref #" name="reference" />
+          <Input label="Expected date" name="expected_date" type="date" />
+          <Input label="Carrier" name="carrier" />
+          <Input label="Tracking #" name="tracking_number" />
         </div>
-        <label className="flex flex-col gap-4">
-          <span className="label-text text-text-muted">Supplier ref #</span>
-          <input name="reference" className={field} style={fieldStyle} />
-        </label>
-        <label className="flex flex-col gap-4">
-          <span className="label-text text-text-muted">Expected date</span>
-          <input name="expected_date" type="date" className={field} style={fieldStyle} />
-        </label>
-        <label className="flex flex-col gap-4">
-          <span className="label-text text-text-muted">Carrier</span>
-          <input name="carrier" className={field} style={fieldStyle} />
-        </label>
-        <label className="flex flex-col gap-4">
-          <span className="label-text text-text-muted">Tracking #</span>
-          <input name="tracking_number" className={field} style={fieldStyle} />
-        </label>
-      </div>
+      </FormSection>
 
-      <div className="flex flex-col gap-8">
-        <span className="label-text text-text-muted">Lines</span>
-        {lines.map((l, i) => (
-          <div key={i} className="flex items-end gap-8 flex-wrap">
-            <div className="flex flex-col gap-2 flex-1 min-w-[160px]">
-              <span className="mono-sm text-text-dim">Link product (optional)</span>
+      <FormSection
+        title="Lines"
+        action={
+          <CornerButton
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={addLine}
+          >
+            <Plus size={11} strokeWidth={1.5} />
+            Add line
+          </CornerButton>
+        }
+      >
+        <ul className="flex flex-col gap-12">
+          {lines.map((l, i) => (
+            <li key={i} className="flex items-end gap-8 flex-wrap">
               <Select
+                className="flex-1 min-w-[160px]"
+                label="Link product (optional)"
                 name={`__line_product_${i}`}
                 value={l.product_id}
                 onChange={(v) => {
@@ -147,52 +143,65 @@ export function NewAsnForm({
                   });
                 }}
                 ariaLabel={`Link product for line ${i + 1}`}
-                compact
                 placeholder="— unlinked —"
                 options={[
                   { value: "", label: "— unlinked —" },
                   ...products.map((p) => ({ value: p.id, label: p.name })),
                 ]}
               />
-            </div>
-            <label className="flex flex-col gap-2 flex-1 min-w-[160px]">
-              <span className="mono-sm text-text-dim">Name / description</span>
-              <input value={l.product_name} onChange={(e) => update(i, { product_name: e.target.value })} placeholder="Name or description" className={field} style={fieldStyle} />
-            </label>
-            <label className="flex flex-col gap-2 w-[72px]">
-              <span className="mono-sm text-text-dim">Qty</span>
-              <input type="number" min={1} value={l.quantity} onChange={(e) => update(i, { quantity: e.target.value })} className={field} style={fieldStyle} />
-            </label>
-            <label className="flex flex-col gap-2 w-[110px]">
-              <span className="mono-sm text-text-dim">LPN / pallet</span>
-              <input value={l.lpn} onChange={(e) => update(i, { lpn: e.target.value })} className={field} style={fieldStyle} />
-            </label>
-            <label className="flex flex-col gap-2 w-[100px]">
-              <span className="mono-sm text-text-dim">Lot</span>
-              <input value={l.lot_number} onChange={(e) => update(i, { lot_number: e.target.value })} className={field} style={fieldStyle} />
-            </label>
-            <button type="button" onClick={() => removeLine(i)} className="hairline-subtle p-7 hover:border-[var(--danger)] text-text-secondary hover:text-[var(--danger)] transition-colors" aria-label="Remove line">
-              <Trash2 size={11} strokeWidth={1.5} />
-            </button>
-          </div>
-        ))}
-        <button type="button" onClick={addLine} className="hairline-subtle px-12 py-7 inline-flex items-center gap-6 w-fit hover:border-[var(--accent)] hover:text-[var(--accent)] text-text-secondary transition-colors">
+              <Input
+                className="flex-1 min-w-[160px]"
+                label="Name / description"
+                value={l.product_name}
+                onChange={(e) => update(i, { product_name: e.target.value })}
+                placeholder="Name or description"
+              />
+              <Input
+                className="w-[104px] shrink-0"
+                label="Qty"
+                type="number"
+                min={1}
+                inputMode="numeric"
+                value={l.quantity}
+                onChange={(e) => update(i, { quantity: e.target.value })}
+              />
+              <Input
+                className="w-[120px] shrink-0"
+                label="LPN / pallet"
+                value={l.lpn}
+                onChange={(e) => update(i, { lpn: e.target.value })}
+              />
+              <Input
+                className="w-[110px] shrink-0"
+                label="Lot"
+                value={l.lot_number}
+                onChange={(e) => update(i, { lot_number: e.target.value })}
+              />
+              <button
+                type="button"
+                onClick={() => removeLine(i)}
+                className="hairline-subtle p-7 mb-6 hover:border-[var(--danger)] text-text-secondary hover:text-[var(--danger)] transition-colors shrink-0"
+                aria-label="Remove line"
+              >
+                <Trash2 size={11} strokeWidth={1.5} />
+              </button>
+            </li>
+          ))}
+        </ul>
+      </FormSection>
+
+      <section className="hairline bg-[var(--surface)] p-20">
+        <Textarea label="Notes" name="notes" rows={2} />
+      </section>
+
+      {error && <FormNotice>{error}</FormNotice>}
+
+      <FormActions>
+        <CornerButton type="submit" variant="primary" size="sm" loading={busy}>
           <Plus size={11} strokeWidth={1.5} />
-          <span className="label-text">Add line</span>
-        </button>
-      </div>
-
-      <label className="flex flex-col gap-4">
-        <span className="label-text text-text-muted">Notes</span>
-        <textarea name="notes" rows={2} className={field} style={fieldStyle} />
-      </label>
-
-      <div>
-        <button type="submit" disabled={busy} className="hairline-subtle px-16 py-8 inline-flex items-center gap-8 border-[var(--accent-soft)] bg-[var(--accent-dim)] text-[var(--accent)] hover:border-[var(--accent)] disabled:opacity-50 transition-colors">
-          {busy ? <Loader2 size={12} strokeWidth={1.5} className="animate-spin" /> : <Plus size={12} strokeWidth={1.5} />}
-          <span className="label-text">Create ASN</span>
-        </button>
-      </div>
+          Create ASN
+        </CornerButton>
+      </FormActions>
     </form>
   );
 }

@@ -7,6 +7,10 @@ import { Plus, X } from "lucide-react";
 import { CornerButton } from "@/components/ui/CornerButton";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
+import { Textarea } from "@/components/ui/Textarea";
+import { FormSection } from "@/components/ui/FormSection";
+import { FormActions } from "@/components/ui/FormActions";
+import { FormNotice } from "@/components/ui/FormNotice";
 import { createProduct } from "./actions";
 
 interface Category {
@@ -143,10 +147,7 @@ export function RegisterProductButton({
               </p>
 
               {/* ── Identity ───────────────────────────────────── */}
-              <fieldset className="flex flex-col gap-12">
-                <legend className="label-text text-text-muted mb-2">
-                  Identity
-                </legend>
+              <FormSection variant="plain" title="Identity">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
                   <Input
                     label="Barcode"
@@ -189,13 +190,10 @@ export function RegisterProductButton({
                     autoComplete="off"
                   />
                 </div>
-              </fieldset>
+              </FormSection>
 
               {/* ── Physical ───────────────────────────────────── */}
-              <fieldset className="flex flex-col gap-12">
-                <legend className="label-text text-text-muted mb-2">
-                  Physical
-                </legend>
+              <FormSection variant="plain" title="Physical">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
                   <Input
                     label="Dimensions"
@@ -210,17 +208,14 @@ export function RegisterProductButton({
                     autoComplete="off"
                   />
                 </div>
-              </fieldset>
+              </FormSection>
 
               {/* ── Replenishment + cost (NEW, P1) ───────────────────── */}
-              <fieldset className="flex flex-col gap-12">
-                <legend className="label-text text-text-muted mb-2">
-                  Replenishment &amp; cost
-                </legend>
-                <p className="mono-sm text-text-dim -mt-4">
-                  Powers inventory valuation, smarter reorder math, and the
-                  draft-PO flow. All optional, but more here = better signal.
-                </p>
+              <FormSection
+                variant="plain"
+                title="Replenishment & cost"
+                description="Powers inventory valuation, smarter reorder math, and the draft-PO flow. All optional, but more here = better signal."
+              >
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-12">
                   <Input
@@ -272,32 +267,22 @@ export function RegisterProductButton({
                 </div>
                 {suppliers.length === 0 && (
                   <p className="mono-sm text-text-dim">
-                    Add suppliers under Settings → Suppliers to enable this
-                    picker.
+                    Add a supplier under Suppliers to enable this picker.
                   </p>
                 )}
-              </fieldset>
+              </FormSection>
 
-              <label className="field-shell block">
-                <span className="field-label">Notes</span>
-                <textarea
-                  name="notes"
-                  rows={3}
-                  className="field-input resize-none"
-                  placeholder="Care, installation hints, finish details…"
-                />
-              </label>
+              <Textarea
+                label="Notes"
+                labelNote="optional"
+                name="notes"
+                rows={3}
+                placeholder="Care, installation hints, finish details…"
+              />
 
-              {state?.error && (
-                <p
-                  role="alert"
-                  className="hairline-subtle border-[var(--danger-border)] bg-[var(--danger-dim)] px-12 py-10 mono-sm text-[var(--danger)]"
-                >
-                  {state.error}
-                </p>
-              )}
+              {state?.error && <FormNotice>{state.error}</FormNotice>}
 
-              <div className="flex items-center justify-end gap-10 hairline-t pt-14 -mx-20 px-20">
+              <FormActions className="-mx-20 px-20">
                 <CornerButton
                   type="button"
                   variant="ghost"
@@ -314,7 +299,7 @@ export function RegisterProductButton({
                 >
                   Register →
                 </CornerButton>
-              </div>
+              </FormActions>
             </form>
           </div>
         </div>,

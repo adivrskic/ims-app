@@ -7,6 +7,7 @@ import { ManifestHeader } from "@/components/auth/ManifestHeader";
 import { ManifestRow } from "@/components/auth/ManifestRow";
 import { ManifestInput } from "@/components/auth/ManifestInput";
 import { CornerButton } from "@/components/ui/CornerButton";
+import { FormNotice } from "@/components/ui/FormNotice";
 import { sendMagicLink } from "../actions";
 
 function MagicLinkInner() {
@@ -59,23 +60,13 @@ function MagicLinkInner() {
 
         {state?.error && (
           <div className="py-12">
-            <p
-              role="alert"
-              className="hairline-subtle border-[var(--danger-border)] bg-[var(--danger-dim)] px-12 py-10 mono-sm text-[var(--danger)]"
-            >
-              {state.error}
-            </p>
+            <FormNotice>{state.error}</FormNotice>
           </div>
         )}
 
         {state?.success && (
           <div className="py-12">
-            <p
-              role="status"
-              className="hairline-subtle border-[var(--success-border)] bg-[var(--success-dim)] px-12 py-10 mono-sm text-[var(--success)]"
-            >
-              {state.success}
-            </p>
+            <FormNotice tone="success">{state.success}</FormNotice>
           </div>
         )}
 

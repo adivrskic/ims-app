@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { ShieldCheck, ChevronDown } from "lucide-react";
 import { CornerButton } from "@/components/ui/CornerButton";
+import { Checkbox } from "@/components/ui/Checkbox";
+import { FormActions } from "@/components/ui/FormActions";
 import { PERMISSIONS } from "@/lib/permissions";
 import { setMemberPermissions } from "../actions";
 
@@ -50,24 +52,21 @@ export function MemberPermissions({ userId, current, isCustom }: Props) {
               <div key={group} className="flex flex-col gap-4">
                 <span className="label-text text-text-dim">{group}</span>
                 {PERMISSIONS.filter((p) => p.group === group).map((p) => (
-                  <label
+                  <Checkbox
                     key={p.key}
-                    className="flex items-center gap-6 mono-sm text-text-secondary select-none cursor-pointer"
-                  >
-                    <input
-                      type="checkbox"
-                      name="perm"
-                      value={p.key}
-                      defaultChecked={currentSet.has(p.key)}
-                      className="accent-[var(--accent)]"
-                    />
-                    {p.label}
-                  </label>
+                    name="perm"
+                    value={p.key}
+                    defaultChecked={currentSet.has(p.key)}
+                    label={p.label}
+                  />
                 ))}
               </div>
             ))}
           </div>
-          <div className="flex items-center gap-8">
+          {/* Both buttons submit. "Save" stays first in the DOM so it remains
+              the form's default button (Enter on a checkbox submits in
+              Chromium); `order-first` renders "Reset" on the left as usual. */}
+          <FormActions>
             <CornerButton type="submit" variant="primary" size="sm">
               Save permissions
             </CornerButton>
@@ -75,12 +74,12 @@ export function MemberPermissions({ userId, current, isCustom }: Props) {
               type="submit"
               name="reset"
               value="1"
-              className="hairline-subtle px-10 py-6 text-text-secondary hover:text-text hover:border-[var(--border-hover)] transition-colors"
+              className="order-first hairline-subtle px-10 py-6 text-text-secondary hover:text-text hover:border-[var(--border-hover)] transition-colors"
               style={{ fontFamily: "var(--mono)", fontSize: 10, letterSpacing: "0.8px", textTransform: "uppercase" }}
             >
               Reset to role default
             </button>
-          </div>
+          </FormActions>
         </form>
       )}
     </div>

@@ -15,6 +15,7 @@ import { CornerButton } from "@/components/ui/CornerButton";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { Badge } from "@/components/ui/Badge";
+import { FormNotice } from "@/components/ui/FormNotice";
 import {
   startShopifyOauth,
   testShopify,
@@ -152,17 +153,7 @@ export function ShopifyConfigClient({
           />
 
           {(err || state?.error) && (
-            <p
-              role="alert"
-              className="hairline-subtle border-[var(--danger-border)] bg-[var(--danger-dim)] px-14 py-12 mono-sm text-[var(--danger)] inline-flex items-start gap-8"
-            >
-              <AlertTriangle
-                size={11}
-                strokeWidth={1.5}
-                className="mt-2 shrink-0"
-              />
-              <span>{err ? ERR_MESSAGES[err] ?? err : state?.error}</span>
-            </p>
+            <FormNotice>{err ? ERR_MESSAGES[err] ?? err : state?.error}</FormNotice>
           )}
 
           <footer>

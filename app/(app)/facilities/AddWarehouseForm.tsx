@@ -5,6 +5,9 @@ import { Plus, X } from "lucide-react";
 import { Input } from "@/components/ui/Input";
 import { AddressFields } from "@/components/ui/AddressFields";
 import { CornerButton } from "@/components/ui/CornerButton";
+import { FormSection } from "@/components/ui/FormSection";
+import { FormActions } from "@/components/ui/FormActions";
+import { FormNotice } from "@/components/ui/FormNotice";
 import { createWarehouse } from "./actions";
 
 export function AddWarehouseForm() {
@@ -37,83 +40,61 @@ export function AddWarehouseForm() {
   }
 
   return (
-    <form
-      ref={formRef}
-      action={formAction}
-      className="hairline bg-[var(--surface)] p-20 flex flex-col gap-14"
-    >
-      <header className="flex items-start justify-between">
-        <div>
-          <h3
-            className="text-text"
-            style={{
-              fontFamily: "var(--display)",
-              fontSize: 14,
-              fontWeight: 600,
-            }}
+    <form ref={formRef} action={formAction}>
+      <FormSection
+        title="New facility"
+        description="Facility-scoped inventory, sections, and team access."
+        action={
+          <button
+            type="button"
+            onClick={() => setOpen(false)}
+            className="hairline-subtle p-6 hover:border-[var(--border-hover)] text-text-secondary"
+            aria-label="Cancel"
           >
-            New facility
-          </h3>
-          <p className="mono-sm text-text-muted mt-2">
-            Facility-scoped inventory, sections, and team access.
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={() => setOpen(false)}
-          className="hairline-subtle p-6 hover:border-[var(--border-hover)] text-text-secondary"
-          aria-label="Cancel"
-        >
-          <X size={11} strokeWidth={1.5} />
-        </button>
-      </header>
+            <X size={11} strokeWidth={1.5} />
+          </button>
+        }
+      >
+        <Input
+          label="Name"
+          name="name"
+          type="text"
+          required
+          placeholder="e.g. Dallas-Fulfillment"
+        />
+        <Input label="Address" name="address" type="text" />
 
-      <Input
-        label="Name"
-        name="name"
-        type="text"
-        required
-        placeholder="e.g. Dallas-Fulfillment"
-      />
-      <Input label="Address" name="address" type="text" />
+        {/* City + State (dropdown) + ZIP (with autofill). Bare field names. */}
+        <AddressFields namePrefix="" />
 
-      {/* City + State (dropdown) + ZIP (with autofill). Bare field names. */}
-      <AddressFields namePrefix="" />
+        <Input
+          label="Phone"
+          name="phone"
+          type="tel"
+          placeholder="(404) 555-0142"
+        />
 
-      <Input
-        label="Phone"
-        name="phone"
-        type="tel"
-        placeholder="(404) 555-0142"
-      />
+        {state?.error && <FormNotice>{state.error}</FormNotice>}
 
-      {state?.error && (
-        <p
-          role="alert"
-          className="hairline-subtle border-[var(--danger-border)] bg-[var(--danger-dim)] px-12 py-10 mono-sm text-[var(--danger)]"
-        >
-          {state.error}
-        </p>
-      )}
-
-      <div className="flex justify-end gap-10">
-        <CornerButton
-          type="button"
-          variant="ghost"
-          size="sm"
-          onClick={() => setOpen(false)}
-        >
-          Cancel
-        </CornerButton>
-        <CornerButton
-          type="submit"
-          variant="primary"
-          size="sm"
-          loading={pending}
-        >
-          Create →
-        </CornerButton>
-      </div>
+        <FormActions>
+          <CornerButton
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => setOpen(false)}
+          >
+            Cancel
+          </CornerButton>
+          <CornerButton
+            type="submit"
+            variant="primary"
+            size="sm"
+            loading={pending}
+          >
+            Create →
+          </CornerButton>
+        </FormActions>
+      </FormSection>
     </form>
   );
 }

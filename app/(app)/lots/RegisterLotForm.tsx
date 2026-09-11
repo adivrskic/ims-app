@@ -3,6 +3,9 @@
 import { useActionState, useEffect, useRef } from "react";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
+import { Textarea } from "@/components/ui/Textarea";
+import { FormActions } from "@/components/ui/FormActions";
+import { FormNotice } from "@/components/ui/FormNotice";
 import { CornerButton } from "@/components/ui/CornerButton";
 import { createLot } from "./actions";
 
@@ -77,38 +80,24 @@ export function RegisterLotForm({ products, suppliers }: Props) {
         />
       </div>
 
-      <label className="field-shell block">
-        <span className="field-label">Notes (optional)</span>
-        <textarea
-          name="notes"
-          rows={2}
-          className="field-input resize-none"
-          placeholder="Dye lot, COA reference, storage notes…"
-        />
-      </label>
+      <Textarea
+        label="Notes"
+        labelNote="optional"
+        name="notes"
+        rows={2}
+        placeholder="Dye lot, COA reference, storage notes…"
+      />
 
-      {state?.error && (
-        <p
-          role="alert"
-          className="hairline-subtle border-[var(--danger-border)] bg-[var(--danger-dim)] px-12 py-10 mono-sm text-[var(--danger)]"
-        >
-          {state.error}
-        </p>
-      )}
+      {state?.error && <FormNotice>{state.error}</FormNotice>}
       {state?.success && (
-        <p
-          role="status"
-          className="hairline-subtle border-[var(--success-border)] bg-[var(--success-dim)] px-12 py-10 mono-sm text-[var(--success)]"
-        >
-          {state.success}
-        </p>
+        <FormNotice tone="success">{state.success}</FormNotice>
       )}
 
-      <div className="flex justify-end">
+      <FormActions className="-mx-20 px-20">
         <CornerButton type="submit" variant="primary" size="sm" loading={pending}>
           Register lot →
         </CornerButton>
-      </div>
+      </FormActions>
     </form>
   );
 }

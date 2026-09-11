@@ -20,7 +20,7 @@ export interface SelectOption {
 }
 
 interface Props {
-  /** Floating field label. Optional — some form usages render their own. */
+  /** Label shown above the trigger. Optional — some usages render their own. */
   label?: string;
   /** Controlled value. Omit and use `defaultValue` for uncontrolled usage. */
   value?: string;
@@ -51,17 +51,13 @@ interface Props {
  * Custom dropdown replacement for native <select>.
  *
  * Why this exists:
- *   - Native <select> shows its first option ("— Select —") in the input
- *     area, which collides with the floating field-label visually.
  *   - Native option styling is OS-locked and doesn't match the design.
  *   - We want consistent keyboard + click affordances across the app.
  *
  * Behavior:
- *   - Button is styled exactly like a field-shell with field-label.
- *   - Click toggles a popover anchored below the button.
- *   - Selected option's label appears in the button area.
- *   - When empty: button area is empty (label sits where placeholder would).
- *   - When focused (popover open) or filled: label floats up.
+ *   - Same anatomy as Input: static label above, a field-shell trigger, the
+ *     placeholder visible whenever nothing is selected.
+ *   - Click toggles a popover anchored below the trigger.
  *   - Searchable when options.length > 10 (or `searchable={true}` forces it).
  *   - Arrow keys move highlight, Enter selects, Esc closes.
  *
@@ -229,10 +225,8 @@ export function Select({
     el?.scrollIntoView({ block: "nearest" });
   }, [highlightedIndex, open]);
 
-  const filled = Boolean(value);
-
   return (
-    <div ref={rootRef} className={`relative ${className ?? ""}`}>
+    <div ref={rootRef} className={`field relative ${className ?? ""}`}>
       {/*
         Hidden input for form submission. Only rendered if name is provided —
         otherwise the parent is expected to manage form value via its own
@@ -248,6 +242,12 @@ export function Select({
         />
       )}
 
+      {label && (
+        <span id={`${buttonId}-label`} className="field-label">
+          <span>{label}</span>
+        </span>
+      )}
+
       <button
         ref={buttonRef}
         id={buttonId}
@@ -259,16 +259,14 @@ export function Select({
         aria-expanded={open}
         aria-controls={open ? listboxId : undefined}
         aria-label={ariaLabel ?? label}
-        className={`field-shell block w-full text-left ${
+        className={`field-shell w-full text-left ${
           compact ? "field-shell--compact" : ""
         }`}
-        data-filled={filled || open ? "true" : "false"}
-        data-error={undefined}
+        data-disabled={disabled ? "true" : undefined}
       >
-        {label && <span className="field-label">{label}</span>}
         <span
           className={`field-input flex items-center justify-between gap-8 cursor-pointer ${
-            disabled ? "opacity-50 cursor-not-allowed" : ""
+            disabled ? "cursor-not-allowed" : ""
           }`}
         >
           <span
@@ -276,7 +274,7 @@ export function Select({
               selected ? "text-text" : "text-text-dim"
             }`}
           >
-            {selected?.label ?? (open ? placeholder : "")}
+            {selected?.label ?? placeholder}
           </span>
           <ChevronDown
             size={11}

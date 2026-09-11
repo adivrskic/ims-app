@@ -4,6 +4,7 @@ import { useActionState } from "react";
 import { Plus, AlertTriangle } from "lucide-react";
 import { Input } from "@/components/ui/Input";
 import { CornerButton } from "@/components/ui/CornerButton";
+import { Checkbox } from "@/components/ui/Checkbox";
 import { addReason } from "./actions";
 
 export function AddReasonForm() {
@@ -13,13 +14,12 @@ export function AddReasonForm() {
       <div style={{ minWidth: 220 }}>
         <Input label="New reason" name="label" type="text" maxLength={60} required />
       </div>
-      <label
-        className="flex items-center gap-6 mono-sm text-text-secondary pb-8 select-none cursor-pointer"
+      <Checkbox
+        name="requires_approval"
+        label="Requires approval"
         title="Adjustments with this reason always require approval"
-      >
-        <input name="requires_approval" type="checkbox" className="accent-[var(--accent)]" />
-        Requires approval
-      </label>
+        className="pb-12"
+      />
       <CornerButton type="submit" variant="ghost" size="sm" loading={pending} disabled={pending}>
         <Plus size={11} strokeWidth={1.5} />
         Add

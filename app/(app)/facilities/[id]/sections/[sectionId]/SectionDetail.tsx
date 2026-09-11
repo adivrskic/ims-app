@@ -1062,23 +1062,15 @@ function AddProductForm({
 
       {!picked ? (
         <>
-          <div className="relative">
-            <span
-              className="absolute left-7 top-1/2 -translate-y-1/2 text-text-dim pointer-events-none"
-              aria-hidden
-            >
-              <Search size={11} strokeWidth={1.5} />
-            </span>
-            <input
-              ref={inputRef}
-              type="text"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search by name, SKU, or barcode…"
-              className="field-input w-full"
-              style={{ paddingLeft: 26 }}
-            />
-          </div>
+          <Input
+            ref={inputRef}
+            type="text"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search by name, SKU, or barcode…"
+            aria-label="Search products"
+            icon={<Search size={11} strokeWidth={1.5} />}
+          />
 
           {searching && (
             <div className="flex items-center gap-6 mono-sm text-text-dim">

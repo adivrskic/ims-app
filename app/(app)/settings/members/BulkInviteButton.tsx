@@ -7,10 +7,10 @@ import {
   FileDown,
   Check,
   AlertCircle,
-  Loader2,
   Users,
   Copy,
 } from "lucide-react";
+import { NautilusLoader } from "@/components/ui/NautilusLoader";
 import { CornerButton } from "@/components/ui/CornerButton";
 import {
   previewBulkInvite,
@@ -416,16 +416,11 @@ function IdlePanel({
 
 function LoadingPanel({ label }: { label: string }) {
   return (
-    <div className="flex flex-col items-center justify-center gap-14 py-40">
-      <Loader2
-        size={24}
-        strokeWidth={1.5}
-        className="text-text-muted animate-spin"
-        aria-hidden
-      />
-      <p className="text-text-secondary mono-sm" aria-live="polite">
-        {label}…
-      </p>
+    <div
+      className="flex items-center justify-center py-40 text-text-secondary"
+      aria-live="polite"
+    >
+      <NautilusLoader size={48} label={label} />
     </div>
   );
 }

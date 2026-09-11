@@ -8,6 +8,7 @@ import { ManifestInput } from "@/components/auth/ManifestInput";
 import { ManifestPasswordField } from "@/components/auth/ManifestPasswordField";
 import { PasswordStrength } from "@/components/auth/PasswordStrength";
 import { CornerButton } from "@/components/ui/CornerButton";
+import { FormNotice } from "@/components/ui/FormNotice";
 import { signUpWithPassword } from "../actions";
 
 export function SignupForm({ next = "/" }: { next?: string }) {
@@ -90,23 +91,13 @@ export function SignupForm({ next = "/" }: { next?: string }) {
 
         {state?.error && (
           <div className="py-12">
-            <p
-              role="alert"
-              className="hairline-subtle border-[var(--danger-border)] bg-[var(--danger-dim)] px-12 py-10 mono-sm text-[var(--danger)]"
-            >
-              {state.error}
-            </p>
+            <FormNotice>{state.error}</FormNotice>
           </div>
         )}
 
         {state?.success && (
           <div className="py-12">
-            <p
-              role="status"
-              className="hairline-subtle border-[var(--success-border)] bg-[var(--success-dim)] px-12 py-10 mono-sm text-[var(--success)]"
-            >
-              {state.success}
-            </p>
+            <FormNotice tone="success">{state.success}</FormNotice>
           </div>
         )}
 

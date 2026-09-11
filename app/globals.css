@@ -708,11 +708,52 @@ table,
   background: var(--surface-2);
 }
 
+/* ═══ FIELDS ═══
+ *
+ * One field system for the whole product. A static label sits ABOVE the
+ * control (no floating label: the placeholder stays visible, nothing jumps,
+ * nothing shrinks to 9px), helper and error copy sit beneath it in sentence
+ * case, and the control itself is a plain bordered box.
+ *
+ * Structure — see Input / Select / Textarea in components/ui:
+ *   .field          column: label · shell · help/error
+ *   .field-label    the label row (text + optional right-hand note)
+ *   .field-shell    the bordered control box. Also used on its own by the
+ *                   list toolbars, which put it straight on an <input>.
+ *   .field-input    the bare control inside the shell
+ *   .field-help / .field-error   copy beneath the control
+ */
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.field-label {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+.field-label-note {
+  font-size: 10px;
+  letter-spacing: 0.4px;
+  text-transform: none;
+  color: var(--text-dim);
+}
 .field-shell {
   position: relative;
   display: flex;
+  align-items: center;
+  min-height: 40px;
   background: var(--surface-2);
   border: 1px solid var(--border-subtle);
+  color: var(--text);
   transition: border-color var(--dur-quick) var(--ease-out),
     background-color var(--dur-quick) var(--ease-out),
     box-shadow var(--dur-quick) var(--ease-out);
@@ -721,64 +762,52 @@ table,
   border-color: var(--border-hover);
 }
 .field-shell:focus-within {
-  border-color: var(--accent-soft);
+  border-color: var(--accent);
   background: var(--surface-3);
-  box-shadow: 0 0 0 4px var(--focus-ring);
+  box-shadow: 0 0 0 3px var(--focus-ring);
 }
 .field-shell[data-error="true"] {
   border-color: color-mix(in srgb, var(--danger) 55%, transparent);
   background: var(--danger-dim);
 }
 .field-shell[data-error="true"]:focus-within {
-  box-shadow: 0 0 0 4px color-mix(in srgb, var(--danger) 12%, transparent);
+  border-color: var(--danger);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger) 14%, transparent);
+}
+.field-shell[data-disabled="true"] {
+  opacity: 0.55;
+}
+.field-shell--compact {
+  min-height: 32px;
 }
 .field-input {
+  flex: 1;
   width: 100%;
+  min-width: 0;
   background: transparent;
   border: none;
   outline: none;
   color: var(--text);
   font-family: var(--mono);
   font-size: 13px;
-  padding: 22px 14px 8px;
+  line-height: 1.4;
+  padding: 10px 14px;
+}
+.field-shell--compact .field-input {
+  padding: 6px 10px;
+  font-size: 12px;
+}
+.field-input::placeholder {
+  color: var(--text-dim);
 }
 .field-input:disabled {
-  opacity: 0.5;
   cursor: not-allowed;
 }
-.field-label {
-  position: absolute;
-  left: 14px;
-  top: 22px;
-  font-family: var(--mono);
-  font-size: 11px;
-  letter-spacing: 2px;
-  text-transform: uppercase;
-  color: var(--text-muted);
-  pointer-events: none;
-  transition: all var(--dur-quick) var(--ease-out);
-}
-.field-shell:focus-within .field-label,
-.field-shell[data-filled="true"] .field-label {
-  top: 6px;
-  font-size: 9px;
-  letter-spacing: 1.6px;
-  color: var(--accent);
-}
-.field-shell[data-error="true"] .field-label {
-  color: var(--danger);
-}
-.field-error {
-  margin-top: 6px;
-  font-family: var(--mono);
-  font-size: 11px;
-  letter-spacing: 1.2px;
-  text-transform: uppercase;
-  color: var(--danger);
-}
-.field-shell[data-with-icon] {
-  display: flex;
-  align-items: center;
+textarea.field-input {
+  padding: 11px 14px;
+  line-height: 1.55;
+  min-height: 88px;
+  resize: vertical;
 }
 .field-icon {
   display: flex;
@@ -790,35 +819,31 @@ table,
   pointer-events: none;
   transition: color var(--dur-quick) var(--ease-out);
 }
-.field-shell[data-with-icon]:focus-within .field-icon {
+.field-shell:focus-within .field-icon {
   color: var(--accent);
 }
 .field-shell[data-with-icon] .field-input {
-  flex: 1;
-  min-width: 0;
   padding-left: 10px;
 }
-.field-shell[data-with-icon] .field-label {
-  /* Push the floating label past the icon. 14px (icon left padding) +
-     ~13px (icon glyph) + 10px (gap to text) = 37px. Round to 38 for a
-     touch of breathing room. */
-  left: 38px;
+.field-help {
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-muted);
 }
-
-/* Floating-label fields: keep the placeholder hidden until focus, so the
-   resting label and the placeholder don't sit on top of each other. */
-.field-shell .field-input::placeholder {
-  color: transparent;
-}
-.field-shell:focus-within .field-input::placeholder {
-  color: var(--text-dim);
-  transition: color var(--dur-quick) var(--ease-out);
+.field-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--danger);
 }
 
 /* Date/time inputs: the native datetime-edit (e.g. "mm/dd/yyyy") is always
-   shown and can't be hidden via ::placeholder. Color it to match the theme,
-   and make the calendar picker indicator visible against the dark surface
-   (it ships near-black by default). */
+   shown; colour it to match the theme and make the picker indicator visible
+   against a dark surface (it ships near-black by default). */
 .field-input::-webkit-datetime-edit {
   color: var(--text);
 }
@@ -836,6 +861,116 @@ table,
 }
 [data-theme="light"] .field-input::-webkit-calendar-picker-indicator {
   filter: none;
+}
+
+/* ── Checkbox ── components/ui/Checkbox.tsx. The native input is visually
+   hidden but stays in the tab order; the box is a sibling so :checked and
+   :focus-visible can style it. */
+.checkbox {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 10px;
+  cursor: pointer;
+  user-select: none;
+  color: var(--text-secondary);
+  transition: color var(--dur-quick) var(--ease-out);
+}
+.checkbox:hover {
+  color: var(--text);
+}
+.checkbox[data-disabled="true"] {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.checkbox-input {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  pointer-events: none;
+}
+.checkbox-box {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  margin-top: 2px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: transparent;
+  transition: background-color var(--dur-quick) var(--ease-out),
+    border-color var(--dur-quick) var(--ease-out),
+    box-shadow var(--dur-quick) var(--ease-out);
+}
+.checkbox:hover .checkbox-box {
+  border-color: var(--border-hover);
+}
+.checkbox-input:checked + .checkbox-box {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--on-accent);
+}
+.checkbox-input:focus-visible + .checkbox-box {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--focus-ring);
+}
+.checkbox-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.checkbox-label {
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.4;
+}
+.checkbox-desc {
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
+/* ── Form layout ── FormSection / FormActions in components/ui. */
+.form-section-title {
+  font-family: var(--display);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.1px;
+  color: var(--text);
+}
+.form-section-desc {
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--text-muted);
+  margin-top: 4px;
+  max-width: 560px;
+}
+.form-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding-top: 14px;
+  border-top: 1px solid var(--border-subtle);
+}
+.form-actions--bare {
+  padding-top: 0;
+  border-top: 0;
+}
+.form-actions__status {
+  margin-right: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--mono);
+  font-size: 11px;
 }
 
 /* ═══ SKELETON / LOADING ═══ (tokens live in the theme blocks above) */
@@ -952,6 +1087,58 @@ table,
 :focus-visible {
   outline: 1px solid var(--accent);
   outline-offset: 2px;
+}
+
+/* ═══ NAUTILUS LOADER ═══
+   Companion to components/ui/NautilusLoader.tsx. Every path has
+   pathLength="1", so the dash values here are fractions of the path. */
+.nl {
+  display: block;
+  overflow: visible;
+}
+.nl-spiral {
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: nl-draw 1.4s var(--ease-out) forwards;
+}
+.nl-septum {
+  stroke: currentColor;
+  stroke-width: 1.1;
+  opacity: 0.55;
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: nl-draw 0.45s var(--ease-out) forwards;
+  animation-delay: calc(0.85s + var(--i, 0) * 45ms);
+}
+.nl-bead {
+  stroke: var(--accent);
+  stroke-width: 2.2;
+  stroke-dasharray: 0.09 0.91;
+  stroke-dashoffset: 1;
+  opacity: 0;
+  animation: nl-travel 2.4s linear infinite, nl-appear 0.4s linear forwards;
+  animation-delay: 1.5s;
+  filter: drop-shadow(0 0 3px var(--accent-soft));
+}
+@keyframes nl-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+@keyframes nl-travel {
+  from {
+    stroke-dashoffset: 1;
+  }
+  to {
+    stroke-dashoffset: -1;
+  }
+}
+@keyframes nl-appear {
+  to {
+    opacity: 1;
+  }
 }
 
 /* ═══ DEBUG PANEL SLIDERS ═══ */

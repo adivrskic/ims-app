@@ -2,6 +2,7 @@
 
 import { Trash2 } from "lucide-react";
 import { Input } from "@/components/ui/Input";
+import { Textarea } from "@/components/ui/Textarea";
 import type { LayoutElementDraft, ElementKind } from "./types";
 import { ELEMENT_PRESETS } from "./elementPresets";
 
@@ -79,9 +80,9 @@ export function ElementInspector({
           {isNote ? "Body" : "Label"}
         </p>
         {isNote ? (
-          <textarea
+          <Textarea
+            aria-label="Body"
             rows={5}
-            className="field-input resize-none w-full"
             placeholder="Type a note for the floor…"
             value={element.label}
             onChange={(e) => onUpdate({ label: e.target.value })}

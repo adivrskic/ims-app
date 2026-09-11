@@ -3,6 +3,8 @@
 import { useState, useTransition } from "react";
 import { ChipGroup } from "@/components/ui/ChipGroup";
 import { CornerButton } from "@/components/ui/CornerButton";
+import { FormSection } from "@/components/ui/FormSection";
+import { FormActions } from "@/components/ui/FormActions";
 import {
   ACTIVITIES,
   PRIORITIES,
@@ -38,8 +40,7 @@ export function WorkModulesForm({ initialActivities, initialPriorities }: Props)
       }
       className="hairline bg-[var(--surface)] p-16 flex flex-col gap-16"
     >
-      <div className="flex flex-col gap-8">
-        <p className="label-text text-text-muted">What you do day to day</p>
+      <FormSection variant="plain" title="What you do day to day">
         <ChipGroup
           ariaLabel="Activities"
           name="activities"
@@ -51,12 +52,13 @@ export function WorkModulesForm({ initialActivities, initialPriorities }: Props)
           values={activities}
           onChange={setActivities}
         />
-      </div>
+      </FormSection>
 
-      <div className="flex flex-col gap-8">
-        <p className="label-text text-text-muted">
-          What the dashboard leads with (up to {MAX_PRIORITIES}, in order)
-        </p>
+      <FormSection
+        variant="plain"
+        title="What the dashboard leads with"
+        description={`Up to ${MAX_PRIORITIES}, in order.`}
+      >
         <ChipGroup
           ariaLabel="Dashboard priorities"
           name="priorities"
@@ -66,18 +68,21 @@ export function WorkModulesForm({ initialActivities, initialPriorities }: Props)
           max={MAX_PRIORITIES}
           showRank
         />
-      </div>
+      </FormSection>
 
-      <div className="flex items-center justify-end gap-12">
-        {saved && (
-          <span className="mono-sm text-[var(--success)]" role="status">
-            Saved
-          </span>
-        )}
+      <FormActions
+        status={
+          saved && (
+            <span className="text-[var(--success)]" role="status">
+              Saved
+            </span>
+          )
+        }
+      >
         <CornerButton type="submit" variant="ghost" size="sm" loading={pending}>
           Save modules
         </CornerButton>
-      </div>
+      </FormActions>
     </form>
   );
 }

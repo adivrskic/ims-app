@@ -4,6 +4,7 @@ import { useActionState, useEffect, useState } from "react";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { CornerButton } from "@/components/ui/CornerButton";
+import { FormNotice } from "@/components/ui/FormNotice";
 import { recordCycleCount } from "./actions";
 
 interface ProductOption {
@@ -42,12 +43,10 @@ function sectionCode(loc: LocationOption): string {
  *   - Counted qty (Input, type=number)
  *   - Notes (Input, optional)
  *
- * The native <select>/native <input> usage was replaced because the
- * floating field-label was visually overlapping the displayed option text
- * and placeholders. The custom Select hides its trigger text when empty
- * (label fills the space); the shared Input component manages data-filled
- * for the qty/notes fields so their floating label snaps up correctly
- * once the field has a value.
+ * The native <select>/native <input> usage was replaced with the shared
+ * Select/Input primitives so the field anatomy (static label above the
+ * control, visible placeholder, error copy beneath) matches every other
+ * form in the product.
  *
  * Submission is via the existing recordCycleCount server action. Hidden
  * inputs (product_id, location_id) carry the React state into the form
@@ -175,21 +174,9 @@ export function NewCountForm({
         />
       </div>
 
-      {state?.error && (
-        <p
-          role="alert"
-          className="hairline-subtle border-[var(--danger-border)] bg-[var(--danger-dim)] px-14 py-10 mono-sm text-[var(--danger)]"
-        >
-          {state.error}
-        </p>
-      )}
+      {state?.error && <FormNotice>{state.error}</FormNotice>}
       {state?.success && (
-        <p
-          role="status"
-          className="hairline-subtle border-[var(--success-border)] bg-[var(--success-dim)] px-14 py-10 mono-sm text-[var(--success)]"
-        >
-          {state.success}
-        </p>
+        <FormNotice tone="success">{state.success}</FormNotice>
       )}
     </form>
   );

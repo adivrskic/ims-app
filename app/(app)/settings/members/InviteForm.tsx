@@ -5,6 +5,9 @@ import { Check, Copy } from "lucide-react";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { CornerButton } from "@/components/ui/CornerButton";
+import { FormSection } from "@/components/ui/FormSection";
+import { FormActions } from "@/components/ui/FormActions";
+import { FormNotice } from "@/components/ui/FormNotice";
 import { inviteMember } from "../actions";
 
 export function InviteForm() {
@@ -38,27 +41,11 @@ export function InviteForm() {
   }, [state?.success]);
 
   return (
-    <form
-      ref={formRef}
-      action={formAction}
-      className="hairline bg-[var(--surface)] p-20 flex flex-col gap-16"
-    >
-      <div className="flex flex-col gap-4">
-        <h3
-          className="text-text"
-          style={{
-            fontFamily: "var(--display)",
-            fontSize: 14,
-            fontWeight: 600,
-          }}
-        >
-          Invite a teammate
-        </h3>
-        <p className="mono-sm text-text-muted">
-          They&apos;ll receive an email link to join this workspace.
-        </p>
-      </div>
-
+    <form ref={formRef} action={formAction}>
+      <FormSection
+        title="Invite a teammate"
+        description="They’ll receive an email link to join this workspace."
+      >
       <div className="flex flex-col md:flex-row gap-12">
         <div className="flex-1">
           <Input
@@ -84,23 +71,10 @@ export function InviteForm() {
         </div>
       </div>
 
-      {state?.error && (
-        <p
-          role="alert"
-          className="hairline-subtle border-[var(--danger-border)] bg-[var(--danger-dim)] px-12 py-10 mono-sm text-[var(--danger)]"
-        >
-          {state.error}
-        </p>
-      )}
+      {state?.error && <FormNotice>{state.error}</FormNotice>}
       {state?.success && (
-        <div
-          role="status"
-          className={`hairline-subtle px-12 py-10 mono-sm flex flex-col gap-10 ${
-            fallbackUrl
-              ? "border-[var(--accent-border)] bg-[var(--accent-dim)] text-[var(--accent)]"
-              : "border-[var(--success-border)] bg-[var(--success-dim)] text-[var(--success)]"
-          }`}
-        >
+        <FormNotice tone={fallbackUrl ? "accent" : "success"}>
+          <div className="flex flex-col gap-10">
           <span>{state.success}</span>
           {fallbackUrl && (
             <div className="flex gap-8 items-center">
@@ -126,10 +100,11 @@ export function InviteForm() {
               </CornerButton>
             </div>
           )}
-        </div>
+          </div>
+        </FormNotice>
       )}
 
-      <div className="flex justify-end">
+      <FormActions>
         <CornerButton
           type="submit"
           variant="primary"
@@ -138,7 +113,8 @@ export function InviteForm() {
         >
           Send invite →
         </CornerButton>
-      </div>
+      </FormActions>
+      </FormSection>
     </form>
   );
 }

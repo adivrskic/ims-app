@@ -3,6 +3,10 @@
 import { useActionState, useEffect, useRef, useState } from "react";
 import { Copy, Check } from "lucide-react";
 import { Input } from "@/components/ui/Input";
+import { Checkbox } from "@/components/ui/Checkbox";
+import { FormSection } from "@/components/ui/FormSection";
+import { FormActions } from "@/components/ui/FormActions";
+import { FormNotice } from "@/components/ui/FormNotice";
 import { CornerButton } from "@/components/ui/CornerButton";
 import { createApiKey } from "../actions";
 /* Shared with the API routes that enforce them — see lib/apiScopes.ts. */
@@ -32,76 +36,46 @@ export function CreateKeyForm() {
 
   return (
     <>
-      <form
-        ref={formRef}
-        action={formAction}
-        className="hairline bg-[var(--surface)] p-20 flex flex-col gap-16"
-      >
-        <div>
-          <h3
-            className="text-text"
-            style={{
-              fontFamily: "var(--display)",
-              fontSize: 14,
-              fontWeight: 600,
-            }}
-          >
-            Create API key
-          </h3>
-          <p className="mono-sm text-text-muted mt-4">
-            Used by the mobile app, webhooks, or external integrations.
-          </p>
-        </div>
+      <form ref={formRef} action={formAction}>
+        <FormSection
+          title="Create API key"
+          description="Used by the mobile app, webhooks, or external integrations."
+        >
+          <Input
+            label="Name"
+            name="name"
+            type="text"
+            required
+            placeholder="e.g. Mobile app"
+          />
 
-        <Input
-          label="Name"
-          name="name"
-          type="text"
-          required
-          placeholder="e.g. Mobile app"
-        />
-
-        <fieldset className="flex flex-col gap-8">
-          <legend className="label-text mb-4">Scopes</legend>
-          <div className="grid grid-cols-2 gap-x-16 gap-y-8">
-            {SCOPES.map((s) => (
-              <label
-                key={s.id}
-                className="flex items-center gap-8 cursor-pointer hover:text-text text-text-secondary transition-colors"
-              >
-                <input
-                  type="checkbox"
+          <FormSection variant="plain" title="Scopes">
+            <div className="grid grid-cols-2 gap-x-16 gap-y-8">
+              {SCOPES.map((s) => (
+                <Checkbox
+                  key={s.id}
                   name="scopes"
                   value={s.id}
-                  className="appearance-none w-12 h-12 hairline-subtle bg-[var(--surface-2)] checked:bg-[var(--accent)] checked:border-[var(--accent)] cursor-pointer"
-                  style={{ display: "inline-block" }}
+                  label={s.id}
+                  description={s.label}
                 />
-                <span className="mono-sm">{s.id}</span>
-                <span className="label-text text-text-dim">{s.label}</span>
-              </label>
-            ))}
-          </div>
-        </fieldset>
+              ))}
+            </div>
+          </FormSection>
 
-        {state?.error && (
-          <p
-            role="alert"
-            className="hairline-subtle border-[var(--danger-border)] bg-[var(--danger-dim)] px-12 py-10 mono-sm text-[var(--danger)]"
-          >
-            {state.error}
-          </p>
-        )}
+          {state?.error && <FormNotice>{state.error}</FormNotice>}
 
-        <div className="flex justify-end">
-          <CornerButton
-            type="submit"
-            variant="primary"
-            size="sm"
-            loading={pending}
-          >
-            Generate key →
-          </CornerButton>
-        </div>
+          <FormActions>
+            <CornerButton
+              type="submit"
+              variant="primary"
+              size="sm"
+              loading={pending}
+            >
+              Generate key →
+            </CornerButton>
+          </FormActions>
+        </FormSection>
       </form>
 
       {state?.success && state.token && (

@@ -1,9 +1,11 @@
 "use client";
 
 import { useTransition } from "react";
-import { Inbox, Check, AlertTriangle } from "lucide-react";
+import { Inbox, Check } from "lucide-react";
 import { useState } from "react";
 import { CornerButton } from "@/components/ui/CornerButton";
+import { FormActions } from "@/components/ui/FormActions";
+import { FormNotice } from "@/components/ui/FormNotice";
 import { acceptInvite } from "./actions";
 
 interface Props {
@@ -59,21 +61,15 @@ export function InviteAcceptClient({ token, orgName, role }: Props) {
         </div>
       </header>
 
-      {err && (
-        <p
-          role="alert"
-          className="hairline-subtle border-[var(--danger-border)] bg-[var(--danger-dim)] px-12 py-10 mono-sm text-[var(--danger)] inline-flex items-start gap-8"
-        >
-          <AlertTriangle
-            size={11}
-            strokeWidth={1.5}
-            className="mt-2 shrink-0"
-          />
-          <span>{err}</span>
-        </p>
-      )}
+      {err && <FormNotice>{err}</FormNotice>}
 
-      <footer className="hairline-t pt-16 flex items-center gap-10">
+      <FormActions
+        status={
+          <span className="text-text-dim">
+            You&apos;ll be redirected immediately
+          </span>
+        }
+      >
         <CornerButton
           type="button"
           variant="primary"
@@ -84,10 +80,7 @@ export function InviteAcceptClient({ token, orgName, role }: Props) {
           <Check size={11} strokeWidth={1.5} />
           Accept invite
         </CornerButton>
-        <span className="mono-sm text-text-dim">
-          You&apos;ll be redirected immediately
-        </span>
-      </footer>
+      </FormActions>
     </>
   );
 }

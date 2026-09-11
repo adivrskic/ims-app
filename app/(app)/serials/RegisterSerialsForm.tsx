@@ -3,6 +3,9 @@
 import { useActionState, useEffect, useRef } from "react";
 import { CornerButton } from "@/components/ui/CornerButton";
 import { Select } from "@/components/ui/Select";
+import { Textarea } from "@/components/ui/Textarea";
+import { FormActions } from "@/components/ui/FormActions";
+import { FormNotice } from "@/components/ui/FormNotice";
 import { registerSerials } from "./actions";
 
 interface ProductOption {
@@ -70,40 +73,24 @@ export function RegisterSerialsForm({ products, warehouses }: Props) {
         />
       </div>
 
-      <label className="field-shell block">
-        <span className="field-label">Serial numbers</span>
-        <textarea
-          name="serials"
-          rows={4}
-          required
-          className="field-input resize-none"
-          style={{ fontFamily: "var(--mono)", fontSize: 12 }}
-          placeholder={"Paste serials — one per line, or comma/space separated\nSN-0001\nSN-0002"}
-        />
-      </label>
+      <Textarea
+        label="Serial numbers"
+        name="serials"
+        rows={4}
+        required
+        placeholder={"Paste serials — one per line, or comma/space separated\nSN-0001\nSN-0002"}
+      />
 
-      {state?.error && (
-        <p
-          role="alert"
-          className="hairline-subtle border-[var(--danger-border)] bg-[var(--danger-dim)] px-12 py-10 mono-sm text-[var(--danger)]"
-        >
-          {state.error}
-        </p>
-      )}
+      {state?.error && <FormNotice>{state.error}</FormNotice>}
       {state?.success && (
-        <p
-          role="status"
-          className="hairline-subtle border-[var(--success-border)] bg-[var(--success-dim)] px-12 py-10 mono-sm text-[var(--success)]"
-        >
-          {state.success}
-        </p>
+        <FormNotice tone="success">{state.success}</FormNotice>
       )}
 
-      <div className="flex justify-end">
+      <FormActions className="-mx-20 px-20">
         <CornerButton type="submit" variant="primary" size="sm" loading={pending}>
           Register serials →
         </CornerButton>
-      </div>
+      </FormActions>
     </form>
   );
 }

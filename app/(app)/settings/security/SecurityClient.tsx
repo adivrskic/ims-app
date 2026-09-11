@@ -5,13 +5,10 @@ import { createClient } from "@/lib/supabase/client";
 import { CornerButton } from "@/components/ui/CornerButton";
 import { Input } from "@/components/ui/Input";
 import { Badge } from "@/components/ui/Badge";
-import {
-  ShieldCheck,
-  Smartphone,
-  AlertTriangle,
-  Copy,
-  Check,
-} from "lucide-react";
+import { FormSection } from "@/components/ui/FormSection";
+import { FormActions } from "@/components/ui/FormActions";
+import { FormNotice } from "@/components/ui/FormNotice";
+import { ShieldCheck, Smartphone, Copy, Check } from "lucide-react";
 
 interface MfaFactor {
   id: string;
@@ -255,7 +252,7 @@ export function SecurityClient() {
               </p>
             </div>
           </div>
-          <div className="flex justify-end">
+          <FormActions>
             <CornerButton
               type="button"
               variant="primary"
@@ -265,27 +262,19 @@ export function SecurityClient() {
             >
               Enable 2FA →
             </CornerButton>
-          </div>
+          </FormActions>
         </div>
       )}
 
       {/* Scanning: show QR + secret + continue */}
       {stage.kind === "scanning" && (
-        <div className="hairline border-[var(--accent-soft)] bg-[var(--surface)] p-20 flex flex-col gap-16">
-          <div>
-            <p className="label-text text-[var(--accent)]">Step 1 of 2</p>
-            <h3
-              className="text-text mt-4"
-              style={{
-                fontFamily: "var(--display)",
-                fontSize: 16,
-                fontWeight: 600,
-              }}
-            >
-              Scan with your authenticator app
-            </h3>
-          </div>
-
+        <FormSection
+          title="Scan with your authenticator app"
+          action={
+            <span className="label-text text-[var(--accent)]">Step 1 of 2</span>
+          }
+          className="border-[var(--accent-soft)]"
+        >
           <div className="grid grid-cols-1 md:grid-cols-[180px_1fr] gap-20 items-start">
             <div
               className="hairline-subtle bg-white p-8 shrink-0"
@@ -337,7 +326,7 @@ export function SecurityClient() {
             </div>
           </div>
 
-          <div className="flex items-center justify-end gap-10 hairline-t pt-14">
+          <FormActions>
             <CornerButton
               type="button"
               variant="ghost"
@@ -355,106 +344,91 @@ export function SecurityClient() {
             >
               I&apos;ve added it →
             </CornerButton>
-          </div>
-        </div>
+          </FormActions>
+        </FormSection>
       )}
 
       {/* Verifying: code entry */}
       {stage.kind === "verifying" && (
-        <form
-          onSubmit={verifyCode}
-          className="hairline border-[var(--accent-soft)] bg-[var(--surface)] p-20 flex flex-col gap-16"
-        >
-          <div>
-            <p className="label-text text-[var(--accent)]">Step 2 of 2</p>
-            <h3
-              className="text-text mt-4"
-              style={{
-                fontFamily: "var(--display)",
-                fontSize: 16,
-                fontWeight: 600,
-              }}
-            >
-              Verify the code from your app
-            </h3>
-            <p className="mono-sm text-text-muted mt-6">
-              Enter the current 6-digit code your authenticator is showing.
-            </p>
-          </div>
-
-          <Input
-            label="Code"
-            name="code"
-            type="text"
-            inputMode="numeric"
-            autoComplete="one-time-code"
-            value={code}
-            onChange={(e) =>
-              setCode(e.target.value.replace(/\D/g, "").slice(0, 6))
+        <form onSubmit={verifyCode}>
+          <FormSection
+            title="Verify the code from your app"
+            description="Enter the current 6-digit code your authenticator is showing."
+            action={
+              <span className="label-text text-[var(--accent)]">
+                Step 2 of 2
+              </span>
             }
-            maxLength={6}
-            required
-            placeholder="123 456"
-          />
+            className="border-[var(--accent-soft)]"
+          >
+            <Input
+              label="Code"
+              name="code"
+              type="text"
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              value={code}
+              onChange={(e) =>
+                setCode(e.target.value.replace(/\D/g, "").slice(0, 6))
+              }
+              maxLength={6}
+              required
+              placeholder="123 456"
+            />
 
-          <div className="flex items-center justify-end gap-10 hairline-t pt-14">
-            <CornerButton
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={cancelEnrollment}
-            >
-              Cancel
-            </CornerButton>
-            <CornerButton
-              type="submit"
-              variant="primary"
-              size="sm"
-              loading={busy}
-              disabled={code.length !== 6}
-            >
-              Verify + enable →
-            </CornerButton>
-          </div>
+            <FormActions>
+              <CornerButton
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={cancelEnrollment}
+              >
+                Cancel
+              </CornerButton>
+              <CornerButton
+                type="submit"
+                variant="primary"
+                size="sm"
+                loading={busy}
+                disabled={code.length !== 6}
+              >
+                Verify + enable →
+              </CornerButton>
+            </FormActions>
+          </FormSection>
         </form>
       )}
 
       {/* Error state */}
       {stage.kind === "error" && (
-        <div
-          role="alert"
-          className="hairline border-[var(--danger-border)] bg-[var(--danger-dim)] p-16 flex items-start gap-12"
-        >
-          <AlertTriangle
-            size={14}
-            strokeWidth={1.5}
-            className="text-[var(--danger)] shrink-0 mt-2"
-          />
-          <div className="flex-1">
-            <p
-              className="text-[var(--danger)]"
-              style={{
-                fontFamily: "var(--display)",
-                fontSize: 13,
-                fontWeight: 600,
+        <FormNotice>
+          <div className="flex items-start gap-12">
+            <div className="flex-1">
+              <p
+                className="text-[var(--danger)]"
+                style={{
+                  fontFamily: "var(--display)",
+                  fontSize: 13,
+                  fontWeight: 600,
+                }}
+              >
+                Something went wrong
+              </p>
+              <p className="mono-sm text-text-secondary mt-4">{stage.message}</p>
+            </div>
+            <CornerButton
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setStage({ kind: "idle" });
+                refresh();
               }}
             >
-              Something went wrong
-            </p>
-            <p className="mono-sm text-text-secondary mt-4">{stage.message}</p>
+              Try again
+            </CornerButton>
           </div>
-          <CornerButton
-            type="button"
-            variant="ghost"
-            size="sm"
-            onClick={() => {
-              setStage({ kind: "idle" });
-              refresh();
-            }}
-          >
-            Try again
-          </CornerButton>
-        </div>
+        </FormNotice>
       )}
     </div>
   );

@@ -1,9 +1,13 @@
 "use client";
 
 import { useActionState, useState } from "react";
-import { AlertTriangle, Plus, X } from "lucide-react";
+import { Plus, X } from "lucide-react";
 import { CornerButton } from "@/components/ui/CornerButton";
 import { Input } from "@/components/ui/Input";
+import { Checkbox } from "@/components/ui/Checkbox";
+import { FormSection } from "@/components/ui/FormSection";
+import { FormActions } from "@/components/ui/FormActions";
+import { FormNotice } from "@/components/ui/FormNotice";
 import { INTEGRATION_EVENTS, EVENT_META } from "@/lib/integrations/types";
 import { createWebhookEndpoint, type CreateEndpointResult } from "./actions";
 
@@ -35,126 +39,94 @@ export function EndpointForm({ onCancel, onCreated }: Props) {
   };
 
   return (
-    <form
-      action={formAction}
-      className="hairline bg-[var(--surface)] p-20 flex flex-col gap-16"
-    >
-      <header className="flex items-center justify-between">
-        <p className="label-text--lg">— New endpoint</p>
-        <button
-          type="button"
-          onClick={onCancel}
-          className="text-text-muted hover:text-text transition-colors"
-          aria-label="Cancel"
-        >
-          <X size={14} strokeWidth={1.5} />
-        </button>
-      </header>
+    <form action={formAction}>
+      <FormSection
+        title="— New endpoint"
+        action={
+          <button
+            type="button"
+            onClick={onCancel}
+            className="text-text-muted hover:text-text transition-colors"
+            aria-label="Cancel"
+          >
+            <X size={14} strokeWidth={1.5} />
+          </button>
+        }
+      >
+        <Input
+          label="Name"
+          name="name"
+          type="text"
+          required
+          placeholder="e.g. Zapier — Order alerts"
+          autoComplete="off"
+        />
 
-      <Input
-        label="Name"
-        name="name"
-        type="text"
-        required
-        placeholder="e.g. Zapier — Order alerts"
-        autoComplete="off"
-      />
+        <Input
+          label="Endpoint URL"
+          name="url"
+          type="url"
+          required
+          placeholder="https://hooks.zapier.com/hooks/catch/..."
+          autoComplete="off"
+        />
 
-      <Input
-        label="Endpoint URL"
-        name="url"
-        type="url"
-        required
-        placeholder="https://hooks.zapier.com/hooks/catch/..."
-        autoComplete="off"
-      />
-
-      <div className="flex flex-col gap-10">
-        <p className="label-text text-text-muted">Events</p>
-        <ul className="grid grid-cols-1 md:grid-cols-2 gap-8">
-          {INTEGRATION_EVENTS.map((e) => {
-            const meta = EVENT_META[e];
-            const checked = enabled.includes(e);
-            return (
-              <li key={e}>
-                <label
-                  className={`flex items-start gap-10 cursor-pointer hairline-subtle px-12 py-10 transition-colors ${
-                    checked
-                      ? "border-[var(--accent)] bg-[var(--accent-dim)]"
-                      : "hover:border-[var(--border-hover)]"
-                  }`}
-                >
-                  <input
-                    type="checkbox"
+        <FormSection variant="plain" title="Events">
+          <ul className="grid grid-cols-1 md:grid-cols-2 gap-8">
+            {INTEGRATION_EVENTS.map((e) => {
+              const meta = EVENT_META[e];
+              const checked = enabled.includes(e);
+              return (
+                <li key={e} className="flex">
+                  <Checkbox
                     name="events"
                     value={e}
                     checked={checked}
                     onChange={() => toggleEvent(e)}
-                    className="mt-2 shrink-0"
+                    label={meta.label}
+                    description={meta.description}
+                    className={`flex-1 hairline-subtle px-12 py-10 transition-colors ${
+                      checked
+                        ? "border-[var(--accent)] bg-[var(--accent-dim)]"
+                        : "hover:border-[var(--border-hover)]"
+                    }`}
                   />
-                  <div className="flex-1 min-w-0">
-                    <p
-                      className="text-text"
-                      style={{
-                        fontFamily: "var(--display)",
-                        fontSize: 12,
-                        fontWeight: 500,
-                      }}
-                    >
-                      {meta.label}
-                    </p>
-                    <p
-                      className="mono-sm text-text-muted mt-2"
-                      style={{ fontSize: 10, lineHeight: 1.5 }}
-                    >
-                      {meta.description}
-                    </p>
-                  </div>
-                </label>
-              </li>
-            );
-          })}
-        </ul>
-      </div>
+                </li>
+              );
+            })}
+          </ul>
+        </FormSection>
 
-      {state?.error && (
-        <p
-          role="alert"
-          className="hairline-subtle border-[var(--danger-border)] bg-[var(--danger-dim)] px-12 py-10 mono-sm text-[var(--danger)] inline-flex items-start gap-8"
-        >
-          <AlertTriangle
-            size={11}
-            strokeWidth={1.5}
-            className="mt-2 shrink-0"
-          />
-          <span>{state.error}</span>
-        </p>
-      )}
+        {state?.error && <FormNotice>{state.error}</FormNotice>}
 
-      <footer className="flex items-center gap-10 hairline-t pt-14">
-        <CornerButton
-          type="submit"
-          variant="primary"
-          size="sm"
-          loading={pending}
-          disabled={enabled.length === 0}
+        <FormActions
+          status={
+            <span className="text-text-dim" style={{ fontSize: 10 }}>
+              You&apos;ll see the signing secret once after creation — copy it
+              immediately.
+            </span>
+          }
         >
-          <Plus size={11} strokeWidth={1.5} />
-          Create endpoint
-        </CornerButton>
-        <CornerButton
-          type="button"
-          variant="ghost"
-          size="sm"
-          onClick={onCancel}
-        >
-          Cancel
-        </CornerButton>
-        <p className="mono-sm text-text-dim ml-auto" style={{ fontSize: 10 }}>
-          You&apos;ll see the signing secret once after creation — copy it
-          immediately.
-        </p>
-      </footer>
+          <CornerButton
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={onCancel}
+          >
+            Cancel
+          </CornerButton>
+          <CornerButton
+            type="submit"
+            variant="primary"
+            size="sm"
+            loading={pending}
+            disabled={enabled.length === 0}
+          >
+            <Plus size={11} strokeWidth={1.5} />
+            Create endpoint
+          </CornerButton>
+        </FormActions>
+      </FormSection>
     </form>
   );
 }

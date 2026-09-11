@@ -3,6 +3,7 @@
 import { useActionState, useEffect, useState } from "react";
 import { Check, X } from "lucide-react";
 import { CornerButton } from "@/components/ui/CornerButton";
+import { Checkbox } from "@/components/ui/Checkbox";
 import { receiveLineItem } from "../actions";
 
 interface Props {
@@ -128,21 +129,12 @@ export function ReceiveLineForm({
       </label>
 
       {/* Hold for QC */}
-      <label
-        className="flex flex-col items-center justify-end gap-1 select-none cursor-pointer"
+      <Checkbox
+        name="qc_hold"
+        value="1"
+        label="QC hold"
         title="Quarantine this receipt for QC inspection before putaway"
-      >
-        <input
-          name="qc_hold"
-          type="checkbox"
-          value="1"
-          className="accent-[var(--accent)]"
-          aria-label="Hold for QC"
-        />
-        <span className="label-text text-text-dim" style={{ fontSize: 9 }}>
-          QC hold
-        </span>
-      </label>
+      />
 
       <button
         type="submit"

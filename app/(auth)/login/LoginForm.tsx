@@ -7,6 +7,7 @@ import { ManifestRow } from "@/components/auth/ManifestRow";
 import { ManifestInput } from "@/components/auth/ManifestInput";
 import { ManifestPasswordField } from "@/components/auth/ManifestPasswordField";
 import { CornerButton } from "@/components/ui/CornerButton";
+import { FormNotice } from "@/components/ui/FormNotice";
 import { GoogleGlyph } from "@/components/auth/GoogleGlyph";
 import { signInWithPassword, signInWithGoogle } from "../actions";
 
@@ -76,12 +77,7 @@ export function LoginForm({ next, initialError }: Props) {
 
         {error && (
           <div className="py-12">
-            <p
-              role="alert"
-              className="hairline-subtle border-[var(--danger-border)] bg-[var(--danger-dim)] px-12 py-10 mono-sm text-[var(--danger)]"
-            >
-              {error}
-            </p>
+            <FormNotice>{error}</FormNotice>
           </div>
         )}
 

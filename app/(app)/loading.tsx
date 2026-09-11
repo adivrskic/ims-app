@@ -1,3 +1,5 @@
+import { NautilusLoader } from "@/components/ui/NautilusLoader";
+
 /**
  * Generic loading skeleton for any authenticated route.
  *
@@ -13,6 +15,12 @@ export default function Loading() {
       aria-busy="true"
       aria-label="Loading"
     >
+      {/* The mark draws itself while the skeleton holds the page's shape. */}
+      <div className="flex items-center gap-12 text-text-secondary">
+        <NautilusLoader size={28} inline />
+        <span className="label-text">Loading</span>
+      </div>
+
       {/* PageHeader skeleton */}
       <div className="flex flex-col gap-12 max-w-[640px]">
         <div className="skeleton h-10 w-28" />

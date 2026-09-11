@@ -2,10 +2,14 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, Check, Loader2 } from "lucide-react";
+import { Check } from "lucide-react";
 import { CornerButton } from "@/components/ui/CornerButton";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
+import { Textarea } from "@/components/ui/Textarea";
+import { FormSection } from "@/components/ui/FormSection";
+import { FormActions } from "@/components/ui/FormActions";
+import { FormNotice } from "@/components/ui/FormNotice";
 import { PAYMENT_TERMS_OPTIONS, type PaymentTerms } from "../customers/types";
 import { createSupplier, updateSupplier } from "./actions";
 import type { Supplier, SupplierInput } from "./types";
@@ -98,7 +102,7 @@ export function SupplierForm({ mode, initialData }: Props) {
 
   return (
     <form onSubmit={submit} className="flex flex-col gap-24 max-w-[720px]">
-      <Section title="Identity">
+      <FormSection title="Identity">
         <Input
           label="Supplier name"
           type="text"
@@ -107,9 +111,9 @@ export function SupplierForm({ mode, initialData }: Props) {
           required
           maxLength={200}
         />
-      </Section>
+      </FormSection>
 
-      <Section title="Contact">
+      <FormSection title="Contact">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
           <Input
             label="Primary contact"
@@ -141,9 +145,9 @@ export function SupplierForm({ mode, initialData }: Props) {
             maxLength={50}
           />
         </div>
-      </Section>
+      </FormSection>
 
-      <Section title="Address">
+      <FormSection title="Address">
         <div className="flex flex-col gap-12">
           <Input
             label="Street address"
@@ -190,9 +194,9 @@ export function SupplierForm({ mode, initialData }: Props) {
             placeholder="US"
           />
         </div>
-      </Section>
+      </FormSection>
 
-      <Section title="Commercial">
+      <FormSection title="Commercial">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
           <Select
             label="Payment terms"
@@ -227,48 +231,33 @@ export function SupplierForm({ mode, initialData }: Props) {
             maxLength={50}
           />
         </div>
-      </Section>
+      </FormSection>
 
-      <Section title="Notes">
-        <textarea
+      <FormSection title="Notes">
+        <Textarea
+          aria-label="Notes"
           rows={4}
           value={notes}
           onChange={(e) => setNotes(e.target.value)}
           placeholder="Shipping quirks, contacts, anything to remember…"
-          className="field-input resize-none w-full"
         />
-      </Section>
+      </FormSection>
 
-      {error && (
-        <div
-          className="hairline-subtle px-12 py-8 flex items-start gap-8"
-          style={{
-            background: "var(--danger-dim)",
-            color: "var(--danger)",
-          }}
-        >
-          <AlertTriangle
-            size={11}
-            strokeWidth={1.5}
-            className="mt-2 shrink-0"
-          />
-          <span className="mono-sm flex-1">{error}</span>
-        </div>
-      )}
+      {error && <FormNotice>{error}</FormNotice>}
 
-      <div className="flex items-center gap-12 hairline-t pt-16">
-        <CornerButton
-          type="submit"
-          variant="primary"
-          size="sm"
-          loading={pending}
-          disabled={pending}
-        >
-          {pending && (
-            <Loader2 size={11} strokeWidth={1.5} className="animate-spin" />
-          )}
-          {mode === "create" ? "Create supplier" : "Save changes"}
-        </CornerButton>
+      <FormActions
+        status={
+          saved && (
+            <span
+              className="inline-flex items-center gap-6"
+              style={{ color: "var(--success)" }}
+            >
+              <Check size={11} strokeWidth={1.5} />
+              Saved
+            </span>
+          )
+        }
+      >
         <CornerButton
           type="button"
           variant="ghost"
@@ -278,36 +267,10 @@ export function SupplierForm({ mode, initialData }: Props) {
         >
           Cancel
         </CornerButton>
-        {saved && (
-          <span
-            className="inline-flex items-center gap-6 mono-sm"
-            style={{ color: "var(--success)" }}
-          >
-            <Check size={11} strokeWidth={1.5} />
-            <span>Saved</span>
-          </span>
-        )}
-      </div>
+        <CornerButton type="submit" variant="primary" size="sm" loading={pending}>
+          {mode === "create" ? "Create supplier" : "Save changes"}
+        </CornerButton>
+      </FormActions>
     </form>
-  );
-}
-
-function Section({
-  title,
-  children,
-}: {
-  title: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <section className="flex flex-col gap-12">
-      <h3
-        className="label-text text-text-muted hairline-b pb-8"
-        style={{ letterSpacing: "0.8px" }}
-      >
-        {title}
-      </h3>
-      {children}
-    </section>
   );
 }

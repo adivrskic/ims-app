@@ -1,8 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { X, Upload, ScanLine, AlertTriangle, Sparkles } from "lucide-react";
+import { X, Upload, ScanLine, Sparkles } from "lucide-react";
 import { CornerButton } from "@/components/ui/CornerButton";
+import { FormActions } from "@/components/ui/FormActions";
+import { FormNotice } from "@/components/ui/FormNotice";
 import { createClient } from "@/lib/supabase/client";
 import type { DetectedSection } from "./types";
 
@@ -201,7 +203,7 @@ export function ScanUploadModal({ onClose, onImport }: Props) {
                   </li>
                 ))}
               </ul>
-              <div className="flex items-center justify-end gap-10">
+              <FormActions className="-mx-16 px-16">
                 <CornerButton
                   type="button"
                   variant="ghost"
@@ -218,44 +220,38 @@ export function ScanUploadModal({ onClose, onImport }: Props) {
                 >
                   Import {stage.detected.length} → canvas
                 </CornerButton>
-              </div>
+              </FormActions>
             </>
           )}
 
           {stage.kind === "error" && (
-            <div
-              role="alert"
-              className="hairline-subtle border-[var(--danger-border)] bg-[var(--danger-dim)] px-12 py-10 flex items-start gap-10"
-            >
-              <AlertTriangle
-                size={11}
-                strokeWidth={1.5}
-                className="text-[var(--danger)] shrink-0 mt-2"
-              />
-              <div className="flex-1">
-                <p
-                  className="text-[var(--danger)]"
-                  style={{
-                    fontFamily: "var(--display)",
-                    fontSize: 13,
-                    fontWeight: 600,
-                  }}
+            <FormNotice>
+              <div className="flex items-start gap-10">
+                <div className="flex-1">
+                  <p
+                    className="text-[var(--danger)]"
+                    style={{
+                      fontFamily: "var(--display)",
+                      fontSize: 13,
+                      fontWeight: 600,
+                    }}
+                  >
+                    Scan failed
+                  </p>
+                  <p className="mono-sm text-text-secondary mt-2">
+                    {stage.message}
+                  </p>
+                </div>
+                <CornerButton
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setStage({ kind: "idle" })}
                 >
-                  Scan failed
-                </p>
-                <p className="mono-sm text-text-secondary mt-2">
-                  {stage.message}
-                </p>
+                  Try again
+                </CornerButton>
               </div>
-              <CornerButton
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={() => setStage({ kind: "idle" })}
-              >
-                Try again
-              </CornerButton>
-            </div>
+            </FormNotice>
           )}
         </div>
       </div>

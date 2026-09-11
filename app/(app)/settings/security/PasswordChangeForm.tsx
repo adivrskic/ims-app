@@ -4,7 +4,10 @@ import { useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { CornerButton } from "@/components/ui/CornerButton";
 import { Input } from "@/components/ui/Input";
-import { Check, AlertTriangle, Eye, EyeOff } from "lucide-react";
+import { FormSection } from "@/components/ui/FormSection";
+import { FormActions } from "@/components/ui/FormActions";
+import { FormNotice } from "@/components/ui/FormNotice";
+import { Eye, EyeOff } from "lucide-react";
 import { PasswordStrength } from "@/components/auth/PasswordStrength";
 
 export function PasswordChangeForm() {
@@ -51,86 +54,55 @@ export function PasswordChangeForm() {
   };
 
   return (
-    <form
-      onSubmit={submit}
-      className="hairline bg-[var(--surface)] p-20 flex flex-col gap-14"
-    >
-      <header>
-        <h3
-          className="text-text"
-          style={{
-            fontFamily: "var(--display)",
-            fontSize: 14,
-            fontWeight: 600,
-          }}
-        >
-          Change password
-        </h3>
-        <p className="mono-sm text-text-muted mt-4">
-          Pick something memorable but at least 8 characters. Your active
-          sessions will stay signed in.
-        </p>
-      </header>
+    <form onSubmit={submit}>
+      <FormSection
+        title="Change password"
+        description="Pick something memorable but at least 8 characters. Your active sessions will stay signed in."
+      >
+        <PasswordFieldRow
+          label="New password"
+          name="new_password"
+          autoComplete="new-password"
+          value={password}
+          onChange={setPassword}
+          required
+        />
 
-      <PasswordFieldRow
-        label="New password"
-        name="new_password"
-        autoComplete="new-password"
-        value={password}
-        onChange={setPassword}
-        required
-      />
+        {password.length > 0 && <PasswordStrength password={password} />}
 
-      {password.length > 0 && <PasswordStrength password={password} />}
+        <PasswordFieldRow
+          label="Confirm password"
+          name="confirm_password"
+          autoComplete="new-password"
+          value={confirm}
+          onChange={setConfirm}
+          required
+          error={
+            confirm.length > 0 && password !== confirm
+              ? "Passwords don't match"
+              : undefined
+          }
+        />
 
-      <PasswordFieldRow
-        label="Confirm password"
-        name="confirm_password"
-        autoComplete="new-password"
-        value={confirm}
-        onChange={setConfirm}
-        required
-        error={
-          confirm.length > 0 && password !== confirm
-            ? "Passwords don't match"
-            : undefined
-        }
-      />
+        {feedback?.kind === "error" && (
+          <FormNotice>{feedback.message}</FormNotice>
+        )}
+        {feedback?.kind === "success" && (
+          <FormNotice tone="success">{feedback.message}</FormNotice>
+        )}
 
-      {feedback?.kind === "error" && (
-        <p
-          role="alert"
-          className="hairline-subtle border-[var(--danger-border)] bg-[var(--danger-dim)] px-12 py-10 mono-sm text-[var(--danger)] inline-flex items-start gap-8"
-        >
-          <AlertTriangle
-            size={11}
-            strokeWidth={1.5}
-            className="mt-2 shrink-0"
-          />
-          <span>{feedback.message}</span>
-        </p>
-      )}
-      {feedback?.kind === "success" && (
-        <p
-          role="status"
-          className="hairline-subtle border-[var(--success-border)] bg-[var(--success-dim)] px-12 py-10 mono-sm text-[var(--success)] inline-flex items-center gap-8"
-        >
-          <Check size={11} strokeWidth={1.5} />
-          <span>{feedback.message}</span>
-        </p>
-      )}
-
-      <div className="flex items-center justify-end gap-10">
-        <CornerButton
-          type="submit"
-          variant="primary"
-          size="sm"
-          loading={busy}
-          disabled={!password || !confirm}
-        >
-          Update password →
-        </CornerButton>
-      </div>
+        <FormActions>
+          <CornerButton
+            type="submit"
+            variant="primary"
+            size="sm"
+            loading={busy}
+            disabled={!password || !confirm}
+          >
+            Update password →
+          </CornerButton>
+        </FormActions>
+      </FormSection>
     </form>
   );
 }
@@ -175,8 +147,10 @@ function PasswordFieldRow({
         onClick={() => setVisible((v) => !v)}
         className="absolute text-text-muted hover:text-text transition-colors"
         style={{
+          // Centred in the 40px control shell, which sits below the static
+          // label row (~14px) and the field's 6px gap: 14 + 6 + (40 − 24) / 2.
           right: 12,
-          top: 18,
+          top: 28,
           width: 24,
           height: 24,
           background: "transparent",

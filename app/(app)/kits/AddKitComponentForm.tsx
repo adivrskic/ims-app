@@ -3,7 +3,9 @@
 import { useActionState, useEffect, useRef } from "react";
 import { Plus } from "lucide-react";
 import { CornerButton } from "@/components/ui/CornerButton";
+import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
+import { FormNotice } from "@/components/ui/FormNotice";
 import { addKitComponent } from "./actions";
 
 interface ProductOption {
@@ -48,17 +50,16 @@ export function AddKitComponentForm({ kitProductId, products }: Props) {
         }))}
       />
 
-      <label className="field-shell block w-[96px]" data-filled="true">
-        <span className="field-label">Qty / kit</span>
-        <input
-          name="quantity"
-          type="number"
-          min={1}
-          defaultValue={1}
-          className="field-input tnum"
-          aria-label="Quantity per kit"
-        />
-      </label>
+      <Input
+        label="Qty / kit"
+        name="quantity"
+        type="number"
+        min={1}
+        inputMode="numeric"
+        defaultValue={1}
+        className="w-[104px] shrink-0"
+        aria-label="Quantity per kit"
+      />
 
       <CornerButton type="submit" variant="ghost" size="sm" loading={pending}>
         <Plus size={11} strokeWidth={1.5} />
@@ -66,13 +67,7 @@ export function AddKitComponentForm({ kitProductId, products }: Props) {
       </CornerButton>
 
       {state?.error && (
-        <p
-          role="alert"
-          className="w-full mono-sm text-[var(--danger)]"
-          style={{ fontSize: 11 }}
-        >
-          {state.error}
-        </p>
+        <FormNotice className="w-full">{state.error}</FormNotice>
       )}
     </form>
   );

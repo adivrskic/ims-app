@@ -74,7 +74,8 @@
   background: var(--field-bg);
   border: 1px solid var(--field-border);
   outline: none;
-  padding: 11px 14px;
+  padding: 10px 14px;
+  min-height: 40px;
   font-size: 13px;
   font-family: var(--mono);
   color: var(--text);
@@ -92,7 +93,7 @@
 .field:focus {
   background: var(--field-bg-focus);
   border-color: var(--accent);
-  box-shadow: 0 0 0 1px var(--accent-dim);
+  box-shadow: 0 0 0 3px var(--focus-ring);
 }
 
 .field::placeholder {
