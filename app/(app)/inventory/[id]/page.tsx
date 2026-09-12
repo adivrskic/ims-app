@@ -86,6 +86,12 @@ export default async function ProductDetailPage({
     `
     )
     .eq("id", id)
+    // Soft-deleted slots must not count. Without this the Locations card, the
+    // on-hand/ATP KPIs and inventory value all include removed rows, while the
+    // list RPC and the section grid exclude them — the same SKU then reads
+    // differently on three screens. Embedded filter (no !inner), so a product
+    // with zero active slots still renders.
+    .eq("locations.is_active", true)
     .maybeSingle();
 
   if (error || !product) notFound();

@@ -139,10 +139,29 @@ export async function createWorkspace(
   );
 
   if (provError || !provisioned) {
+    // Roll the auth user back. It can't join the DB transaction, so a failure
+    // here used to strand it: the account existed with no workspace, and step 4
+    // then refused every retry with "already has a Nautilus account" — locking
+    // that address out of the onboarding UI permanently, with no way to clear
+    // it short of deleting the user in the Supabase dashboard.
+    const { error: cleanupError } = await admin.auth.admin.deleteUser(
+      newUser.id
+    );
+    if (cleanupError) {
+      console.error(
+        "[admin/onboard] orphaned auth user cleanup failed:",
+        cleanupError
+      );
+      return {
+        error: `Workspace provisioning failed: ${
+          provError?.message ?? "unknown error"
+        }. The owner account was created and could not be cleaned up — delete ${ownerEmail} from Supabase Auth before retrying.`,
+      };
+    }
     return {
       error: `Workspace provisioning failed: ${
         provError?.message ?? "unknown error"
-      }. The owner account was created but is orphaned — delete it from Supabase Auth before retrying.`,
+      }. Nothing was left behind — you can fix the problem and try again.`,
     };
   }
   const org = { name };

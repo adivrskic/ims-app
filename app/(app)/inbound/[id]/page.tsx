@@ -10,10 +10,13 @@ export const metadata = { title: "ASN" };
 
 export default async function AsnDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ error?: string }>;
 }) {
   const { id } = await params;
+  const { error: actionError } = await searchParams;
   const ctx = await getCurrentOrgContext();
   if (!ctx) return <PageHeader eyebrow="Inbound" title="ASN" description="No workspace." />;
   const supabase = await createClient();
@@ -35,6 +38,16 @@ export default async function AsnDetailPage({
 
   return (
     <div className="flex flex-col gap-24">
+      {actionError && (
+        <div className="hairline border-[var(--danger-border)] bg-[var(--danger-dim)] px-16 py-12 flex items-start gap-12">
+          <X
+            size={14}
+            strokeWidth={1.5}
+            className="text-[var(--danger)] shrink-0 mt-2"
+          />
+          <p className="mono-sm text-[var(--danger)]">{actionError}</p>
+        </div>
+      )}
       <PageHeader
         backHref="/inbound"
         backLabel="Inbound"

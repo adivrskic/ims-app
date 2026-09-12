@@ -38,8 +38,14 @@ export default async function SerialsPage() {
   const supabase = await createClient();
   const orgId = ctx.orgId;
 
-  const [{ data: serialsData }, { data: productsData }, { data: whData }] =
-    await Promise.all([
+  const [
+    { data: serialsData },
+    { count: totalSerials },
+    { count: inStock },
+    { count: shipped },
+    { data: productsData },
+    { data: whData },
+  ] = await Promise.all([
       supabase
         .from("serial_units")
         .select(
@@ -51,6 +57,23 @@ export default async function SerialsPage() {
         .order("created_at", { ascending: false })
         // One past the cap so we can tell the user the registry is truncated.
         .limit(501),
+      // Header counts come from exact head counts, not from the 500 visible
+      // rows — counting the page made every headline number wrong for any
+      // workspace with more than 500 serials. Head counts fetch no rows.
+      supabase
+        .from("serial_units")
+        .select("id", { count: "exact", head: true })
+        .eq("org_id", orgId),
+      supabase
+        .from("serial_units")
+        .select("id", { count: "exact", head: true })
+        .eq("org_id", orgId)
+        .eq("status", "in_stock"),
+      supabase
+        .from("serial_units")
+        .select("id", { count: "exact", head: true })
+        .eq("org_id", orgId)
+        .eq("status", "shipped"),
       supabase
         .from("products")
         .select("id, name, barcode, track_serials")
@@ -80,8 +103,9 @@ export default async function SerialsPage() {
   const products = (productsData ?? []) as ProductRow[];
   const warehouses = (whData ?? []) as Array<{ id: string; name: string }>;
 
-  const inStock = serials.filter((s) => s.status === "in_stock").length;
-  const shipped = serials.filter((s) => s.status === "shipped").length;
+  const serialCount = totalSerials ?? 0;
+  const inStockCount = inStock ?? 0;
+  const shippedCount = shipped ?? 0;
   const serialized = products.filter((p) => p.track_serials);
 
   return (
@@ -91,9 +115,13 @@ export default async function SerialsPage() {
         title="Serials"
         description="Unit-level tracking for serialized products. Register serials, track their status, and trace each unit."
         meta={[
-          { label: "Serials", value: serials.length },
-          { label: "In stock", value: inStock, status: inStock > 0 ? "live" : undefined },
-          { label: "Shipped", value: shipped },
+          { label: "Serials", value: serialCount.toLocaleString() },
+          {
+            label: "In stock",
+            value: inStockCount.toLocaleString(),
+            status: inStockCount > 0 ? "live" : undefined,
+          },
+          { label: "Shipped", value: shippedCount.toLocaleString() },
         ]}
       />
 
@@ -111,11 +139,11 @@ export default async function SerialsPage() {
         <SectionTitle
           numeral="02"
           eyebrow="Registry"
-          title={`Serials (${serials.length})`}
+          title={`Serials (${serialCount.toLocaleString()})`}
           action={
             serialsTruncated ? (
               <span className="label-text text-text-muted">
-                Showing the 500 most recent
+                Showing the {serials.length.toLocaleString()} most recent
               </span>
             ) : undefined
           }

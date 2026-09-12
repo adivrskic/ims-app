@@ -3,6 +3,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { sendSlackEvent } from "./slack";
 import { sendEventViaResend } from "./resend";
 import { deliverWebhook, type WebhookEndpointRecord } from "./webhooks";
+import { INTEGRATION_EVENTS } from "./types";
 import type {
   EventPayload,
   IntegrationEvent,
@@ -118,11 +119,7 @@ async function dispatchWebhook(
 }
 
 export function isValidEvent(t: string): t is IntegrationEvent {
-  return [
-    "low_stock",
-    "scan_burst",
-    "po_received",
-    "cycle_count_variance",
-    "daily_summary",
-  ].includes(t);
+  // Derived from the canonical list so a retired or newly added event can
+  // never drift out of sync with what the pickers offer.
+  return (INTEGRATION_EVENTS as readonly string[]).includes(t);
 }

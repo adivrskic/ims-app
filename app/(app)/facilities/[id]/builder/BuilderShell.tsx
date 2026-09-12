@@ -1087,6 +1087,23 @@ export function BuilderShell({
         <ScanUploadModal
           onClose={() => setScanOpen(false)}
           onImport={(detected) => {
+            // Importing a blueprint REPLACES the layout: every existing section
+            // is queued for deletion. That used to happen on one click with no
+            // warning, silently discarding a hand-built floor plan (and, on
+            // save, unlinking the stock placed in those sections).
+            const replacing = state.sections.length;
+            if (
+              replacing > 0 &&
+              !window.confirm(
+                `Replace this layout with the ${detected.length} detected section${
+                  detected.length === 1 ? "" : "s"
+                }?\n\nThe ${replacing} section${
+                  replacing === 1 ? "" : "s"
+                } already here will be removed when you save, and any stock placed in them will be unlinked.`
+              )
+            ) {
+              return;
+            }
             dispatch({
               type: "import",
               detected,

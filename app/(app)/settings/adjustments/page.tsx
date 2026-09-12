@@ -128,7 +128,8 @@ export default async function AdjustmentsSettingsPage() {
         <div className="hairline bg-[var(--surface)] p-20">
           <p className="mono-sm text-text-secondary mb-12" style={{ lineHeight: 1.6 }}>
             Manual adjustments whose magnitude exceeds this many units require
-            approval before they change on-hand. Leave blank to disable.
+            approval before they change on-hand. Set <strong>0</strong> to send
+            every adjustment for approval. Leave blank to disable.
           </p>
           {isAdmin ? (
             <form action={setApprovalThreshold} className="flex items-end gap-10">
@@ -137,7 +138,8 @@ export default async function AdjustmentsSettingsPage() {
                 <input
                   name="threshold"
                   type="number"
-                  min={1}
+                  // 0 is meaningful ("everything needs approval"); blank is off.
+                  min={0}
                   defaultValue={threshold ?? ""}
                   placeholder="off"
                   className="hairline-subtle bg-[var(--surface-2)] px-10 py-6 text-text tnum w-[120px] focus:border-[var(--accent)] outline-none"
@@ -147,7 +149,11 @@ export default async function AdjustmentsSettingsPage() {
             </form>
           ) : (
             <p className="mono-body text-text">
-              {threshold != null ? `${threshold} units` : "Disabled"}
+              {threshold == null
+                ? "Disabled"
+                : threshold === 0
+                  ? "Every adjustment"
+                  : `${threshold} units`}
             </p>
           )}
         </div>

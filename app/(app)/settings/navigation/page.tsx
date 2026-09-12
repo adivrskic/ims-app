@@ -28,7 +28,10 @@ export default async function NavigationSettingsPage() {
   const navPrefs = profile?.nav_prefs ?? null;
   const effective = navPrefs ?? defaultNavPrefs(industry, orgModules);
   const industryLabel = getIndustry(industry)?.label ?? null;
-  const canEditIndustry = ctx?.role === "owner" || ctx?.role === "admin";
+  // Gate on the permission the actions actually check. Gating on role alone
+  // meant an admin whose custom permission set dropped `settings.manage` saw
+  // an editable form whose save silently did nothing.
+  const canEditIndustry = ctx?.can("settings.manage") ?? false;
 
   return (
     <div className="flex flex-col gap-32 max-w-[640px]">

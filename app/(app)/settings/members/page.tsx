@@ -7,6 +7,7 @@ import { BulkInviteButton } from "./BulkInviteButton";
 import { MemberPermissions } from "./MemberPermissions";
 import { removeMember, revokeInvite } from "../actions";
 import { effectivePermissions } from "@/lib/permissions";
+import { getCurrentOrgContext } from "@/lib/data/user";
 import { appUrl as resolveAppUrl } from "@/lib/appUrl";
 import { CopyInviteLink } from "./CopyInviteLink";
 import { Mail, X } from "lucide-react";
@@ -27,36 +28,31 @@ export default async function MembersPage() {
     data: { user },
   } = await supabase.auth.getUser();
 
-  const [
-    { data: membersData },
-    { data: invitesData },
-    { data: currentMembership },
-  ] = await Promise.all([
+  // Resolve the ACTIVE workspace, not an arbitrary membership. This page used
+  // to pick the caller's role with `.limit(1).maybeSingle()` on org_members,
+  // which ignores the workspace cookie: a user in two workspaces could get the
+  // other org's role (so the admin controls appeared or vanished wrongly) and
+  // hand the other org's id to bulk invite. The member and invite lists had no
+  // org filter at all, so both workspaces' rows were merged into one list.
+  const ctx = await getCurrentOrgContext();
+  const orgId = ctx?.orgId;
+  const isAdmin = ctx?.can("members.manage") ?? false;
+
+  const [{ data: membersData }, { data: invitesData }] = await Promise.all([
     supabase
       .from("org_members")
       .select(
         "user_id, role, joined_at, permissions, profile:profiles ( email, full_name )"
       )
+      .eq("org_id", orgId ?? "")
       .order("joined_at", { ascending: true }),
     supabase
       .from("org_invites")
       .select("id, email, role, token, created_at, expires_at, accepted_at")
+      .eq("org_id", orgId ?? "")
       .is("accepted_at", null)
       .order("created_at", { ascending: false }),
-    supabase
-      .from("org_members")
-      .select("role, permissions, org_id")
-      .eq("user_id", user?.id ?? "")
-      .limit(1)
-      .maybeSingle(),
   ]);
-
-  const currentRole = (currentMembership?.role ?? "member") as OrgRole;
-  const orgId = (currentMembership?.org_id as string | undefined) ?? undefined;
-  const isAdmin = effectivePermissions(
-    currentRole,
-    (currentMembership?.permissions as string[] | null) ?? null
-  ).has("members.manage");
 
   return (
     <div className="flex flex-col gap-40">

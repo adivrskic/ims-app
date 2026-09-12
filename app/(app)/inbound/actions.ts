@@ -281,7 +281,19 @@ export async function receiveAsnLine(formData: FormData): Promise<void> {
   const asnId = String(formData.get("asn_id") ?? "");
   const qtyRaw = String(formData.get("quantity") ?? "").trim();
   if (!lineId || !asnId) return;
-  await receiveLines(ctx, asnId, [lineId], qtyRaw ? parseInt(qtyRaw, 10) : null);
+  let qty: number | null = null;
+  if (qtyRaw) {
+    const parsed = parseInt(qtyRaw, 10);
+    if (Number.isNaN(parsed) || parsed <= 0) {
+      redirect(
+        `/inbound/${asnId}?error=${encodeURIComponent(
+          "Quantity must be a positive number"
+        )}`
+      );
+    }
+    qty = parsed;
+  }
+  await receiveLines(ctx, asnId, [lineId], qty);
   revalidatePath(`/inbound/${asnId}`);
 }
 
@@ -316,46 +328,144 @@ async function receiveLines(
   lineIds: string[],
   explicitQty: number | null
 ): Promise<void> {
+  // Read the parent ASN BEFORE touching any line. A cancelled (or already
+  // fully received) ASN must not accept a receipt — the UI hides the buttons,
+  // but a crafted POST would otherwise both double-count stock and resurrect
+  // the shipment to in_transit via the status write at the end of this function.
+  const { data: asn } = await ctx.supabase
+    .from("asns")
+    .select("warehouse_id, po_id, asn_number, status, supplier_id")
+    .eq("id", asnId)
+    .eq("org_id", ctx.orgId)
+    .maybeSingle();
+  if (!asn) {
+    redirect(
+      `/inbound?error=${encodeURIComponent("Shipment not found in this workspace.")}`
+    );
+  }
+  const asnStatus = (asn as { status: string }).status;
+  if (asnStatus === "cancelled") {
+    redirect(
+      `/inbound/${asnId}?error=${encodeURIComponent(
+        "This shipment was cancelled — it can't be received."
+      )}`
+    );
+  }
+  if (asnStatus === "received") {
+    redirect(
+      `/inbound/${asnId}?error=${encodeURIComponent(
+        "This shipment is already fully received."
+      )}`
+    );
+  }
+  const asnSupplierId =
+    (asn as { supplier_id: string | null }).supplier_id ?? null;
+
   const { data: lineRows } = await ctx.supabase
     .from("asn_lines")
-    .select("id, product_id, po_line_id, quantity_expected, quantity_received")
+    .select(
+      "id, product_id, po_line_id, lot_number, quantity_expected, quantity_received"
+    )
     .in("id", lineIds)
     .eq("org_id", ctx.orgId);
   const lines = (lineRows ?? []) as Array<{
     id: string;
     product_id: string | null;
     po_line_id: string | null;
+    lot_number: string | null;
     quantity_expected: number;
     quantity_received: number | null;
   }>;
 
+  // A user-supplied quantity over what's left is a typo, not an instruction to
+  // receive less — say so instead of silently clamping (matches the PO path).
+  // The whole-pallet path passes no quantity and legitimately takes "all
+  // remaining" per line, so it skips this.
+  if (explicitQty != null) {
+    for (const l of lines) {
+      const remaining = l.quantity_expected - (l.quantity_received ?? 0);
+      if (explicitQty > remaining) {
+        redirect(
+          `/inbound/${asnId}?error=${encodeURIComponent(
+            `Can't receive ${explicitQty} — only ${remaining} remaining on this line`
+          )}`
+        );
+      }
+    }
+  }
+
   const poIds = new Set<string>();
   let totalReceived = 0;
-  const { data: asn } = await ctx.supabase
-    .from("asns")
-    .select("warehouse_id, po_id, asn_number")
-    .eq("id", asnId)
-    .eq("org_id", ctx.orgId)
-    .maybeSingle();
+  let conflict = false;
   const warehouseId =
-    (asn as { warehouse_id: string | null } | null)?.warehouse_id ?? null;
+    (asn as { warehouse_id: string | null }).warehouse_id ?? null;
 
   for (const l of lines) {
     const remaining = l.quantity_expected - (l.quantity_received ?? 0);
     if (remaining <= 0) continue;
-    const qty =
-      explicitQty != null
-        ? Math.max(0, Math.min(explicitQty, remaining))
-        : remaining;
+    const qty = explicitQty != null ? explicitQty : remaining;
     if (qty <= 0) continue;
     const newReceived = (l.quantity_received ?? 0) + qty;
-    totalReceived += qty;
 
-    await ctx.supabase
+    // Optimistic-lock the receipt against the qty we read, so two concurrent
+    // receipts on the same line can't lose an update (last-writer-wins on
+    // quantity_received). Stop at the first collision rather than pressing on:
+    // the lines already committed above stay consistent and get reconciled
+    // below, and the operator is told to refresh.
+    let lineUpd = ctx.supabase
       .from("asn_lines")
       .update({ quantity_received: newReceived })
       .eq("id", l.id)
       .eq("org_id", ctx.orgId);
+    lineUpd =
+      l.quantity_received == null
+        ? lineUpd.is("quantity_received", null)
+        : lineUpd.eq("quantity_received", l.quantity_received);
+    const { data: updatedLine } = await lineUpd.select("id");
+    if (!updatedLine || updatedLine.length === 0) {
+      conflict = true;
+      break;
+    }
+    totalReceived += qty;
+
+    // Lot capture: the ASN line carries a free-text lot number, which on its own
+    // is invisible to the Lots registry, FEFO picking and expiry alerts. Mirror
+    // the PO receive path — find-or-create the real lot row and mark the product
+    // lot-tracked. (No expiry is captured on an ASN line, so expires_at stays
+    // null for a new lot and an existing lot's value is left untouched.)
+    let lotId: string | null = null;
+    if (l.lot_number && l.product_id) {
+      const { data: existingLot } = await ctx.supabase
+        .from("lots")
+        .select("id")
+        .eq("org_id", ctx.orgId)
+        .eq("product_id", l.product_id)
+        .eq("lot_number", l.lot_number)
+        .maybeSingle();
+      lotId = (existingLot as { id: string } | null)?.id ?? null;
+      if (!lotId) {
+        const { data: newLot } = await ctx.supabase
+          .from("lots")
+          .insert({
+            org_id: ctx.orgId,
+            product_id: l.product_id,
+            lot_number: l.lot_number,
+            supplier_id: asnSupplierId,
+            received_at: new Date().toISOString(),
+            created_by: ctx.user.id,
+          })
+          .select("id")
+          .single();
+        lotId = (newLot as { id: string } | null)?.id ?? null;
+      }
+
+      // Receiving into a lot means this product is lot-tracked.
+      await ctx.supabase
+        .from("products")
+        .update({ track_lots: true })
+        .eq("id", l.product_id)
+        .eq("org_id", ctx.orgId);
+    }
 
     // Reconcile against the linked PO line (record receipt; putaway creates stock).
     if (l.po_line_id) {
@@ -366,13 +476,18 @@ async function receiveLines(
         .maybeSingle();
       const p = pol as { po_id: string; quantity_received: number | null } | null;
       if (p) {
+        const poLineUpdate: Record<string, unknown> = {
+          quantity_received: (p.quantity_received ?? 0) + qty,
+          received_at: new Date().toISOString(),
+          received_by: ctx.user.id,
+        };
+        // asn_lines has no lot_id column, so the lot linkage lands on the PO
+        // line — the same row the Lots registry and FEFO already read from.
+        if (l.lot_number) poLineUpdate.lot_number = l.lot_number;
+        if (lotId) poLineUpdate.lot_id = lotId;
         await ctx.supabase
           .from("po_line_items")
-          .update({
-            quantity_received: (p.quantity_received ?? 0) + qty,
-            received_at: new Date().toISOString(),
-            received_by: ctx.user.id,
-          })
+          .update(poLineUpdate)
           .eq("id", l.po_line_id);
         poIds.add(p.po_id);
       }
@@ -415,7 +530,7 @@ async function receiveLines(
   // reconciled against one or more POs (best-effort, opt-in).
   if (poIds.size > 0 && totalReceived > 0) {
     const asnNumber =
-      (asn as { asn_number: string | null } | null)?.asn_number ?? "ASN";
+      (asn as { asn_number: string | null }).asn_number ?? "ASN";
     try {
       await dispatchEvent({
         type: "po_received",
@@ -438,6 +553,17 @@ async function receiveLines(
   }
 
   revalidateTag(tags.purchaseOrders(ctx.orgId));
+  revalidatePath(`/inbound/${asnId}`);
   revalidatePath("/inbound");
   revalidatePath("/purchase-orders");
+
+  // Reported last so whatever did land above is already committed and
+  // reconciled — the operator sees fresh counts alongside the message.
+  if (conflict) {
+    redirect(
+      `/inbound/${asnId}?error=${encodeURIComponent(
+        "This line was just received by someone else — refresh and retry so the counts don't collide."
+      )}`
+    );
+  }
 }

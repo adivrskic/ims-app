@@ -191,9 +191,15 @@ export async function sendPasswordReset(
   const email = String(formData.get("email") ?? "").trim();
   if (!email) return { error: "Email is required" };
 
-  if (await authRateLimited("reset", email, 10, 900)) {
-    return { error: RATE_LIMITED_MSG };
-  }
+  // One response for every outcome. The throttle used to answer with the
+  // rate-limit message while every other path answered with the generic
+  // success, so the reply itself told an attacker which addresses were worth
+  // hammering. Throttled requests now look identical and simply send nothing.
+  const throttled = await authRateLimited("reset", email, 10, 900);
+  const genericSuccess = {
+    success: `If ${email} is registered, we've sent a reset link.`,
+  };
+  if (throttled) return genericSuccess;
 
   const supabase = await createClient();
   const h = await headers();
@@ -210,9 +216,7 @@ export async function sendPasswordReset(
     console.error("sendPasswordReset:", error);
   }
 
-  return {
-    success: `If ${email} is registered, we've sent a reset link.`,
-  };
+  return genericSuccess;
 }
 
 export async function sendMagicLink(
@@ -223,8 +227,10 @@ export async function sendMagicLink(
   const next = safeNext(String(formData.get("next") ?? "/"));
   if (!email) return { error: "Email is required" };
 
+  // Same uniform-response rule as the reset flow above: a throttled request is
+  // indistinguishable from a delivered one, so the reply carries no signal.
   if (await authRateLimited("magiclink", email, 10, 900)) {
-    return { error: RATE_LIMITED_MSG };
+    return { success: `Check ${email} for your sign-in link.` };
   }
 
   const supabase = await createClient();

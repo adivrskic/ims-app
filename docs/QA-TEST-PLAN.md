@@ -5,8 +5,18 @@
 
 > **Status of this document:** regenerated from the code on **2026-09-11**. Every route, permission, field, message and business rule below was read out of the repo, not assumed. Where something is unverified or environment-dependent it says so explicitly.
 >
-> ### What changed in this revision
-> - **Restructured to be route-complete.** The old phase-based layout covered maybe half the app. §3 is now a coverage index listing **all 79 pages and 23 route handlers**, each mapped to the section that tests it. Nothing is unlisted.
+> ### 2026-09-12 — 58 defects fixed
+>
+> Every open item in the register has been fixed, reclassified, or explained. §22.1 lists the
+> 48 fixed in this pass; the cases they map to now describe the **corrected** behaviour and are
+> marked *(regression)*, so a tester confirms the fix rather than reproducing the bug. Three
+> items remain genuinely open (§22.3) and three reported "bugs" were disproved by reading the
+> live database (§22.4). **A migration ships with this change** —
+> `20260912120000_analytics_page_aggregate_rpcs.sql` must be applied or `/analytics` and
+> `/analytics/dead-stock` will error.
+>
+> ### What changed in the previous revision
+> - **Restructured to be route-complete.** The old phase-based layout covered maybe half the app. §3 is now a coverage index listing **all 79 pages and 22 route handlers**, each mapped to the section that tests it. Nothing is unlisted.
 > - **Two previously-documented bugs are fixed** and are now regression cases, not expected failures: Inventory **Export CSV** (was a 404) and **Forecast → Apply RBAC** (was ungated; now gated on `inventory.manage`).
 > - **New surfaces to test:** the 4-step onboarding wizard now also serves `/workspaces/new`; the spreadsheet import engine (products **+ suppliers + customers**, file *or* paste, check-then-import); "Explore with sample data"; three-field quick-add on Register product.
 > - **Finding C is narrowed:** orders still don't link customers *when created by hand*, but sample-data orders do set `customer_id`, so the Customer → Orders panel is no longer *always* empty.
@@ -177,7 +187,7 @@ Verified against the code on 2026-09-11. These **change what is testable**.
 
 ## 3. Route coverage index
 
-Every addressable surface in the app. **79 pages + 23 route handlers.** If a route isn't in a section you ran, it wasn't tested.
+Every addressable surface in the app. **79 pages + 22 route handlers.** If a route isn't in a section you ran, it wasn't tested.
 
 ### Authenticated pages
 
@@ -241,7 +251,6 @@ Every addressable surface in the app. **79 pages + 23 route handlers.** If a rou
 | `GET /api/import-template/[entity]` | session | §7.4 |
 | `GET /api/inventory/import-template` | session | §7.4 |
 | `GET /api/team/import-template` | session | §16.4 |
-| `GET /(app)/api/team/import/template` | **none in handler** | §22 (dead route) |
 | `GET /(app)/inventory/export` | session | §17.4 |
 | `GET /(app)/api/orders/export` | **RLS only** | §17.4 |
 | `GET /(app)/analytics/valuation/export` | session | §17.4 |
@@ -274,12 +283,12 @@ Google OAuth and sign-out are **not** rate-limited.
 | 4.1.4 | Unconfirmed email | "Confirm your email first — check your inbox for the link we sent." | ☐ |
 | 4.1.5 | Rate limit (11 tries) | Blocked after 10 with "Too many attempts. Wait a minute and try again." | ☐ |
 | 4.1.6 | Protected route while logged out | `/inventory` → `/login?next=/inventory`; after login lands on **/inventory** | ☐ |
-| 4.1.7 | **Query string is dropped on redirect** | `/orders?status=open` while logged out → `next=/orders` only. After login you land on `/orders` with **no filter**. Confirm and rate | ☐ |
+| 4.1.7 | Query string survives the redirect *(regression)* | `/orders?status=open` while logged out → `next=/orders%3Fstatus%3Dopen`. After login you land back on the filtered list, not a bare one | ☐ |
 | 4.1.8 | **Open-redirect defence** | `?next=//evil.com`, `?next=https://evil.com`, `?next=/\evil.com` → all land on `/`, never off-site | ☐ |
 | 4.1.9 | Logged in on `/login` | Redirects to `/` | ☐ |
 | 4.1.10 | Google sign-in | Completes and lands in the app | ☐ |
 | 4.1.11 | `?error=` rendering | `/login?error=<text>` renders the text verbatim. Try a long string and an HTML payload — must render as text, never as markup | ☐ |
-| 4.1.12 | **Remote-revocation message** | Revoke this device from another browser (§16.3), navigate → you land on `/login?revoked=1` with **no explanation**. Expected to fail — record as UX | ☐ |
+| 4.1.12 | **Remote-revocation message** *(regression)* | Revoke this device from another browser (§16.3), navigate → `/login?revoked=1` explains it: "You were signed out because this device's access was revoked." | ☐ |
 | 4.1.13 | Path-prefix quirk | `/loginfoo`, `/signup-extra`, `/magic-linkX` are all treated as auth paths by `startsWith`. Confirm none 500s | ☐ |
 
 ### 4.2 `/signup`
@@ -300,7 +309,7 @@ Google OAuth and sign-out are **not** rate-limited.
 |---|---|---|---|
 | 4.3.1 | Unknown email | Same success text as a known one: "If <email> is registered, we've sent a reset link." — **deliberate** | ☐ |
 | 4.3.2 | Known email | Email arrives; link resets; new password works | ☐ |
-| 4.3.3 | **Enumeration oracle** | Request 4× for the same address inside 15 min. The 4th returns the **rate-limit** message instead of the generic success — that difference leaks whether throttling applies. Record | ☐ |
+| 4.3.3 | Uniform response under throttling *(regression)* | Request 4× for the same address inside 15 min. Every attempt returns the **same** generic success; the 4th simply sends no email. No reply distinguishes throttled from delivered | ☐ |
 | 4.3.4 | Reset link host | Built from the raw `origin` header here (not `appUrl()`, unlike signup). Confirm it points at your environment | ☐ |
 
 ### 4.4 `/magic-link`
@@ -319,7 +328,7 @@ Google OAuth and sign-out are **not** rate-limited.
 | 4.5.3 | Replayed `code` | Rejected, no session granted | ☐ |
 | 4.5.4 | `?next=` sanitised | `/auth/callback?code=…&next=https://evil.com` → lands on `/` | ☐ |
 | 4.5.5 | Sign out | Back to `/login`; browser Back does not restore the session | ☐ |
-| 4.5.6 | **CSRF on sign-out** | `/auth/signout` is a state-changing **GET**. Put `<img src="https://app.../auth/signout">` on any page and load it while signed in → you are signed out. Expected to fail; record severity | ☐ |
+| 4.5.6 | **CSRF on sign-out** *(regression)* | Put `<img src="https://app.../auth/signout">` on a page and load it while signed in → **you stay signed in** (sub-resource fetches are refused). Clicking a real sign-out link still works | ☐ |
 
 ### 4.6 `/invite/[token]`
 Tokens are 32 hex chars, **7-day expiry**.
@@ -329,7 +338,7 @@ Tokens are 32 hex chars, **7-day expiry**.
 | 4.6.1 | Signed-out invitee | `/login?next=/invite/<token>` → sign in → land on the invite | ☐ |
 | 4.6.2 | **Brand-new person** (regression) | Invite someone with no account; follow the emailed link. They reach signup with `next` preserved and **join your workspace** — they are **not** dropped into the onboarding wizard | ☐ |
 | 4.6.3 | Existing user accepts | "Join <org>" → membership created with the **invite's** role | ☐ |
-| 4.6.4 | Wrong account | Open B's invite while signed in as A → "Email mismatch" naming both addresses. ⚠️ **No sign-out button is offered** — record the dead end | ☐ |
+| 4.6.4 | Wrong account *(regression)* | Open B's invite while signed in as A → "Email mismatch" naming both addresses, **plus a "Sign out and switch accounts →" button** that returns you to this same invite after signing in | ☐ |
 | 4.6.5 | Re-use accepted invite | "Already accepted" + "Go to overview →" | ☐ |
 | 4.6.6 | Expired invite | Backdate `expires_at` via SQL → "Invite expired" | ☐ |
 | 4.6.7 | Bogus / tampered token | `/invite/garbage`, truncated token, case-flipped token → "Invite not found" | ☐ |
@@ -394,7 +403,7 @@ Steps: **Workspace · How you work · Team · Review**.
 | 5.3.1 | Switch facility | KPIs, inventory on-hand and lists re-scope. **Product count stays workspace-wide by design** | ☐ |
 | 5.3.2 | "All facilities" | Picking cannot build waves (banner explains why); other pages show cross-facility data | ☐ |
 | 5.3.3 | Archived facility selected | Archive the facility you're scoped to → next request silently falls back to another facility (not to "All"). Confirm no crash | ☐ |
-| 5.3.4 | **Unscoped pages** | `/cycle-counts` and `/transfers` are **org-wide, not facility-scoped** — their lists show rows from every facility. Confirm and rate the inconsistency | ☐ |
+| 5.3.4 | Facility scope everywhere *(regression)* | `/cycle-counts` now offers only slots in the active facility, and `/transfers` lists only transfers with **either end** at it. Switch facilities and confirm both follow | ☐ |
 
 ### 5.4 Command palette & shortcuts
 | # | Case | Expected | Result |
@@ -408,13 +417,13 @@ Steps: **Workspace · How you work · Team · Review**.
 |---|---|---|---|
 | 5.5.1 | List + counts | Meta "Total" and "Unread" (live dot when >0) | ☐ |
 | 5.5.2 | Filter chips | All / Unread / Stock alerts / System / Team / Scan summaries, each with a count | ☐ |
-| 5.5.3 | **Missing chips** | Run the lot-expiry and cycle-count-queue crons (§15.8) → their notifications have **no filter chip and no colour**, appearing only under "All". Record | ☐ |
+| 5.5.3 | Chips cover every kind *(regression)* | Run the lot-expiry and cycle-count-queue crons (§15.8) → their notifications appear under their own **Lot expiry** and **Cycle counts** chips, with distinct tones | ☐ |
 | 5.5.4 | Mark all read | Appears only when unread > 0; clears the badge in the sidebar | ☐ |
 | 5.5.5 | Row click | A row with a link navigates. ⚠️ It does **not** mark itself read — confirm expected | ☐ |
 | 5.5.6 | Email digest toggle | Flips `Email digest · On/Off`; drives the digest cron | ☐ |
 | 5.5.7 | Pagination | `?page=0`, `?page=abc` → page 1. `?page=999` → empty list, no redirect | ☐ |
 | 5.5.8 | Realtime | Trigger a notification from another session → appears without refresh | ☐ |
-| 5.5.9 | Volume | The page loads **all** of the user's notifications and paginates in JS. With 2 000+ rows, check load time | ☐ |
+| 5.5.9 | Volume *(regression)* | Rows are paged in the query and chip counts come from head counts, so a user with 2 000+ notifications loads as fast as one with 20. Verify the counts still match the list | ☐ |
 
 ### 5.6 Theme
 | # | Case | Expected | Result |
@@ -517,7 +526,7 @@ Steps: **Workspace · How you work · Team · Review**.
 | 7.2.2 | Minimum viable create | Barcode + Name only → product created, lands on its detail page | ☐ |
 | 7.2.3 | **On hand writes stock** | Register with On hand = 12 → detail shows **12 units on hand** in the holding area, and a **REG** entry appears in recent activity | ☐ |
 | 7.2.4 | On hand validation | `-1`, `1.5`, `abc` → "On hand must be a whole number, 0 or more" | ☐ |
-| 7.2.5 | No facility | On a workspace with zero facilities, a quantity is **silently dropped** (product is created, stock isn't). Expected to fail — record | ☐ |
+| 7.2.5 | No facility *(regression)* | On a workspace with zero facilities, registering with a quantity says so: "Product registered, but the on-hand count wasn't saved — add a facility first." It is no longer dropped silently | ☐ |
 | 7.2.6 | Duplicate barcode | "Barcode X is already registered" | ☐ |
 | 7.2.7 | Duplicate SKU | Rejected (unique per org) with a legible message, not a raw Postgres error | ☐ |
 | 7.2.8 | Unit cost parsing | `$1,234.56` accepted and stored as `1234.56`; `abc` → "Unit cost must be a non-negative number" | ☐ |
@@ -535,7 +544,7 @@ Steps: **Workspace · How you work · Team · Review**.
 | 7.3.4 | Demand forecast | With 90 days of history: avg/day, trend (Rising/Falling/Flat), seasonality, suggested ROP + safety stock as `N (now M)` | ☐ |
 | 7.3.5 | **Apply suggested settings** (regression) | Renders **only** with `inventory.manage`. As a member it is absent, and a crafted POST changes nothing | ☐ |
 | 7.3.6 | Locations card | Lists every slot with facility and qty; "Not placed in any location yet." when empty | ☐ |
-| 7.3.7 | **Soft-deleted locations** | Remove a location (§8.5), then reload this page. ⚠️ The removed row is expected to still appear and still count toward on-hand/ATP/value, because this query omits `is_active` — while the list page excludes it. **Numbers will disagree between screens.** Confirm and file | ☐ |
+| 7.3.7 | **Soft-deleted locations** *(regression)* | Remove a location (§8.5), then reload this page. The removed row is **gone** and no longer counts toward on-hand / ATP / inventory value. Cross-check the same SKU on the inventory list, `/scan` and the section grid — all four must agree | ☐ |
 | 7.3.8 | Lots table | FEFO-sorted (earliest expiry first, nulls last); first non-expired lot with stock gets the **"Pick first"** chip | ☐ |
 | 7.3.9 | Lot edge cases | A lot with no expiry sorts last and is never "Pick first"; an expired lot with stock is never "Pick first" | ☐ |
 | 7.3.10 | Cycle counts + scans | Last 5 counts with signed variance; last 20 scans with readable action labels | ☐ |
@@ -594,7 +603,7 @@ Shared engine; the same workbench serves suppliers and customers (§11.5).
 | 8.2.2 | 3D view | Toggle loads ("Loading 3D view…", labelled beta); choice persists in localStorage | ☐ |
 | 8.2.3 | Section click | Navigates to the section detail page | ☐ |
 | 8.2.4 | Occupancy maths | Two SKUs in one slot count as **one** occupied slot | ☐ |
-| 8.2.5 | Empty layout | Renders an empty canvas with **no empty-state copy**. Record as UX | ☐ |
+| 8.2.5 | Empty layout *(regression)* | A facility with no sections or elements shows an empty state pointing at the builder, not a blank canvas. Without `facilities.manage` the copy says who can draw it | ☐ |
 | 8.2.6 | Edit-layout gate | The link renders only with `facilities.manage` | ☐ |
 | 8.2.7 | Cross-org id | 404 | ☐ |
 
@@ -609,16 +618,16 @@ Shared engine; the same workbench serves suppliers and customers (§11.5).
 | 8.3.6 | Unsaved-work guard | Change something, close the tab → the browser warns | ☐ |
 | 8.3.7 | Draft restore | Change something, reload → unsaved edits are restored from sessionStorage | ☐ |
 | 8.3.8 | Inspector clamps | Bays/Levels typed as `0` or letters snap to 1; Width/Height clamp to ≥40; Code caps at 4 chars | ☐ |
-| 8.3.9 | **No server-side validation** | Craft a save payload with `total_bays: 0` and a 10-char code → it is written. Expected to fail; record severity | ☐ |
+| 8.3.9 | **Server-side validation** *(regression)* | Craft a save payload with `total_bays: 0`, a 10-char code, or two sections sharing a code → each is refused with its own message, naming the section | ☐ |
 | 8.3.10 | No-door nudge | A facility with no `door` element shows a non-blocking warning (slotting needs it) | ☐ |
 | 8.3.11 | Section code reuse | Add A, B, C → delete A → add another → it is also `C`. Record | ☐ |
 | 8.3.12 | Delete a section with stock | Silently refused with **no message at all**. Record | ☐ |
-| 8.3.13 | **Blueprint scan** | Upload a floor plan → ⚠️ **destructive: queues every existing section for deletion with no confirmation.** Throwaway facility only | ☐ |
+| 8.3.13 | **Blueprint scan** *(regression)* | Upload a floor plan into a facility that already has sections → a confirm names how many will be removed and warns that stock in them is unlinked. Cancelling leaves the layout untouched | ☐ |
 | 8.3.14 | Blueprint limits | >4 MB → "File too large (max 4MB)."; a non-image → clean error | ☐ |
 | 8.3.15 | Snapshots | Create, change, restore. A restore that would orphan locations returns a **confirm step** naming the count, then reports "Layout restored · N locations unlinked" | ☐ |
 | 8.3.16 | Snapshot cross-facility | Restoring facility A's snapshot while viewing B is refused | ☐ |
 | 8.3.17 | Unit toggle | ft ↔ m **relabels only** — geometry is not rescaled. Confirm that's intended | ☐ |
-| 8.3.18 | As a **member** | The page is **not gated** — you can edit for 20 minutes and only fail at Save ("Only admins can edit facility layouts"). Record severity | ☐ |
+| 8.3.18 | As a **member** *(regression)* | `/facilities/{id}/builder` redirects straight back to the viewer — no editor opens, so no work can be lost at Save | ☐ |
 | 8.3.19 | Two tabs | Edit the same facility in two tabs → last write wins, no corruption | ☐ |
 
 ### 8.4 `/facilities/[id]/labels`
@@ -637,19 +646,19 @@ Shared engine; the same workbench serves suppliers and customers (§11.5).
 | 8.5.2 | **Place stock** | Slot → Add product + qty → **this is the main way on-hand is created.** `/inventory` reflects it | ☐ |
 | 8.5.3 | Product search | Needs ≥2 characters; matches name/barcode/SKU; caps at 10 results | ☐ |
 | 8.5.4 | Place into an occupied slot | Placing the same product again **adds** to the quantity rather than creating a second row | ☐ |
-| 8.5.5 | **Out-of-range bay on place** | Placing at bay 9999 is **not bounds-checked** (Move is). Expected to fail; record | ☐ |
-| 8.5.6 | Slot capacity | Exceeding `slot_capacity` shows "Over" but **is not enforced**. Record | ☐ |
+| 8.5.5 | **Out-of-range bay on place** *(regression)* | Placing at bay 9999 is refused with "Bay exceeds section maximum of N", matching Move | ☐ |
+| 8.5.6 | Slot capacity | Exceeding `slot_capacity` shows "Over" but is **deliberately not blocked** — a manual placement records what is physically on the shelf. The slotting optimiser (§14.4.5) does refuse to *suggest* an over-capacity move. Confirm both halves | ☐ |
 | 8.5.7 | Adjust quantity | Inline edit applies immediately when under the threshold | ☐ |
 | 8.5.8 | **Adjustment approval** | Set a threshold (§16.9), then make an adjustment at exactly the threshold → **queued** (the rule is `>=`). On-hand unchanged; it appears in `/settings/adjustments` | ☐ |
 | 8.5.9 | Reason-gated approval | Pick reason `shrinkage` or `theft` → queued regardless of size | ☐ |
 | 8.5.10 | Threshold 0 | Set the threshold to 0 → **every** non-zero adjustment queues | ☐ |
-| 8.5.11 | Queued message styling | The "Adjustment sent for approval — over the threshold." message renders in an **error** style. Record as UX | ☐ |
+| 8.5.11 | Queued message styling *(regression)* | "Adjustment sent for approval" renders in an **info** tone, not danger red — it is a successful outcome | ☐ |
 | 8.5.12 | Drift guard | Two operators edit the same slot → the loser gets "Stock changed to N since you loaded this — refresh and retry." | ☐ |
 | 8.5.13 | Zero delta | Submitting the same quantity writes no row and no audit entry | ☐ |
 | 8.5.14 | Move stock | Bounds **are** enforced: "Bay exceeds section maximum of N" / "Level exceeds…" | ☐ |
 | 8.5.15 | Move onto the same product | Quantities **merge** and the source row deactivates | ☐ |
-| 8.5.16 | **Remove bypasses approval** | Remove a location holding 10 000 units → no approval needed, even though editing it to 0 would queue. Expected to fail; record severity | ☐ |
-| 8.5.17 | Quarantined rows | Quarantined stock is **not excluded** from this grid or its "Total units" (the kit builder does exclude it). Confirm the inconsistency | ☐ |
+| 8.5.16 | **Remove clears the same bar** *(regression)* | With a threshold set, remove a location holding 10 000 units → it is **queued for approval** and the slot stays until approved, exactly as editing it to 0 would be. An empty slot still removes immediately | ☐ |
+| 8.5.17 | Quarantined rows | Quarantined stock **is** shown in this grid and its "Total units" — the grid reports physical stock. The kit builder and picking exclude it because it can't be consumed. Confirm both, and that the split is explained | ☐ |
 | 8.5.18 | Large grid | 100 bays × 10 levels = 1 000 cells — check render performance | ☐ |
 | 8.5.19 | As a **member** | `inventory.adjust` is a member default, so place/adjust/move **should work**. Confirm | ☐ |
 
@@ -695,7 +704,7 @@ Shared engine; the same workbench serves suppliers and customers (§11.5).
 | 9.3.9 | Weekly queue toggle | Requires `settings.manage`; as a member it **silently does nothing** | ☐ |
 | 9.3.10 | Queue auto-complete | Counting a product that has a pending queue task marks that task complete | ☐ |
 | 9.3.11 | **Not facility-scoped** | The location dropdown lists slots from **every** facility regardless of the active scope. Confirm and rate | ☐ |
-| 9.3.12 | **Void is unreachable** | `voidCycleCount` exists and is permission-gated but **no UI calls it** — the `voided` badge can never appear. Confirm the gap | ☐ |
+| 9.3.12 | **Void a count** *(regression)* | With `cycle_counts.void`, each non-voided history row has a void control. It confirms first, flips the badge to `voided`, removes the count from accuracy stats, and **deliberately does not reverse the stock adjustment** (record a new count to correct quantity). Without the permission the control is absent | ☐ |
 | 9.3.13 | Blind counts | The desk always shows the expected quantity. **Mobile does blind counts** — verify there (§19) | ☐ |
 
 ---
@@ -722,9 +731,9 @@ Shared engine; the same workbench serves suppliers and customers (§11.5).
 | 10.2.1 | Register in bulk | Paste serials separated by spaces/commas/newlines → deduplicated, registered | ☐ |
 | 10.2.2 | Partial duplicates | "Registered N serials · M already existed" | ☐ |
 | 10.2.3 | All duplicates | "All of those serials are already registered" | ☐ |
-| 10.2.4 | **1 000 cap** | Paste 1 001 → 1 000 land and the extra is **silently dropped with no warning**. Record | ☐ |
+| 10.2.4 | **1 000 cap** *(regression)* | Paste 1 001 → 1 000 land and the result says so: "…· 1 not processed (1000 per submission — paste the rest separately)" | ☐ |
 | 10.2.5 | Status changes | in_stock / shipped / returned / scrapped save and re-badge; `shipped` stamps a timestamp | ☐ |
-| 10.2.6 | **Header counts past 500** | With >500 serials the `Serials / In stock / Shipped` counts are computed from the visible page only and are **wrong**. Record severity | ☐ |
+| 10.2.6 | **Header counts past 500** *(regression)* | With >500 serials the `Serials / In stock / Shipped` counts are exact (head counts), while the table still shows the 500 most recent and says so | ☐ |
 | 10.2.7 | Same serial, two products | Allowed (uniqueness is per product). Confirm intended | ☐ |
 | 10.2.8 | No stock effect | Serial status changes do **not** alter `locations` on-hand. Confirm intended | ☐ |
 | 10.2.9 | Delete | Hard delete, no confirmation | ☐ |
@@ -758,8 +767,8 @@ Shared engine; the same workbench serves suppliers and customers (§11.5).
 | 10.4.8 | Race | Complete from two tabs → the loser gets "This work order is already closed" | ☐ |
 | 10.4.9 | Stock drained mid-flight | Drain component stock between load and submit → server re-validates and surfaces the error inline | ☐ |
 | 10.4.10 | Multi-level tree | The BOM tree shows sub-assembly chips and marks cycles with "⚠ circular" | ☐ |
-| 10.4.11 | Claim / release | Toggles the assignee. ⚠️ **Anyone can steal a claimed WO** — confirm | ☐ |
-| 10.4.12 | **Quarantine inconsistency** | For a WO whose only component stock is quarantined, the UI says "Short" and disables Complete — but a crafted complete POST may succeed because the RPC's sufficiency check omits the quarantine filter. Test and record severity | ☐ |
+| 10.4.11 | Claim / release *(regression)* | A work order already claimed by someone else **cannot** be taken — only the holder can release it. Unassigned ones claim normally | ☐ |
+| 10.4.12 | Quarantine is excluded end to end | For a WO whose only component stock is quarantined, the UI says "Short" **and** a crafted complete POST is refused — `app.consume_for_build` filters `is_active` and `quarantined` at every step. Verify the POST too, not just the button | ☐ |
 
 ---
 
@@ -849,14 +858,14 @@ Shared engine; the same workbench serves suppliers and customers (§11.5).
 | 12.3.3 | Partial receipt | Status `partially_received`; remaining recalculated; stats update | ☐ |
 | 12.3.4 | **Over-receipt rejected** | "Can't receive X — only Y remaining on this line" | ☐ |
 | 12.3.5 | Concurrent receipt | Second browser gets "This line was just received by someone else — refresh and retry so the counts don't collide." | ☐ |
-| 12.3.6 | **Receipt ≠ stock** (finding B) | After a plain receipt, `/inventory` still shows **0 on hand**. Confirm the on-page notice explains this clearly enough that a customer wouldn't file a bug | ☐ |
+| 12.3.6 | **Receipt ≠ stock** (finding B) | After a plain receipt, `/inventory` still shows **0 on hand** — confirm the on-page notice explains it well enough that a customer wouldn't file a bug. The receipt **does** now write a `receive` entry to activity (regression: only QC-held receipts used to) | ☐ |
 | 12.3.7 | Lot capture | Entering a lot number creates the `lots` row, backfills expiry, and flips the product to `track_lots` | ☐ |
 | 12.3.8 | **QC hold** | Creates a **quarantined** pseudo-slot (bay 1 / level 1, no section) and the line appears in `/receiving`. On-hand **does** rise | ☐ |
 | 12.3.9 | Landed cost | `$1,234.56` parses; `abc` → "Landed cost must be a non-negative number" | ☐ |
 | 12.3.10 | Slotting hints | Open lines show "Suggested slot {label} · {reason}" when a layout exists | ☐ |
 | 12.3.11 | Fill backorders | Panel shows "Fill X of Y backordered units across Z orders (oldest first)"; the button requires **`orders.allocate`**, not a purchasing permission | ☐ |
 | 12.3.12 | Cancel PO | Receive controls disappear | ☐ |
-| 12.3.13 | **Cancel a received PO** | `markPoCancelled` has **no status filter** — a crafted POST can cancel a `fully_received` PO. Test and record severity | ☐ |
+| 12.3.13 | **Cancel a received PO** *(regression)* | A crafted POST against a `fully_received` PO changes nothing — only draft / sent / partially_received can be cancelled | ☐ |
 | 12.3.14 | Zero-line PO | A PO whose lines were all deleted flips to `fully_received` with 0 units. Record | ☐ |
 
 ### 12.4 `/purchase-orders/[id]/print`
@@ -878,12 +887,12 @@ Shared engine; the same workbench serves suppliers and customers (§11.5).
 | 12.6.2 | Unknown product id | **Silently dropped to null** (the free-text name carries the line) — unlike POs, which reject. Record | ☐ |
 | 12.7.1 | Pallet grouping | Lines group into "Pallet {lpn}" sections plus a loose group | ☐ |
 | 12.7.2 | Receive a line | Quantity defaults to remaining; the parent PO's counts and status update | ☐ |
-| 12.7.3 | **Over-receipt silently clamps** | Unlike the PO path (which errors), the ASN path clamps with no message. Record the inconsistency | ☐ |
+| 12.7.3 | **Over-receipt is rejected** *(regression)* | Typing more than remaining now errors like the PO path: "Can't receive X — only Y remaining on this line". Whole-pallet receive still takes all remaining per line (it has no quantity to get wrong) | ☐ |
 | 12.7.4 | Receive a pallet | Every line on that LPN is received at full remaining | ☐ |
 | 12.7.5 | Line then pallet | Receive one line, then the pallet → only the remainder is taken | ☐ |
-| 12.7.6 | **No optimistic lock** | Two concurrent receives of the same ASN line can double-count (the PO path is protected). Test and record severity | ☐ |
-| 12.7.7 | **Receive against a cancelled ASN** | Buttons are hidden, but a crafted POST still receives **and flips the cancelled ASN back to `in_transit`**. Record severity | ☐ |
-| 12.7.8 | ASN lot number | Free text only — **never creates a `lots` row** (unlike PO receive). Record | ☐ |
+| 12.7.6 | **Optimistic lock** *(regression)* | Two concurrent receives of the same ASN line → the loser gets "This line was just received by someone else — refresh and retry so the counts don't collide." No double count | ☐ |
+| 12.7.7 | **Receive against a cancelled ASN** *(regression)* | A crafted POST against a cancelled (or already fully received) ASN is refused before any write, and its status is unchanged | ☐ |
+| 12.7.8 | ASN lot number *(regression)* | Receiving an ASN line carrying a lot number find-or-creates the `lots` row and flips the product to `track_lots`, like the PO path. For a PO-linked line the `lot_id` lands on the PO line, so FEFO and the Lots registry pick it up. ⚠️ A standalone (non-PO) ASN line still has nowhere to store `lot_id` — see §22.3 | ☐ |
 
 ### 12.8 `/receiving` (QC queue)
 | # | Case | Expected | Result |
@@ -953,12 +962,12 @@ Shared engine; the same workbench serves suppliers and customers (§11.5).
 | 13.6.2 | Eligibility | Only open orders with no wave and `Σ max(0, allocated − picked) > 0` appear | ☐ |
 | 13.6.3 | Build wave | From selected, or **Auto-build from all** | ☐ |
 | 13.6.4 | Deselect everything | Clicking build with nothing checked does nothing, **with no message**. Record | ☐ |
-| 13.6.5 | **Empty wave created** | Build a wave, then auto-build again → a wave row is created containing **0 orders**. Record severity | ☐ |
+| 13.6.5 | **No empty waves** *(regression)* | Build a wave, then auto-build again → no wave is created (the empty one is rolled back), and the queue is not littered | ☐ |
 | 13.7.1 | Zoning | Grouped by pick zone, ordered by distance from the door; slots read `{SECTION}-{bay}-{level}` | ☐ |
 | 13.7.2 | FEFO badge | Lot-tracked lines carry the first-expiring lot chip | ☐ |
 | 13.7.3 | Unlocated tasks | Roll into an "Unlocated" zone with the footer warning "{N} tasks have no placed stock — locate them before picking." | ☐ |
 | 13.7.4 | Quarantine excluded | Pick slots never include quarantined stock | ☐ |
-| 13.7.5 | Claim / release | Toggles the assignee. ⚠️ **Another user can steal a claimed wave** — confirm | ☐ |
+| 13.7.5 | Claim / release *(regression)* | A wave already claimed by another picker **cannot** be taken; only the holder can release it | ☐ |
 | 13.7.6 | Cancel wave | Orders return to the eligible pool (`pick_wave_id` cleared) | ☐ |
 | 13.7.7 | Complete wave **[MOBILE]** | Blocked until everything allocated is picked, with the exact counts | ☐ |
 | 13.7.8 | Complete keeps orders | Completing does **not** detach orders (only cancelling does) | ☐ |
@@ -998,10 +1007,10 @@ Shared engine; the same workbench serves suppliers and customers (§11.5).
 | # | Case | Expected | Result |
 |---|---|---|---|
 | 14.1.1 | KPIs | Products, Units here/on hand, Scans today, Scans 7d | ☐ |
-| 14.1.2 | "Last sync: Just now" | ⚠️ Hard-coded, not a real timestamp. Record as a UX lie | ☐ |
+| 14.1.2 | Header meta is true *(regression)* | The fabricated "Last sync: Just now" is gone; the header now names the facility (or "All facilities"), which is a fact | ☐ |
 | 14.1.3 | Flat sparklines | Products/Units sparks are deliberate placeholders — **not a bug** | ☐ |
 | 14.1.4 | Action mix | Per-action bars with counts and percentages | ☐ |
-| 14.1.5 | **>1 000 scans** | On a workspace with more than ~1 000 scans, the action-mix percentages and the "Where units live" distribution are computed from **unpaginated** queries and will **not reconcile** with the KPI totals. Verify against the seeded workspace and record severity | ☐ |
+| 14.1.5 | **>1 000 scans** *(regression)* | On the seeded workspace, the action-mix percentages and the "Where units live" distribution now come from SQL aggregates and **must reconcile exactly** with the KPI totals above them. The 14-day trend shares the Overview RPC, so both pages must draw the same curve | ☐ |
 | 14.1.6 | AI summary banner | Renders nothing (no error) if the edge function isn't deployed or `ANTHROPIC_API_KEY` isn't a Supabase secret. **Record which state you're in** | ☐ |
 | 14.1.7 | Empty workspace | "No analytics data yet" / "No activity at {facility} yet" | ☐ |
 
@@ -1013,7 +1022,7 @@ Shared engine; the same workbench serves suppliers and customers (§11.5).
 | 14.2.3 | Bad params | `?threshold=abc`, `?threshold=45`, `?sort=;drop` all fall back silently | ☐ |
 | 14.2.4 | Never picked | Shows "365+ days" and "no recent activity" | ☐ |
 | 14.2.5 | Missing costs | Tied value shows `—` and is excluded from the KPI, which carries an "N SKUs missing cost" delta | ☐ |
-| 14.2.6 | **500-product cap** | With >500 SKUs it silently analyses the first 500 **by name** and shows a truncation notice. ⚠️ The notice's advice ("narrow with a warehouse filter or a shorter threshold") does **not** actually widen coverage. Record | ☐ |
+| 14.2.6 | **Whole-catalog analysis** *(regression)* | With >500 dormant SKUs the three summary KPIs cover the **entire** dormant set, the table shows the top 500 **by the sort you picked** (change the sort and the rows change), and the notice states the real numbers | ☐ |
 | 14.2.7 | Warehouse filter | A product with stock only in another facility drops out | ☐ |
 | 14.2.8 | Empty state | "No dead stock" / "Every product with on-hand inventory has been picked within the last N days. Healthy." | ☐ |
 
@@ -1061,9 +1070,9 @@ Shared engine; the same workbench serves suppliers and customers (§11.5).
 | 14.6.5 | Preview cap | 500 rows with "Showing the first 500 rows. Export CSV for the full set." | ☐ |
 | 14.6.6 | Facility scope | Comes from the active-facility cookie, not a URL param; the export link carries it | ☐ |
 | 14.6.7 | **Date boundaries are UTC** | A `since`/`until` filter uses UTC midnight, so a local-timezone tester sees boundary rows shift. Confirm and record | ☐ |
-| 14.6.8 | **Orders export truncation** | Export an Orders report covering many orders — line items are fetched **unpaginated**, so requested/allocated/picked can silently under-report. Verify against the seeded workspace | ☐ |
+| 14.6.8 | **Orders export totals** *(regression)* | Export an Orders report covering many orders — line items are now paged, so requested/allocated/picked must match the order detail pages. Verify against the seeded workspace | ☐ |
 | 14.6.9 | Members can build | `reports.manage` is a member default — a member can create, export **and delete** reports | ☐ |
-| 14.6.10 | **Delete has no confirm** | The Delete button deletes immediately. Record severity | ☐ |
+| 14.6.10 | **Delete confirms** *(regression)* | Delete asks first; cancelling keeps the report | ☐ |
 | 14.6.11 | Cross-org id | 404 | ☐ |
 
 ---
@@ -1076,7 +1085,7 @@ Shared engine; the same workbench serves suppliers and customers (§11.5).
 | 15.1.1 | Grid | 14 providers; meta "Connected: N", "Available: 14" | ☐ |
 | 15.1.2 | Only 4 are real | Slack, Webhooks, Resend, Shopify are connectable; the other 10 show "Not yet available" | ☐ |
 | 15.1.3 | Synthetic webhooks card | Appears as "connected" when ≥1 endpoint is active; pausing every endpoint moves it back to Available | ☐ |
-| 15.1.4 | **False header copy** | "Every connection is OAuth — credentials never touch our servers" is untrue for Slack, Resend and Webhooks, which all take pasted secrets. Record | ☐ |
+| 15.1.4 | Header copy is true *(regression)* | The copy now says most connections are OAuth and that pasted keys, webhook URLs and signing secrets are stored encrypted at rest and never shown again — which matches what Slack, Resend and Webhooks actually do | ☐ |
 | 15.1.5 | As a **member** | Requires `integrations.manage` — configuring should be blocked | ☐ |
 
 ### 15.2 `/integrations/[provider]` — Slack
@@ -1098,7 +1107,7 @@ Shared engine; the same workbench serves suppliers and customers (§11.5).
 | 15.3.3 | Live test | Saving sends a test email **to your own address** | ☐ |
 | 15.3.4 | Unverified domain | "Saved, but test send failed: … Check that your from-domain is verified in Resend." | ☐ |
 | 15.3.5 | Edit without re-pasting | The stored key is reused | ☐ |
-| 15.3.6 | **Ungated re-test** | `reTestResend` has **no `integrations.manage` check** — any signed-in member can trigger a send. Test and record | ☐ |
+| 15.3.6 | **Re-test is gated** *(regression)* | As a member without `integrations.manage`, re-test returns "Only admins can configure integrations". Same for the Shopify test and the webhook delivery log | ☐ |
 
 ### 15.4 Shopify
 | # | Case | Expected | Result |
@@ -1111,7 +1120,7 @@ Shared engine; the same workbench serves suppliers and customers (§11.5).
 | 15.4.6 | Order ingestion | `orders/create` lands an order with `source = shopify` | ☐ |
 | 15.4.7 | Unmapped lines | The banner links to `/integrations/shopify/mapping` with a count | ☐ |
 | 15.4.8 | Map & merge | Reassigns flagged lines onto the target and deletes the stub **only if nothing else references it** | ☐ |
-| 15.4.9 | **Keep as new** | ⚠️ Overwrites `products.notes` with "Confirmed from Shopify import", destroying any existing note. Record | ☐ |
+| 15.4.9 | **Keep as new** *(regression)* | Give the stub a note first, then confirm it — your note survives and the marker is appended, not substituted. Confirming twice does not duplicate the marker | ☐ |
 | 15.4.10 | Gate divergence | `/api/integrations/shopify/connect` checks **role**, while the server action checks `integrations.manage`. An admin with that permission stripped gets different answers from the two paths. Record | ☐ |
 | 15.4.11 | Disconnect | Confirm dialog; Shopify-side webhooks removed best-effort | ☐ |
 | 15.4.12 | No keys | Without `SHOPIFY_API_KEY`/`SECRET`, the page degrades with a clear message | ☐ |
@@ -1125,7 +1134,7 @@ Shared engine; the same workbench serves suppliers and customers (§11.5).
 | 15.5.4 | Test delivery | Arrives with `X-Nautilus-Event`, `X-Nautilus-Delivery`, `X-Nautilus-Timestamp`, `X-Nautilus-Signature` | ☐ |
 | 15.5.5 | Signature | HMAC-SHA256 of the **raw body** with your secret matches `sha256=<hex>` | ☐ |
 | 15.5.6 | Real event | Receive a PO → `po_received` delivered; record a variance → `cycle_count_variance` delivered | ☐ |
-| 15.5.7 | **Dead events** | Subscribe to `scan_burst` and `daily_summary` → ⚠️ **zero producers exist**, nothing will ever fire. Record as misleading UI | ☐ |
+| 15.5.7 | **Dead events removed** *(regression)* | `scan_burst` and `daily_summary` are no longer offered in any picker (Slack, Resend, webhooks) — only events that can actually fire. An endpoint that already stored one still renders its label rather than a raw slug | ☐ |
 | 15.5.8 | Retry ladder | Point at a 500 → backoff 15m / 1h / 4h / 12h, give up at 5 attempts; the **original delivery id** is reused | ☐ |
 | 15.5.9 | Retry drops | Pause an endpoint or unsubscribe the event → pending retries are dropped, not sent | ☐ |
 | 15.5.10 | URL is immutable | Editing an endpoint changes name and events only — a URL change needs delete + recreate. Confirm that's clear | ☐ |
@@ -1140,7 +1149,7 @@ Shared engine; the same workbench serves suppliers and customers (§11.5).
 | 15.6.4 | Webhook unconfigured | POST returns **503** | ☐ |
 | 15.6.5 | Bad signature | 400 "Signature verification failed" | ☐ |
 | 15.6.6 | Missing org metadata | A subscription event without `metadata.org_id` is **silently ignored**. Record | ☐ |
-| 15.6.7 | Concurrent events | Two rapid subscription events can race into duplicate `org_subscriptions` rows (read-then-write, no unique constraint). Test and record severity | ☐ |
+| 15.6.7 | **Subscription updates apply** *(regression)* | Complete a checkout, then change the plan and cancel it in Stripe. Each event must be reflected on `/settings/billing`. ⚠️ Before the fix the handler probed a column that does not exist, so **every event after the first was silently dropped** — a cancelled customer kept their plan. Verify status, seats and period end all track Stripe | ☐ |
 | 15.6.8 | **Tier limits are marketing only** | "Up to 2 facilities, 1k SKUs" is **not enforced anywhere**. Confirm before any sales conversation | ☐ |
 
 ### 15.7 Public API `/api/v1/*`
@@ -1167,7 +1176,7 @@ curl.exe -i -H "Authorization: Bearer YOUR_KEY" https://app.nautilusinventory.co
 | 15.7.13 | Rate limit | 130 requests in 60 s → `429` + `Retry-After` after 120. ⚠️ No `X-RateLimit-*` headers | ☐ |
 | 15.7.14 | Limit clamp | `?limit=9999` → clamped to 500; **no pagination beyond it** | ☐ |
 | 15.7.15 | Audit attribution | A scan posted by a key is attributed to the key's **issuer**, not to "system" | ☐ |
-| 15.7.16 | `/inventory` truncation | On a workspace with >1 000 location rows the totals silently truncate (no pagination). Verify against the seeded workspace | ☐ |
+| 15.7.16 | `/inventory` totals *(regression)* | On a workspace with >1 000 location rows the per-product totals are now complete (paged server-side). Cross-check one SKU against its detail page. A failed page returns 500 rather than a short 200 | ☐ |
 
 ### 15.8 Cron jobs
 All are **POST-only** with `Authorization: Bearer $CRON_SECRET`. Verification is constant-time and **fail-closed** (an unset secret 401s everything).
@@ -1206,12 +1215,12 @@ curl.exe -i -X POST https://app.nautilusinventory.com/api/cron/stockout-alerts -
 | 16.2.2 | Work modules | Activity and priority chips save; the sidebar and dashboard follow on the next load | ☐ |
 | 16.2.3 | Sidebar customiser | Reorder and hide; the header chip reads "Customized" / "<Industry> defaults" / "Default"; Reset restores | ☐ |
 | 16.2.4 | Locked items | Overview and Settings cannot be hidden, client-side or via a crafted POST | ☐ |
-| 16.2.5 | **Gate divergence** | The forms gate on **role** while the actions gate on **`settings.manage`**. An admin whose custom permissions dropped `settings.manage` sees an editable form that **silently does nothing**. Test and record | ☐ |
+| 16.2.5 | **Gate divergence** *(regression)* | Strip `settings.manage` from an admin → the industry and work-module forms render read-only, matching what the actions allow. No silently-dead form | ☐ |
 
 ### 16.3 `/settings/security`
 | # | Case | Expected | Result |
 |---|---|---|---|
-| 16.3.1 | Change password | Validates length ≥8 and match. ⚠️ **Never asks for the current password** — record as a security finding | ☐ |
+| 16.3.1 | Change password *(regression)* | Now asks for the **current** password and re-authenticates before changing it; a wrong one gives "That current password doesn’t match our records". An account created via Google with no password set can still set its first one by leaving that field blank | ☐ |
 | 16.3.2 | Enrol 2FA | QR + manual secret → 6-digit verify → the factor is listed | ☐ |
 | 16.3.3 | **Does 2FA gate login?** | Sign out and back in → ⚠️ **expected to FAIL — no AAL2 step-up exists.** Must not be claimed as a feature to customers | ☐ |
 | 16.3.4 | Abandoned enrollment | Start enrolment then navigate away without cancelling → an orphaned unverified factor. Record | ☐ |
@@ -1219,7 +1228,7 @@ curl.exe -i -X POST https://app.nautilusinventory.com/api/cron/stockout-alerts -
 | 16.3.6 | Devices list | Current device badged "This device" and has no Revoke button | ☐ |
 | 16.3.7 | Revoke a device | The other browser is signed out **on its next page load** (eventual, not immediate) | ☐ |
 | 16.3.8 | Foreign device id | A crafted revoke for another user's device does nothing | ☐ |
-| 16.3.9 | Duplicate device rows | Delete the `nb_device` cookie and reload → a **second** device row appears. Record | ☐ |
+| 16.3.9 | Stale device rows | Delete the `nb_device` cookie and reload → a second row appears, which is unavoidable (the cookie **is** the device identity). Confirm the list stays reviewable: entries silent for 90 days drop off | ☐ |
 
 ### 16.4 `/settings/members`
 | # | Case | Expected | Result |
@@ -1242,7 +1251,7 @@ curl.exe -i -X POST https://app.nautilusinventory.com/api/cron/stockout-alerts -
 | 16.4.16 | Reset to default | The chip returns to "· role default" | ☐ |
 | 16.4.17 | **Uncheck everything** | Silent no-op by design (anti-lockout) with **zero feedback**. Record as UX | ☐ |
 | 16.4.18 | Admin editing an admin | Silently refused — only an owner can. Record | ☐ |
-| 16.4.19 | **Multi-workspace role bug** | As a user who belongs to two workspaces, open this page in each. ⚠️ The page resolves your role **without the workspace cookie**, so the admin gate and the bulk-invite `orgId` can come from the wrong org. Test and record severity | ☐ |
+| 16.4.19 | **Multi-workspace correctness** *(regression)* | As a user in two workspaces, open this page in each. The role, the admin controls and the bulk-invite target must all follow the **active** workspace — and the member and invite lists must show **only** that workspace rows (they used to merge both) | ☐ |
 
 ### 16.5 `/settings/devices`
 | # | Case | Expected | Result |
@@ -1291,11 +1300,11 @@ curl.exe -i -X POST https://app.nautilusinventory.com/api/cron/stockout-alerts -
 | 16.9.4 | Drift guard | If stock moved since the request → "Stock changed to N since this was requested — reject and re-submit against current on-hand." | ☐ |
 | 16.9.5 | Double approve | The second attempt reports "Already reviewed" and does **not** double-apply | ☐ |
 | 16.9.6 | Deleted location | Approving a request whose location is gone → "Location no longer exists" | ☐ |
-| 16.9.7 | Threshold | Save a value; blank disables. ⚠️ The input has `min=1` but the server accepts **0** (meaning "approve everything") — that setting is unreachable from the UI. Record | ☐ |
+| 16.9.7 | Threshold *(regression)* | Save a value; blank disables; **0 is now enterable** and the hint explains it means every adjustment needs approval. Non-admins see "Every adjustment" rather than "0 units" | ☐ |
 | 16.9.8 | Negative threshold | A crafted `-5` is treated as null (disabled) | ☐ |
 | 16.9.9 | Reason codes | Seed the default set; toggle "Require approval" and Enable/Disable | ☐ |
 | 16.9.10 | Slug collisions | "Damaged goods", "damaged-goods" and "Damaged  Goods!" all slugify the same → the second is refused with "That reason already exists" | ☐ |
-| 16.9.11 | Long labels | Two 60-char labels differing only after character 40 collide (codes truncate at 40). Record | ☐ |
+| 16.9.11 | Long labels *(regression)* | Two 60-char labels differing only after character 40 still collide, but the error now names the reason already holding the code and explains the 40-character rule | ☐ |
 | 16.9.12 | Emoji-only label | "Label must contain letters or numbers" | ☐ |
 | 16.9.13 | Without `adjustments.approve` | Pending rows show **"Awaiting admin"**; the threshold is plain text; the add-reason form is hidden | ☐ |
 
@@ -1315,7 +1324,7 @@ Gated on `profiles.is_staff`; a non-staff user is **silently redirected to `/`**
 | 16.11.5 | Unicode name | An emoji-only or symbols-only name — confirm the slug is never empty | ☐ |
 | 16.11.6 | No facility | A staff-onboarded workspace is created **without** a facility, giving a different empty state than self-signup. Confirm | ☐ |
 | 16.12.1 | Workspace detail | KPIs (Members, Facilities, Products, Scans 30d), member table, subscription block | ☐ |
-| 16.12.2 | **Stale copy** | "Billing is not yet wired to Stripe" contradicts `/settings/billing`, which is wired. Record | ☐ |
+| 16.12.2 | Copy is accurate *(regression)* | The stale "not yet wired to Stripe" claim is gone; the panel says it is a read-only mirror and where to make changes | ☐ |
 | 16.12.3 | Unknown id | 404 | ☐ |
 
 ---
@@ -1395,9 +1404,9 @@ Four export routes share one encoder.
 | 17.4.2 | **Numbers stay numeric** | A negative unit cost survives as a number Excel will `SUM()`, not as text | ☐ |
 | 17.4.3 | Quoting | A value containing `a,b"c` and an embedded newline round-trips correctly | ☐ |
 | 17.4.4 | Inventory export mirrors the page | Set search + category + low-stock, export, compare row counts exactly | ☐ |
-| 17.4.5 | **Orders export auth** | `/api/orders/export` has **no explicit auth check** — an unauthenticated direct fetch may return a 200 header-only CSV instead of 401. Test and record severity | ☐ |
-| 17.4.6 | Orders export bad status | `?status=bogus` is passed through as a literal status → an empty file with **no explanation**. Record | ☐ |
-| 17.4.7 | Orders export cap | Hard 5 000-row limit with **no truncation notice**. Record | ☐ |
+| 17.4.5 | **Orders export auth** *(regression)* | An unauthenticated direct fetch of `/api/orders/export` returns **401**, not a 200 header-only CSV. As a multi-workspace user, the file contains only the active workspace orders | ☐ |
+| 17.4.6 | Orders export bad status *(regression)* | `?status=bogus` returns **400** naming the valid status groups, instead of a silently empty file | ☐ |
+| 17.4.7 | Orders export cap *(regression)* | The 5 000-row cap is now 100 000, matching the inventory export | ☐ |
 | 17.4.8 | Report export gate | Any org member can export **any** saved report (no `reports.manage` check on export). Confirm intended | ☐ |
 | 17.4.9 | Filenames | A facility name with punctuation produces a safe slugified filename | ☐ |
 
@@ -1527,10 +1536,64 @@ Run on the **exact environment** the customer will see, from a **fresh incognito
 
 ## 22. Defect register
 
-### 22.1 Fixed since the last revision — **re-test as regressions, don't re-file**
+### 22.1 Fixed in the 2026-09-12 pass — **re-test as regressions, don't re-file**
+Every row below was open when this plan was written and has since been fixed. The case column is where to confirm it.
+
 | # | Sev | Bug | Case |
 |---|---|---|---|
-| 1 | S2 | Inventory **Export CSV → 404** (link pointed at `/api/inventory/export`) | 7.1.7 |
+| 11 | S2 | `/inventory/[id]` and `/scan` summed locations **without `is_active`**, so soft-deleted slots still counted toward on-hand, ATP and inventory value while the list RPC excluded them — the same SKU read differently on three screens | 7.3.7 |
+| 12 | S2 | `removeLocation` bypassed the adjustment approval threshold entirely: editing 10,000 → 0 queued, removing the slot wrote the same units off silently | 8.5.16 |
+| 13 | S2 | ASN receive had **no optimistic lock** (the PO path has one) — concurrent receives double-counted | 12.7.6 |
+| 14 | S2 | A crafted POST could receive against a **cancelled** ASN and flip it back to `in_transit` | 12.7.7 |
+| 15 | S2 | `markPoCancelled` had no status filter — a **fully-received** PO could be cancelled | 12.3.13 |
+| 16 | S2 | `/settings/members` resolved the caller's role **without the workspace cookie**, and its member/invite queries had **no org filter at all** — a multi-workspace user got the wrong admin gate and saw both workspaces' members merged | 16.4.19 |
+| 17 | S2 | `/api/orders/export` had no auth check, no org filter, passed an unknown status through as a literal, and capped silently at 5,000 rows | 17.4.5–17.4.7 |
+| 18 | S2 | `/analytics` computed action mix, units on hand and the section split from **unpaginated** queries — the bars disagreed with the KPIs above them past ~1,000 rows | 14.1.5 |
+| 19 | S2 | Dead stock analysed only the **first 500 products by name**, and its truncation notice gave advice that could not widen coverage | 14.2.6 |
+| 20 | S2 | `runOrders` fetched order items unpaginated — large report exports under-reported requested/allocated/picked | 14.6.8 |
+| 21 | S2 | `/api/v1/inventory` had no pagination — public API totals truncated past ~1,000 location rows | 15.7.16 |
+| 22 | S2 | **Stripe subscription updates never applied.** The handler probed an `id` column the table does not have, so the lookup always failed, every event took the insert branch, and each one after the first violated the primary key — silently. A cancelled customer kept their plan | 15.6.7 |
+| 23 | S2 | `saveLayout` did **no server-side validation** of section code length, uniqueness, or bays/levels ≥ 1 | 8.3.9 |
+| 24 | S2 | `placeLocation` did not bounds-check bay/level against the section (relocate did), so stock could be created in a slot nothing could reach | 8.5.5 |
+| 25 | S2 | `/auth/signout` was a state-changing **GET** with no CSRF protection | 4.5.6 |
+| 26 | S2 | `/settings/security` changed a password **without asking for the current one** | 16.3.1 |
+| 27 | S2 | Blueprint import destroyed every existing section with no confirmation | 8.3.13 |
+| 28 | S2 | `/admin/onboard` left an orphaned auth user on a partial failure, and its own duplicate-account guard then **blocked every retry** for that address | 16.11.4 |
+| 29 | S2 | The facility builder was not permission-gated — a member could edit for twenty minutes and only fail at Save | 8.3.18 |
+| 30 | S3 | `voidCycleCount` was permission-gated and implemented but **no UI called it** — the `voided` status was unreachable | 9.3.12 |
+| 31 | S3 | Building a wave when nothing was eligible still created an **empty wave** | 13.6.5 |
+| 32 | S3 | Anyone could steal a claimed pick wave or work order | 13.7.5, 10.4.11 |
+| 33 | S3 | ASN over-receipt **silently clamped** while the PO path errored | 12.7.3 |
+| 34 | S3 | ASN lot numbers never created a `lots` row | 12.7.8 |
+| 35 | S3 | `/serials` header counts came from the first 500 rows only | 10.2.6 |
+| 36 | S3 | Serial registration silently discarded everything past 1,000 | 10.2.4 |
+| 37 | S3 | `reTestResend`, `testShopify` and `getRecentDeliveries` lacked the `integrations.manage` gate their siblings have | 15.3.6 |
+| 38 | S3 | `keepStubAsProduct` unconditionally overwrote `products.notes` | 15.4.9 |
+| 39 | S3 | `scan_burst` / `daily_summary` webhook events had **no producers** — subscribing to them could never deliver anything | 15.5.7 |
+| 40 | S3 | `/reports/[id]` Delete had no confirmation dialog | 14.6.10 |
+| 41 | S3 | Normal PO receipts wrote no `scan_history` row (ASN receipts did) | 12.3.6 |
+| 42 | S3 | The adjustment threshold input had `min=1` while the server accepted `0` ("approve everything"), making that setting unreachable | 16.9.7 |
+| 43 | S3 | Adjustment reason codes truncate to 40 characters, so long labels collided with an unexplained error | 16.9.11 |
+| 44 | S3 | Middleware dropped the query string when redirecting to login | 4.1.7 |
+| 45 | S3 | `/login` never rendered the `revoked=1` flag — remote sign-out looked like a random logout | 4.1.12 |
+| 46 | S3 | Device sessions accumulated forever, so the list stopped being reviewable | 16.3.9 |
+| 47 | S3 | `/settings/navigation` gated its forms on **role** but its actions on **`settings.manage`** | 16.2.5 |
+| 48 | S3 | Password reset answered a throttled request differently from a delivered one | 4.3.3 |
+| 49 | S3 | `/notifications` had no chips for the `lot_expiry` / `cycle_count_queue` kinds the crons emit, and loaded every row with no limit | 5.5.3, 5.5.9 |
+| 50 | S3 | `/cycle-counts` and `/transfers` ignored the active-facility scope every other list honours | 5.3.4 |
+| 51 | S3 | The invite "Email mismatch" screen offered no way to sign out — a dead end | 4.6.4 |
+| 52 | S3 | Registering a product with a quantity on a workspace with no facility **silently dropped the count** | 7.2.5 |
+| 53 | S4 | `/(app)/api/team/import/template` was a dead route returning a different CSV from the live one | deleted |
+| 54 | S4 | `/integrations` claimed "Every connection is OAuth — credentials never touch our servers" while three of the four take pasted secrets | 15.1.4 |
+| 55 | S4 | `/admin/workspace/[id]` said "Billing is not yet wired to Stripe" — it is | 16.12.2 |
+| 56 | S4 | `/analytics` showed a hard-coded "Last sync: Just now" | 14.1.2 |
+| 57 | S4 | The facility viewer had no empty-state copy for a facility with no layout | 8.2.5 |
+| 58 | S4 | "Adjustment sent for approval" rendered in danger red, teaching operators to read a working governance flow as a failure | 8.5.11 |
+
+### 22.2 Fixed in the previous pass — also regressions
+| # | Sev | Bug | Case |
+|---|---|---|---|
+| 1 | S2 | Inventory **Export CSV → 404** | 7.1.7 |
 | 2 | S2 | Product detail **lot supplier link → 404** | 7.3.8 |
 | 3 | S2 | **QC pass/fail errors silently swallowed** | 12.8.4 |
 | 4 | S3 | Duplicate `/api/inventory/import-template` routes returning different CSVs | 7.4.24 |
@@ -1538,66 +1601,26 @@ Run on the **exact environment** the customer will see, from a **fresh incognito
 | 6 | S2 | Single-invite fallback said "share the link manually" but never showed the link | 16.4.2 |
 | 7 | S1 | No last-owner guard on `removeMember` | 16.4.13 |
 | 8 | S2 | API key **scopes never enforced** | 15.7.5 |
-| 9 | S3 | **Forecast Apply had no permission check** — any member could rewrite reorder points | 14.3.4 |
-| 10 | S3 | Getting-started checklist `slice(0,7)` silently dropped "Connect your store" | 6.1.6 |
+| 9 | S3 | **Forecast Apply had no permission check** | 14.3.4 |
+| 10 | S3 | Getting-started checklist silently dropped "Connect your store" | 6.1.6 |
 
-### 22.2 Open — confirmed by code inspection
-Testers don't need to rediscover these; the listed case confirms them.
-
-| # | Sev | Bug | Location | Case |
+### 22.3 Still open
+| # | Sev | Issue | Where | Why it is still open |
 |---|---|---|---|---|
-| 11 | S2 | `/inventory/[id]` and `/scan` sum locations **without `is_active`**, so soft-deleted rows still count toward on-hand, ATP and value — while the list RPC excludes them. **Numbers disagree between screens** | `inventory/[id]/page.tsx`, `scan/actions.ts` | 7.3.7 |
-| 12 | S2 | `removeLocation` bypasses the adjustment approval threshold entirely | `sections/[sectionId]/actions.ts` | 8.5.16 |
-| 13 | S2 | ASN receive has **no optimistic lock** (the PO path does) — concurrent receives double-count | `inbound/actions.ts` | 12.7.6 |
-| 14 | S2 | A crafted POST can receive against a **cancelled** ASN and flip it back to `in_transit` | `inbound/actions.ts` | 12.7.7 |
-| 15 | S2 | `markPoCancelled` has no status filter — a **fully-received** PO can be cancelled | `purchase-orders/actions.ts` | 12.3.13 |
-| 16 | S2 | `/settings/members` resolves the caller's role **without the workspace cookie** — wrong-org gate for multi-workspace users | `settings/members/page.tsx` | 16.4.19 |
-| 17 | S2 | Partial restock closes a return permanently; the remainder can never be restocked | `returns/actions.ts` | 13.10.8 |
-| 18 | S2 | `/api/orders/export` has no explicit auth check and swallows query errors into an empty 200 CSV | `api/orders/export/route.ts` | 17.4.5 |
-| 19 | S2 | `/analytics` computes action-mix %, units on hand and section distribution from **unpaginated** queries — numbers drift past ~1 000 rows | `analytics/page.tsx` | 14.1.5 |
-| 20 | S2 | Dead-stock analyses only the **first 500 products by name**, and the truncation notice's advice doesn't help | `analytics/dead-stock` | 14.2.6 |
-| 21 | S2 | `runOrders` fetches order items unpaginated — large report exports silently under-report | `lib/data/reports.ts` | 14.6.8 |
-| 22 | S2 | `/api/v1/inventory` has no pagination — totals truncate past ~1 000 location rows | `api/v1/inventory/route.ts` | 15.7.16 |
-| 23 | S2 | `assemble_kit`'s sufficiency check omits the `is_active`/`quarantined` filters the UI applies — a crafted complete can consume quarantined stock | `app.assemble_kit` | 10.4.12 |
-| 24 | S2 | `saveLayout` does **no server-side validation** of section code length, uniqueness, or bays/levels ≥ 1 | `builder/actions.ts` | 8.3.9 |
-| 25 | S2 | `placeLocation` doesn't bounds-check bay/level against the section (relocate does) | `sections/[sectionId]/actions.ts` | 8.5.5 |
-| 26 | S2 | `/auth/signout` is a state-changing **GET** with no CSRF protection | `auth/signout/route.ts` | 4.5.6 |
-| 27 | S2 | `/settings/security` changes a password **without asking for the current one** | `PasswordChangeForm.tsx` | 16.3.1 |
-| 28 | S2 | Blueprint import destroys existing sections with no confirmation | `BuilderShell.tsx` | 8.3.13 |
-| 29 | S2 | `/admin/onboard` is non-atomic and **self-blocking on retry** after a partial failure | `admin/onboard/actions.ts` | 16.11.4 |
-| 30 | S2 | Stripe subscription upsert is read-then-write with no unique constraint — concurrent events can duplicate rows | `api/webhooks/stripe/route.ts` | 15.6.7 |
-| 31 | S3 | `voidCycleCount` exists and is gated but **no UI calls it** — the `voided` status is unreachable | `cycle-counts/actions.ts` | 9.3.12 |
-| 32 | S3 | Building a wave when nothing is eligible still creates an **empty wave** | `picking/actions.ts` | 13.6.5 |
-| 33 | S3 | Anyone can steal a claimed pick wave or work order | `picking/actions.ts`, `work-orders/actions.ts` | 13.7.5, 10.4.11 |
-| 34 | S3 | ASN over-receipt **silently clamps** while the PO path errors | `inbound/actions.ts` | 12.7.3 |
-| 35 | S3 | ASN lot numbers are free text and never create a `lots` row | `inbound/actions.ts` | 12.7.8 |
-| 36 | S3 | `/serials` header counts are computed from the first 500 rows only | `serials/page.tsx` | 10.2.6 |
-| 37 | S3 | Serial registration silently drops everything past 1 000 | `serials/actions.ts` | 10.2.4 |
-| 38 | S3 | `reTestResend`, `testShopify` and `getRecentDeliveries` lack the `integrations.manage` gate their siblings have | `integrations/*/actions.ts` | 15.3.6 |
-| 39 | S3 | `keepStubAsProduct` unconditionally overwrites `products.notes` | `shopify/mapping/actions.ts` | 15.4.9 |
-| 40 | S3 | `scan_burst` / `daily_summary` webhook events have **no producers** | `lib/integrations/types.ts` | 15.5.7 |
-| 41 | S3 | `/reports/[id]` Delete has no confirmation dialog | `reports/[id]/page.tsx` | 14.6.10 |
-| 42 | S3 | Normal PO receipts write no `scan_history` row (ASN receipts do) | `purchase-orders/actions.ts` | 12.3.6 |
-| 43 | S3 | `/settings/adjustments` threshold input has `min=1` but the server accepts `0` ("approve everything"), so that setting is unreachable from the UI | `settings/adjustments` | 16.9.7 |
-| 44 | S3 | Adjustment reason codes truncate to 40 chars, so long labels collide | `settings/adjustments/actions.ts` | 16.9.11 |
-| 45 | S3 | Middleware drops the query string when redirecting to login | `lib/supabase/middleware.ts` | 4.1.7 |
-| 46 | S3 | `/login` never renders the `revoked=1` flag — remote sign-out looks like a random logout | `login/page.tsx` | 4.1.12 |
-| 47 | S3 | Deleting the `nb_device` cookie mints a **duplicate** device row | `lib/supabase/middleware.ts` | 16.3.9 |
-| 48 | S3 | `/settings/navigation` gates forms on **role** but actions on **`settings.manage`** | `settings/navigation` | 16.2.5 |
-| 49 | S3 | Password-reset rate limiting leaks an enumeration oracle (rate-limit message ≠ generic success) | `(auth)/actions.ts` | 4.3.3 |
-| 50 | S3 | `/notifications` has no filter chip for the `lot_expiry` / `cycle_count_queue` kinds the crons emit, and loads every row with no limit | `notifications/page.tsx` | 5.5.3, 5.5.9 |
-| 51 | S3 | Slot capacity shows "Over" but is never enforced | `sections/[sectionId]` | 8.5.6 |
-| 52 | S3 | `/cycle-counts` and `/transfers` ignore the active-facility scope every other list honours | both pages | 5.3.4 |
-| 53 | S3 | The facility builder isn't permission-gated — a member can edit for 20 minutes and only fail at Save | `builder/page.tsx` | 8.3.18 |
-| 54 | S3 | Invite "Email mismatch" offers no sign-out link — a dead end | `invite/[token]/page.tsx` | 4.6.4 |
-| 55 | S4 | `/(app)/api/team/import/template` is a **dead route** — nothing links to it, and it returns a different CSV from the live one | route handler | §3 index |
-| 56 | S4 | `/integrations` header claims "Every connection is OAuth — credentials never touch our servers" while three of the four take pasted secrets | `integrations/page.tsx` | 15.1.4 |
-| 57 | S4 | `/admin/workspace/[id]` says "Billing is not yet wired to Stripe" — it is | `admin/workspace/[id]/page.tsx` | 16.12.2 |
-| 58 | S4 | `/analytics` shows a hard-coded "Last sync: Just now" | `analytics/page.tsx` | 14.1.2 |
-| 59 | S4 | Mobile offline banner / pending badge are never rendered | `lib/offlineUI.tsx` | 19.15 |
-| 60 | S4 | Facility viewer has no empty-state copy for a facility with no layout | `facilities/[id]` | 8.2.5 |
+| 59 | S4 | Mobile offline banner / pending badge are never rendered | `lib/offlineUI.tsx` (**mobile repo**, `D:\hello-world2`) | Different repository — not in this codebase |
+| 60 | S3 | An ASN receive racing a **PO-page** receive on the same PO line can still lose an update | `app/(app)/inbound/actions.ts` | The ASN-line lock closes the double-count within the ASN path. Closing it across both paths means moving the PO-line write into an RPC — a bigger change than this pass, and worth doing deliberately |
+| 61 | S4 | A **standalone** (non-PO-linked) ASN line creates the lot row but has nowhere to store `lot_id` | `app.asn_lines` | The table has no `lot_id` column; adding one needs a migration. PO-linked lines are unaffected — the id lands on the PO line, which is what FEFO and the Lots registry read |
 
-### 22.3 Known gaps, by design or accepted
+### 22.4 Reclassified after verification — **not bugs**
+Both were reported by the survey pass and disproved by reading the live database. Recorded so nobody re-files them.
+
+| Claim | Reality |
+|---|---|
+| `app.assemble_kit` consumes quarantined or inactive stock because its sufficiency check omits the filters the UI applies | **False.** `app.consume_for_build` filters `is_active = true and quarantined = false` on its lock, its availability sum **and** its consumption loop. The UI and the RPC agree. Case 10.4.12 now verifies the crafted POST as well as the button |
+| Concurrent Stripe events can race into duplicate `org_subscriptions` rows | **False** — `org_subscriptions` is keyed `PRIMARY KEY (org_id)`, so duplicates are impossible. The real defect in that handler was worse and unrelated (item 22 above) |
+| Slot capacity "shows Over but is not enforced" | **Working as intended.** A manual placement records what is physically on the shelf, so it must not be blocked; the slotting optimiser does refuse to *suggest* an over-capacity move. Case 8.5.6 now tests both halves |
+
+### 22.5 Known gaps, by design or accepted
 - The desk app cannot pick (finding A).
 - Receiving does not create on-hand except via QC hold (finding B).
 - Hand-created orders never link a customer (finding C).

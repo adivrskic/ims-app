@@ -61,6 +61,9 @@ export async function lookupBarcode(
     `
     )
     .eq("barcode", trimmed)
+    // Soft-deleted slots must not count toward the on-hand figures this panel
+    // shows, or a scanned SKU reads higher here than on the inventory list.
+    .eq("locations.is_active", true)
     .limit(1)
     .maybeSingle();
 

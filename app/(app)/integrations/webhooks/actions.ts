@@ -188,6 +188,9 @@ export async function testWebhookEndpoint(
 export async function getRecentDeliveries(endpointId: string) {
   const ctx = await getCurrentOrgContext();
   if (!ctx) return [];
+  // Delivery bodies/statuses are integration-admin territory, same as the
+  // endpoints themselves — an empty log is the only shape callers expect.
+  if (!ctx.can("integrations.manage")) return [];
 
   const admin = createAdminClient();
   const { data } = await admin

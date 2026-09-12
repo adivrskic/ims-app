@@ -7,6 +7,7 @@ import {
   API_RATE_LIMIT,
 } from "@/lib/apiAuth";
 import { rateLimit } from "@/lib/rateLimit";
+import { fetchAllPaged } from "@/lib/data/paginate";
 
 export const dynamic = "force-dynamic";
 
@@ -31,24 +32,35 @@ export async function GET(req: Request) {
   const warehouseId = new URL(req.url).searchParams.get("warehouse_id");
   const admin = createAdminClient();
 
-  let q = admin
-    .from("locations")
-    .select("product_id, quantity")
-    .eq("org_id", auth.orgId)
-    .eq("is_active", true)
-    .eq("quarantined", false);
-  if (warehouseId) q = q.eq("warehouse_id", warehouseId);
-  const { data, error } = await q;
-
-  if (error) {
-    return Response.json({ error: error.message }, { status: 500 });
+  // Paginate: a single .select() stops at PostgREST's ~1000-row cap, so any
+  // org with more location rows than that got totals that were quietly too
+  // low — wrong numbers on a public contract. Ordered by id so the pages can't
+  // overlap or skip. Admin client bypasses RLS, hence the explicit org_id.
+  let rows: Array<{ product_id: string | null; quantity: number | null }>;
+  try {
+    rows = await fetchAllPaged<{
+      product_id: string | null;
+      quantity: number | null;
+    }>((from, to) => {
+      let q = admin
+        .from("locations")
+        .select("product_id, quantity")
+        .eq("org_id", auth.orgId)
+        .eq("is_active", true)
+        .eq("quarantined", false)
+        .order("id", { ascending: true });
+      if (warehouseId) q = q.eq("warehouse_id", warehouseId);
+      return q.range(from, to).throwOnError();
+    });
+  } catch (e) {
+    return Response.json(
+      { error: e instanceof Error ? e.message : "Query failed" },
+      { status: 500 }
+    );
   }
 
   const onHand = new Map<string, number>();
-  for (const l of (data ?? []) as Array<{
-    product_id: string | null;
-    quantity: number | null;
-  }>) {
+  for (const l of rows) {
     if (!l.product_id) continue;
     onHand.set(
       l.product_id,

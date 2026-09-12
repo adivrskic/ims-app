@@ -41,6 +41,47 @@ export async function saveLayout({
     return { error: "Only admins can edit facility layouts" };
   }
 
+  // Validate server-side. The inspector clamps these values, but the payload is
+  // client-supplied: a crafted save could write a 10-character code (which the
+  // char(4) column truncates), duplicate codes that make bay labels ambiguous,
+  // or zero bays/levels — a section with no slots that nothing can be placed in.
+  for (const s of sections) {
+    const code = (s.code ?? "").trim();
+    if (!code) return { error: "Every section needs a code" };
+    if (code.length > 4) {
+      return {
+        error: `Section code "${code}" is too long — 4 characters or fewer`,
+      };
+    }
+    if (!(s.name ?? "").trim()) {
+      return { error: `Section ${code} needs a name` };
+    }
+    if (!Number.isInteger(s.total_bays) || s.total_bays < 1) {
+      return { error: `Section ${code}: bays must be a whole number, 1 or more` };
+    }
+    if (!Number.isInteger(s.total_levels) || s.total_levels < 1) {
+      return {
+        error: `Section ${code}: levels must be a whole number, 1 or more`,
+      };
+    }
+    if (
+      s.slot_capacity !== null &&
+      (!Number.isInteger(s.slot_capacity) || s.slot_capacity < 1)
+    ) {
+      return {
+        error: `Section ${code}: slot capacity must be a whole number, 1 or more`,
+      };
+    }
+  }
+
+  const codes = sections.map((s) => (s.code ?? "").trim().toUpperCase());
+  const duplicate = codes.find((c, i) => codes.indexOf(c) !== i);
+  if (duplicate) {
+    return {
+      error: `Two sections share the code "${duplicate}" — codes must be unique within a facility`,
+    };
+  }
+
   if (deletedSectionIds.length > 0) {
     const { error } = await ctx.supabase
       .from("sections")

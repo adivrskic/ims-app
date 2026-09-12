@@ -62,7 +62,7 @@ export async function keepStubAsProduct(formData: FormData): Promise<void> {
 
   const { data: prod } = await ctx.supabase
     .from("products")
-    .select("id")
+    .select("id, notes")
     .eq("id", stubId)
     .eq("org_id", ctx.orgId)
     .maybeSingle();
@@ -74,11 +74,21 @@ export async function keepStubAsProduct(formData: FormData): Promise<void> {
     .update({ needs_mapping: false })
     .eq("product_id", stubId)
     .eq("needs_mapping", true);
-  await ctx.supabase
-    .from("products")
-    .update({ notes: "Confirmed from Shopify import" })
-    .eq("id", stubId)
-    .eq("org_id", ctx.orgId);
+  // Notes are the customer's field: only stamp the confirmation when it's
+  // empty, otherwise append so nothing they wrote is lost.
+  const CONFIRMED_NOTE = "Confirmed from Shopify import";
+  const existingNotes = ((prod as { notes: string | null }).notes ?? "").trim();
+  if (!existingNotes.includes(CONFIRMED_NOTE)) {
+    await ctx.supabase
+      .from("products")
+      .update({
+        notes: existingNotes
+          ? `${existingNotes}\n\n${CONFIRMED_NOTE}`
+          : CONFIRMED_NOTE,
+      })
+      .eq("id", stubId)
+      .eq("org_id", ctx.orgId);
+  }
 
   revalidatePath("/integrations/shopify/mapping");
   revalidatePath("/integrations/shopify");

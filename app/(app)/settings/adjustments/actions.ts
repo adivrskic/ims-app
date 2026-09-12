@@ -58,7 +58,24 @@ export async function addReason(
     requires_approval: requiresApproval,
   });
   if (error) {
-    if (error.code === "23505") return { error: "That reason already exists" };
+    if (error.code === "23505") {
+      // The code is a 40-char slug of the label, so two long labels that only
+      // differ past that cut collide. Name the reason already holding the code
+      // so the clash is explainable instead of looking like a phantom.
+      const { data: clash } = await ctx.supabase
+        .from("adjustment_reasons")
+        .select("label")
+        .eq("org_id", ctx.orgId)
+        .eq("code", code)
+        .maybeSingle();
+      const holder = (clash as { label: string } | null)?.label;
+      if (holder && holder !== label) {
+        return {
+          error: `“${holder}” already uses the code ${code}. Codes are the first 40 characters of the label — make the two labels differ earlier.`,
+        };
+      }
+      return { error: `“${label}” already exists` };
+    }
     return { error: error.message };
   }
   revalidatePath("/settings/adjustments");

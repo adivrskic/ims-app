@@ -5,9 +5,11 @@ import { Badge } from "@/components/ui/Badge";
 import { SectionTitle } from "@/components/ui/SectionTitle";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { NewCountForm } from "./NewCountForm";
+import { VoidCountButton } from "./VoidCountButton";
 import { Layers, X, ChevronRight } from "lucide-react";
 import { CycleCountsRealtime } from "@/components/realtime/PageRealtime";
 import { getCurrentOrgContext } from "@/lib/data/user";
+import { getActiveScope } from "@/lib/facilityScope";
 import { getCycleCountsPageData } from "@/lib/data/cycleCounts";
 import { CycleCountPriorityList } from "@/components/cycle-counts/CycleCountPriorityList";
 import { CountQueueList } from "@/components/cycle-counts/CountQueueList";
@@ -51,6 +53,8 @@ export default async function CycleCountsPage({
   // cross-request cache (lib/data/cycleCounts.ts), keyed by org + product +
   // variance filter and tagged tags.cycleCounts / tags.inventory.
   const ctx = await getCurrentOrgContext();
+  const scope = await getActiveScope();
+  const canVoid = ctx?.can("cycle_counts.void") ?? false;
   const reasons = ctx
     ? (await getReasons(await createClient(), ctx.orgId, true)).map((r) => ({
         code: r.code,
@@ -61,6 +65,7 @@ export default async function CycleCountsPage({
     ? await getCycleCountsPageData(ctx.orgId, {
         productId: productParam ?? null,
         varianceOnly,
+        facilityId: scope.mode === "single" ? scope.id : null,
       })
     : null;
 
@@ -450,6 +455,12 @@ export default async function CycleCountsPage({
                         </span>
                       </Td>
                       <Td align="right">
+                        {canVoid && row.status !== "voided" && (
+                          <VoidCountButton
+                            id={row.id}
+                            productName={product?.name ?? "this product"}
+                          />
+                        )}
                         {product && (
                           <Link
                             href={`/inventory/${product.id}`}

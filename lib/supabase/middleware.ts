@@ -95,7 +95,12 @@ export async function updateSession(request: NextRequest) {
   if (!user && !isAuthPath) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
-    url.searchParams.set("next", path);
+    // Carry the query string, not just the path. A deep link like
+    // /orders?status=open used to come back as a bare /orders after signing in,
+    // silently dropping the filter the link existed to apply.
+    const target = path + request.nextUrl.search;
+    url.search = "";
+    url.searchParams.set("next", target);
     return NextResponse.redirect(url);
   }
 

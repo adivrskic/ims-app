@@ -12,6 +12,7 @@ import { PasswordStrength } from "@/components/auth/PasswordStrength";
 
 export function PasswordChangeForm() {
   const supabase = createClient();
+  const [current, setCurrent] = useState("");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [busy, setBusy] = useState(false);
@@ -21,6 +22,7 @@ export function PasswordChangeForm() {
   } | null>(null);
 
   const reset = () => {
+    setCurrent("");
     setPassword("");
     setConfirm("");
   };
@@ -42,6 +44,44 @@ export function PasswordChangeForm() {
     }
 
     setBusy(true);
+
+    // Re-authenticate before changing the password. Supabase's updateUser only
+    // needs a valid session, so without this anyone who reaches an unlocked
+    // machine — or borrows a session another way — can lock the real owner out
+    // of their own account without ever knowing the old password.
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    const email = user?.email ?? "";
+    // An account created purely through Google has no password yet, so there is
+    // nothing to confirm; this form is how they set their first one.
+    const hasPassword = (user?.identities ?? []).some(
+      (i) => i.provider === "email"
+    );
+
+    if (hasPassword) {
+      if (!current) {
+        setBusy(false);
+        setFeedback({
+          kind: "error",
+          message: "Enter your current password to confirm this change",
+        });
+        return;
+      }
+      const { error: reauthError } = await supabase.auth.signInWithPassword({
+        email,
+        password: current,
+      });
+      if (reauthError) {
+        setBusy(false);
+        setFeedback({
+          kind: "error",
+          message: "That current password doesn't match our records",
+        });
+        return;
+      }
+    }
+
     const { error } = await supabase.auth.updateUser({ password });
     setBusy(false);
 
@@ -57,8 +97,16 @@ export function PasswordChangeForm() {
     <form onSubmit={submit}>
       <FormSection
         title="Change password"
-        description="Pick something memorable but at least 8 characters. Your active sessions will stay signed in."
+        description="Confirm your current password, then pick a new one of at least 8 characters. Your active sessions will stay signed in. (Signed up with Google and never set a password? Leave the first field blank.)"
       >
+        <PasswordFieldRow
+          label="Current password"
+          name="current_password"
+          autoComplete="current-password"
+          value={current}
+          onChange={setCurrent}
+        />
+
         <PasswordFieldRow
           label="New password"
           name="new_password"

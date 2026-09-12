@@ -75,7 +75,7 @@ export default async function IntegrationsPage() {
       <PageHeader
         eyebrow="Configure"
         title="Integrations"
-        description="Connect Nautilus to your storefront, accounting, shipping, and notification stack. Every connection is OAuth — credentials never touch our servers."
+        description="Connect Nautilus to your storefront, accounting, shipping, and notification stack. Most connections are OAuth; where a provider needs a pasted key, webhook URL or signing secret, we store it encrypted at rest and never show it again."
         meta={[
           {
             label: "Connected",

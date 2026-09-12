@@ -147,21 +147,30 @@ async function runOrders(
   const orderList = (orders ?? []) as Array<Record<string, unknown>>;
   if (orderList.length === 0) return [];
 
-  const { data: items } = await supabase
-    .from("order_items")
-    .select("order_id, quantity_requested, quantity_allocated, quantity_picked")
-    .in(
-      "order_id",
-      orderList.map((o) => o.id as string)
-    );
-
-  const agg = new Map<string, { req: number; alloc: number; picked: number }>();
-  for (const it of (items ?? []) as Array<{
+  // Paginate: the ORDER rows are limited, but their line items are not — an
+  // export of a few hundred multi-line orders blows past PostgREST's 1000-row
+  // cap and the requested/allocated/picked sums come back silently short.
+  // Ordered by id so the pages can't overlap or skip. (order_items carries no
+  // org_id of its own; the ids come from orders already scoped to this org.)
+  const orderIds = orderList.map((o) => o.id as string);
+  const items = await fetchAllPaged<{
     order_id: string;
     quantity_requested: number | null;
     quantity_allocated: number | null;
     quantity_picked: number | null;
-  }>) {
+  }>((from, to) =>
+    supabase
+      .from("order_items")
+      .select(
+        "order_id, quantity_requested, quantity_allocated, quantity_picked"
+      )
+      .in("order_id", orderIds)
+      .order("id", { ascending: true })
+      .range(from, to)
+  );
+
+  const agg = new Map<string, { req: number; alloc: number; picked: number }>();
+  for (const it of items) {
     const cur = agg.get(it.order_id) ?? { req: 0, alloc: 0, picked: 0 };
     cur.req += it.quantity_requested ?? 0;
     cur.alloc += it.quantity_allocated ?? 0;

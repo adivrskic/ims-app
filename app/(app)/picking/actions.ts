@@ -55,13 +55,26 @@ async function createWave(
   if (error || !wave) return null;
 
   // Only attach orders still eligible (same facility, not already in a wave).
-  await supabase
+  const { data: attached } = await supabase
     .from("orders")
     .update({ pick_wave_id: wave.id })
     .in("id", orderIds)
     .eq("org_id", orgId)
     .eq("warehouse_id", warehouseId)
-    .is("pick_wave_id", null);
+    .is("pick_wave_id", null)
+    .select("id");
+
+  // Every candidate was claimed by another wave between the page render and
+  // this write. Rather than leave an empty wave cluttering the queue forever,
+  // undo it — a wave with no orders can never be picked or completed.
+  if (!attached || attached.length === 0) {
+    await supabase
+      .from("pick_waves")
+      .delete()
+      .eq("id", wave.id)
+      .eq("org_id", orgId);
+    return null;
+  }
 
   return wave.id as string;
 }
@@ -191,11 +204,20 @@ export async function claimWave(formData: FormData): Promise<void> {
   const waveId = String(formData.get("wave_id") ?? "");
   const release = String(formData.get("release") ?? "") === "1";
   if (!waveId) return;
-  await ctx.supabase
+
+  // A wave already claimed by someone else stays theirs. Without this filter
+  // one picker could take a run another picker was mid-way through walking,
+  // and neither would be told. Releasing is likewise limited to the holder.
+  let q = ctx.supabase
     .from("pick_waves")
     .update({ assigned_to: release ? null : ctx.user.id })
     .eq("id", waveId)
     .eq("org_id", ctx.orgId);
+  q = release
+    ? q.eq("assigned_to", ctx.user.id)
+    : q.or(`assigned_to.is.null,assigned_to.eq.${ctx.user.id}`);
+  await q;
+
   revalidatePath(`/picking/${waveId}`);
 }
 

@@ -158,6 +158,9 @@ export async function reTestResend(): Promise<{
 }> {
   const ctx = await getCurrentOrgContext();
   if (!ctx) return { ok: false, error: "Not signed in" };
+  if (!ctx.can("integrations.manage")) {
+    return { ok: false, error: "Only admins can configure integrations" };
+  }
   if (!ctx.user.email) return { ok: false, error: "Your account has no email" };
 
   const admin = createAdminClient();

@@ -33,6 +33,9 @@ function clientIp(h: Headers): string | null {
   return h.get("x-real-ip");
 }
 
+/** A device silent for this long drops off the list (see listDeviceSessions). */
+const STALE_SESSION_DAYS = 90;
+
 /**
  * Upsert the current device's session and report whether it's been revoked.
  * Returns { revoked: true } only when we're certain — any error fails open.
@@ -80,11 +83,22 @@ export async function listDeviceSessions(
     const currentDeviceId = cookieStore.get("nb_device")?.value ?? null;
     const admin = createAdminClient();
 
+    // Device identity IS the nb_device cookie, so clearing cookies (or using a
+    // private window) legitimately mints a new row — the server cannot tell
+    // that apart from a genuinely new machine. Left unbounded the list fills
+    // with dead entries and stops being reviewable, which defeats the point of
+    // showing it. Hide anything silent for 90 days; a real device refreshes
+    // last_seen_at on every navigation, so only dead ones fall off.
+    const staleBefore = new Date(
+      Date.now() - STALE_SESSION_DAYS * 86_400_000
+    ).toISOString();
+
     const { data } = await admin
       .from("user_sessions")
       .select("id, device_id, user_agent, ip, created_at, last_seen_at")
       .eq("user_id", userId)
       .is("revoked_at", null)
+      .gte("last_seen_at", staleBefore)
       .order("last_seen_at", { ascending: false });
 
     return (

@@ -152,7 +152,7 @@ export async function placeLocation(args: PlaceArgs): Promise<{
   const [{ data: section }, { data: product }] = await Promise.all([
     ctx.supabase
       .from("sections")
-      .select("id")
+      .select("id, total_bays, total_levels")
       .eq("id", args.sectionId)
       .eq("org_id", ctx.orgId)
       .eq("warehouse_id", args.warehouseId)
@@ -166,6 +166,18 @@ export async function placeLocation(args: PlaceArgs): Promise<{
   ]);
   if (!section) return { error: "That section isn't part of this facility" };
   if (!product) return { error: "That product isn't in this workspace" };
+
+  // Upper bounds, matching relocateLocation. Without this a crafted call can
+  // create stock at bay 9999 — a slot the grid can't render and no picker can
+  // walk to, so the units are effectively lost.
+  const maxBay = (section as { total_bays: number }).total_bays;
+  const maxLevel = (section as { total_levels: number }).total_levels;
+  if (args.bay > maxBay) {
+    return { error: `Bay exceeds section maximum of ${maxBay}` };
+  }
+  if (args.level > maxLevel) {
+    return { error: `Level exceeds section maximum of ${maxLevel}` };
+  }
 
   const { data: existing, error: existingErr } = await ctx.supabase
     .from("locations")
@@ -320,11 +332,47 @@ export async function removeLocation({
   warehouseId: string;
   sectionId: string;
   locationId: string;
-}): Promise<{ error?: string }> {
+}): Promise<{ error?: string; queued?: boolean }> {
   const ctx = await getActionContext();
   if ("error" in ctx) return { error: ctx.error };
   if (!ctx.can("inventory.adjust")) {
     return { error: "You don't have permission to adjust inventory" };
+  }
+
+  // Removing a slot that still holds stock IS a stock adjustment to zero, so it
+  // has to clear the same approval bar as typing zero into the quantity box.
+  // Without this, the threshold is trivially bypassed: editing 10,000 → 0 gets
+  // queued, but removing the slot outright writes off the same units silently.
+  const { data: current, error: currentErr } = await ctx.supabase
+    .from("locations")
+    .select("quantity, product_id, warehouse_id")
+    .eq("id", locationId)
+    .eq("org_id", ctx.orgId)
+    .maybeSingle();
+  if (currentErr) return { error: currentErr.message };
+  if (!current) return { error: "Location not found" };
+
+  const heldQty = (current as { quantity: number | null }).quantity ?? 0;
+  if (heldQty > 0) {
+    const governed = await applyOrQueueAdjustment(
+      ctx.supabase,
+      { orgId: ctx.orgId, userId: ctx.user.id },
+      {
+        locationId,
+        warehouseId: (current as any).warehouse_id ?? warehouseId,
+        productId: (current as any).product_id ?? null,
+        currentQty: heldQty,
+        requestedQty: 0,
+        reasonCode: null,
+      }
+    );
+    if (governed.error) return { error: governed.error };
+    // Queued: the units stay on hand until an admin approves, so the slot must
+    // stay too — otherwise the approval would land on a row that is already gone.
+    if (governed.queued) {
+      revalidatePath(`/facilities/${warehouseId}/sections/${sectionId}`);
+      return { queued: true };
+    }
   }
 
   // Update + select returns the row so we can write a meaningful audit
@@ -338,7 +386,10 @@ export async function removeLocation({
     .single();
   if (error) return { error: error.message };
 
-  if (data) {
+  // Only audit here when the slot was already empty. A slot that held stock was
+  // just zeroed by the governance layer above, which wrote its own adjust row —
+  // a second one would double-count the write-off in the activity trail.
+  if (data && heldQty === 0) {
     await writeScanHistory(ctx, {
       productId: (data as any).product_id,
       warehouseId: (data as any).warehouse_id,
@@ -348,7 +399,7 @@ export async function removeLocation({
         bay: (data as any).bay,
         level: (data as any).level,
       },
-      quantity: (data as any).quantity,
+      quantity: 0,
     });
   }
 

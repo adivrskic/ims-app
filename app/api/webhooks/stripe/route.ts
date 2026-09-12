@@ -107,23 +107,21 @@ async function applySubscription(
 
   const admin = createAdminClient();
 
-  // Upsert by org_id without assuming a unique constraint: update if present,
-  // else insert.
-  const { data: existing } = await admin
+  // One atomic upsert on the primary key. The previous read-then-write probed
+  // for an `id` column this table does not have (it is keyed on org_id), so the
+  // lookup always errored, `existing` was always null, and every event took the
+  // insert branch — which violated the primary key from the second event
+  // onward. The error was discarded, so renewals, plan changes and
+  // cancellations silently never reached the row after the first write.
+  const { error } = await admin
     .from("org_subscriptions")
-    .select("id")
-    .eq("org_id", orgId)
-    .limit(1)
-    .maybeSingle();
+    .upsert({ org_id: orgId, ...update }, { onConflict: "org_id" });
 
-  if (existing) {
-    await admin
-      .from("org_subscriptions")
-      .update(update)
-      .eq("org_id", orgId);
-  } else {
-    await admin
-      .from("org_subscriptions")
-      .insert({ org_id: orgId, ...update });
+  // Surface failures: Stripe retries on a non-2xx, and a subscription row that
+  // silently drifts out of sync is how a cancelled customer keeps their plan.
+  if (error) {
+    throw new Error(
+      `org_subscriptions upsert failed for org ${orgId}: ${error.message}`
+    );
   }
 }

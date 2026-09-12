@@ -166,10 +166,19 @@ export async function claimWorkOrder(formData: FormData): Promise<void> {
   const id = String(formData.get("id") ?? "");
   const release = String(formData.get("release") ?? "") === "1";
   if (!id) return;
-  await ctx.supabase
+
+  // Same rule as pick waves: a work order already claimed by someone else is
+  // theirs until they release it, so two builders can't silently take over
+  // each other's job.
+  let q = ctx.supabase
     .from("work_orders")
     .update({ assigned_to: release ? null : ctx.user.id })
     .eq("id", id)
     .eq("org_id", ctx.orgId);
+  q = release
+    ? q.eq("assigned_to", ctx.user.id)
+    : q.or(`assigned_to.is.null,assigned_to.eq.${ctx.user.id}`);
+  await q;
+
   revalidatePath(`/work-orders/${id}`);
 }

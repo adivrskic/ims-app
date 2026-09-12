@@ -24,28 +24,39 @@ const KIND_TONE: Record<string, string> = {
   scan_summary: "var(--info)",
   system: "var(--text-muted)",
   member: "var(--accent)",
+  lot_expiry: "var(--danger)",
+  cycle_count_queue: "var(--accent)",
 };
 
+/**
+ * Chips are declarative (a kind, or unread) rather than row predicates so the
+ * same narrowing drives the paged row query and each chip's count query.
+ * Every `kind` here must be one a producer actually writes — the crons emit
+ * lot_expiry and cycle_count_queue alongside the older four.
+ */
 const FILTERS: Array<{
   key: string;
   label: string;
-  test: (n: NotificationRow) => boolean;
+  kind?: string;
+  unreadOnly?: boolean;
 }> = [
-  { key: "all", label: "All", test: () => true },
-  { key: "unread", label: "Unread", test: (n) => !n.read_at },
+  { key: "all", label: "All" },
+  { key: "unread", label: "Unread", unreadOnly: true },
+  { key: "stock_alert", label: "Stock alerts", kind: "stock_alert" },
+  { key: "lot_expiry", label: "Lot expiry", kind: "lot_expiry" },
   {
-    key: "stock_alert",
-    label: "Stock alerts",
-    test: (n) => n.kind === "stock_alert",
+    key: "cycle_count_queue",
+    label: "Cycle counts",
+    kind: "cycle_count_queue",
   },
-  { key: "system", label: "System", test: (n) => n.kind === "system" },
-  { key: "member", label: "Team", test: (n) => n.kind === "member" },
-  {
-    key: "scan_summary",
-    label: "Scan summaries",
-    test: (n) => n.kind === "scan_summary",
-  },
+  { key: "system", label: "System", kind: "system" },
+  { key: "member", label: "Team", kind: "member" },
+  { key: "scan_summary", label: "Scan summaries", kind: "scan_summary" },
 ];
+
+type NotificationFilter = (typeof FILTERS)[number];
+
+const ROW_SELECT = "id, kind, title, body, link, read_at, created_at";
 
 const PAGE_SIZE = 25;
 
@@ -87,28 +98,43 @@ export default async function NotificationsPage({
     (profile as { digest_email_enabled?: boolean } | null)
       ?.digest_email_enabled ?? false;
 
-  // Fetch ALL notifications (no row cap for filter-aware paging math),
-  // then apply the active filter + slice on the server. For workspaces with
-  // thousands of notifications we'd push this to the query, but at our seed
-  // size + reality of inbox sizes (low hundreds), this is fine.
-  const { data: allData } = await supabase
-    .from("notifications")
-    .select("id, kind, title, body, link, read_at, created_at")
-    .eq("user_id", user.id)
-    .order("created_at", { ascending: false });
+  // One page of rows, plus a head-only exact count per chip: the chips need
+  // totals, but nothing here needs the rows behind them.
+  const pageQuery = () => {
+    let q = supabase
+      .from("notifications")
+      .select(ROW_SELECT)
+      .eq("user_id", user.id);
+    if (activeFilter.unreadOnly) q = q.is("read_at", null);
+    else if (activeFilter.kind) q = q.eq("kind", activeFilter.kind);
+    return q
+      .order("created_at", { ascending: false })
+      .range(offset, offset + PAGE_SIZE - 1);
+  };
 
-  const all = (allData ?? []) as NotificationRow[];
-  const unreadTotal = all.filter((n) => !n.read_at).length;
+  const countQuery = (filter: NotificationFilter) => {
+    let q = supabase
+      .from("notifications")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", user.id);
+    if (filter.unreadOnly) q = q.is("read_at", null);
+    else if (filter.kind) q = q.eq("kind", filter.kind);
+    return q;
+  };
 
-  // Per-chip counts
+  const [rowsResult, countResults] = await Promise.all([
+    pageQuery(),
+    Promise.all(FILTERS.map(countQuery)),
+  ]);
+
+  const rows = (rowsResult.data ?? []) as NotificationRow[];
+
   const counts = new Map<string, number>();
-  for (const f of FILTERS) {
-    counts.set(f.key, all.filter(f.test).length);
-  }
-
-  const filtered = all.filter(activeFilter.test);
-  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
-  const rows = filtered.slice(offset, offset + PAGE_SIZE);
+  FILTERS.forEach((f, i) => counts.set(f.key, countResults[i].count ?? 0));
+  const total = counts.get("all") ?? 0;
+  const unreadTotal = counts.get("unread") ?? 0;
+  const filteredTotal = counts.get(activeFilter.key) ?? 0;
+  const totalPages = Math.max(1, Math.ceil(filteredTotal / PAGE_SIZE));
 
   return (
     <div className="flex flex-col gap-32">
@@ -118,7 +144,7 @@ export default async function NotificationsPage({
         title="Notifications"
         description="Stock alerts, scan summaries, system events, and team activity for your workspaces."
         meta={[
-          { label: "Total", value: all.length },
+          { label: "Total", value: total },
           {
             label: "Unread",
             value: unreadTotal,
@@ -342,7 +368,7 @@ function NotificationRow({
         )}
         {n.kind && (
           <p className="label-text text-text-dim mt-6" style={{ fontSize: 9 }}>
-            {n.kind.replace("_", " ")}
+            {n.kind.replace(/_/g, " ")}
           </p>
         )}
       </div>

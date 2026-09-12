@@ -7,6 +7,7 @@ import { CornerLink } from "@/components/ui/CornerButton";
 import type { ScanAction } from "@/types/db";
 import { BarChart3, Scale, Snowflake, Boxes, LineChart } from "lucide-react";
 import { getActiveScope, scopeDescription } from "@/lib/facilityScope";
+import { getCurrentOrgContext } from "@/lib/data/user";
 import { Suspense } from "react";
 import { ForecastNarration } from "@/components/analytics/ForecastNarration";
 
@@ -25,22 +26,24 @@ const SCAN_LABEL: Record<ScanAction, string> = {
   transfer: "Transferred",
 };
 
-function bucketByDay(scans: { scanned_at: string | null }[]): number[] {
-  const buckets = new Array<number>(14).fill(0);
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const todayMs = today.getTime();
-  scans.forEach((s) => {
-    if (!s.scanned_at) return;
-    const d = new Date(s.scanned_at);
-    d.setHours(0, 0, 0, 0);
-    const idx = 13 - Math.floor((todayMs - d.getTime()) / 86400000);
-    if (idx >= 0 && idx < 14) buckets[idx]++;
-  });
-  return buckets;
-}
+/* bucketByDay used to live here, folding raw scan rows into day buckets in JS.
+   app.overview_scan_trend does it in Postgres now — same RPC the Overview
+   dashboard uses, so both pages draw the identical curve. */
+
+/** Days in the activity sparkline; bucket TREND_DAYS-1 is today. */
+const TREND_DAYS = 14;
 
 export default async function AnalyticsPage() {
+  const ctx = await getCurrentOrgContext();
+  if (!ctx) {
+    return (
+      <PageHeader
+        eyebrow="Workspace · Analytics"
+        title="Operational"
+        description="No workspace."
+      />
+    );
+  }
   const scope = await getActiveScope();
   const supabase = await createClient();
 
@@ -52,9 +55,9 @@ export default async function AnalyticsPage() {
   fourteenDaysAgo.setDate(today.getDate() - 14);
 
   /*
-   * Build each query with the optional scope filter. Products stays
-   * workspace-wide (org catalog); scan_history and locations both have
-   * warehouse_id directly so the .eq is straightforward.
+   * Build each count with the optional scope filter. Products stays
+   * workspace-wide (org catalog); scan_history has warehouse_id directly so
+   * the .eq is straightforward. (The aggregates below take p_warehouse.)
    */
   const totalProductsQuery = supabase
     .from("products")
@@ -83,129 +86,114 @@ export default async function AnalyticsPage() {
     scansLast7Query = scansLast7Query.eq("warehouse_id", scope.id);
   }
 
-  let locationsForStockQuery = supabase.from("locations").select("quantity");
-  if (scope.mode === "single") {
-    locationsForStockQuery = locationsForStockQuery.eq(
-      "warehouse_id",
-      scope.id
-    );
-  }
+  /*
+   * Everything below is aggregated in Postgres
+   * (20260912120000_analytics_page_aggregate_rpcs). These were plain .select()
+   * calls that PostgREST caps at ~1000 rows, while the KPIs beside them use
+   * exact counts — so past ~1000 rows the bars and percentages silently
+   * disagreed with the headline numbers. The stock total and the section split
+   * now come out of ONE aggregate, so they cannot drift apart again.
+   */
+  const facilityId = scope.mode === "single" ? scope.id : null;
 
-  let scansForActionsQuery = supabase.from("scan_history").select("action");
-  if (scope.mode === "single") {
-    scansForActionsQuery = scansForActionsQuery.eq("warehouse_id", scope.id);
-  }
+  const stockBySectionQuery = supabase.rpc("analytics_stock_by_section", {
+    p_org: ctx.orgId,
+    p_warehouse: facilityId,
+  });
 
-  let locationsForSectionsQuery = supabase
-    .from("locations")
-    .select("quantity, section:sections ( code, name, color )");
-  if (scope.mode === "single") {
-    locationsForSectionsQuery = locationsForSectionsQuery.eq(
-      "warehouse_id",
-      scope.id
-    );
-  }
+  const actionMixQuery = supabase.rpc("analytics_action_mix", {
+    p_org: ctx.orgId,
+    p_warehouse: facilityId,
+  });
 
-  let scans14dQuery = supabase
-    .from("scan_history")
-    .select("scanned_at")
-    .gte("scanned_at", fourteenDaysAgo.toISOString());
-  if (scope.mode === "single") {
-    scans14dQuery = scans14dQuery.eq("warehouse_id", scope.id);
-  }
+  // Same RPC (and same local-midnight bucket origin) as the Overview
+  // dashboard, so the two pages can't show different 14-day curves.
+  const trendStart = new Date(today);
+  trendStart.setDate(today.getDate() - (TREND_DAYS - 1));
+  const trendQuery = supabase.rpc("overview_scan_trend", {
+    p_org: ctx.orgId,
+    p_start: trendStart.toISOString(),
+    p_days: TREND_DAYS,
+    p_warehouse: facilityId,
+  });
 
   // Low-stock SKUs: products with a reorder point whose on-hand is at/below it.
   // Workspace-wide, matching how the product count is treated on this page.
-  const lowStockQuery = supabase
-    .from("products")
-    .select("id, reorder_point, locations:locations ( quantity )")
-    .gt("reorder_point", 0);
+  const lowStockQuery = supabase.rpc("analytics_low_stock_count", {
+    p_org: ctx.orgId,
+  });
 
   const [
     { count: totalProducts },
     { count: totalScans },
     { count: scansToday },
     { count: scansLast7 },
-    { data: locationsForStock },
-    { data: scansForActions },
-    { data: locationsForSections },
-    { data: scans14d },
-    { data: lowStockProducts },
+    { data: stockBySection },
+    { data: actionMix },
+    { data: trendRows },
+    { data: lowStockTotal },
   ] = await Promise.all([
     totalProductsQuery,
     totalScansQuery,
     scansTodayQuery,
     scansLast7Query,
-    locationsForStockQuery,
-    scansForActionsQuery,
-    locationsForSectionsQuery,
-    scans14dQuery,
+    stockBySectionQuery,
+    actionMixQuery,
+    trendQuery,
     lowStockQuery,
   ]);
 
-  const lowStockCount = (
-    (lowStockProducts ?? []) as Array<{
-      reorder_point: number;
-      locations: Array<{ quantity: number | null }> | null;
+  // bigint/numeric arrive as strings over PostgREST — coerce, don't trust.
+  const lowStockCount = Number(lowStockTotal ?? 0);
+
+  const sectionRows = (stockBySection ?? []) as Array<{
+    section_code: string | null;
+    section_name: string | null;
+    section_color: string | null;
+    quantity: number | string | null;
+    total_quantity: number | string | null;
+  }>;
+
+  // Window-functioned onto every row, so any row carries the true grand total —
+  // it covers the section_code = null bucket (stock in locations with no
+  // section, counted in the total but not listed below, exactly as the old JS
+  // did) and survives even if the section list itself were ever capped.
+  const totalStock = Number(sectionRows[0]?.total_quantity ?? 0);
+
+  const actions = (
+    (actionMix ?? []) as Array<{
+      action: string;
+      scan_count: number | string | null;
     }>
-  ).filter((p) => {
-    const onHand = (p.locations ?? []).reduce(
-      (s, l) => s + (l.quantity ?? 0),
-      0
-    );
-    return onHand <= p.reorder_point;
-  }).length;
-
-  const totalStock = (locationsForStock ?? []).reduce(
-    (sum: number, l: { quantity: number | null }) => sum + (l.quantity ?? 0),
-    0
-  );
-
-  const actionCounts = new Map<ScanAction, number>();
-  (scansForActions ?? []).forEach((s: { action: string }) => {
-    const action = s.action as ScanAction;
-    actionCounts.set(action, (actionCounts.get(action) ?? 0) + 1);
-  });
-  const actions = Array.from(actionCounts.entries()).sort(
-    (a, b) => b[1] - a[1]
-  );
+  )
+    .map(
+      (r) => [r.action as ScanAction, Number(r.scan_count ?? 0)] as const
+    )
+    .sort((a, b) => b[1] - a[1]);
   const maxAction = actions.reduce((m, [, n]) => Math.max(m, n), 1);
 
-  const sectionMap = new Map<
-    string,
-    { code: string; name: string; color: string; quantity: number }
-  >();
-  (locationsForSections ?? []).forEach(
-    (row: { quantity: number | null; section: unknown }) => {
-      const sec = Array.isArray(row.section)
-        ? (row.section[0] as
-            | { code: string | null; name: string | null; color: string | null }
-            | undefined)
-        : (row.section as {
-            code: string | null;
-            name: string | null;
-            color: string | null;
-          } | null);
-      if (!sec?.code) return;
-      const key = sec.code.trim();
-      const existing = sectionMap.get(key) ?? {
-        code: key,
-        name: sec.name ?? "",
-        color: sec.color ?? "#737373",
-        quantity: 0,
-      };
-      existing.quantity += row.quantity ?? 0;
-      sectionMap.set(key, existing);
-    }
-  );
-  const sections = Array.from(sectionMap.values()).sort(
-    (a, b) => b.quantity - a.quantity
-  );
+  const sections = sectionRows
+    .filter((r) => r.section_code)
+    .map((r) => ({
+      code: r.section_code as string,
+      name: r.section_name ?? "",
+      color: r.section_color ?? "#737373",
+      quantity: Number(r.quantity ?? 0),
+    }))
+    .sort((a, b) => b.quantity - a.quantity);
   const maxSectionQty = sections.reduce((m, s) => Math.max(m, s.quantity), 1);
 
-  const trend = bucketByDay(
-    (scans14d ?? []) as { scanned_at: string | null }[]
-  );
+  // The RPC returns only non-empty buckets; zero-fill the rest.
+  const trend = new Array<number>(TREND_DAYS).fill(0);
+  for (const r of (trendRows ?? []) as Array<{
+    day_offset: number;
+    scan_count: number | string;
+  }>) {
+    if (r.day_offset >= 0 && r.day_offset < TREND_DAYS) {
+      trend[r.day_offset] = Number(r.scan_count ?? 0);
+    }
+  }
+
   const empty = (totalScans ?? 0) === 0 && (totalProducts ?? 0) === 0;
 
   return (
@@ -220,7 +208,15 @@ export default async function AnalyticsPage() {
         })}
         meta={[
           { label: "Window", value: "Last 14 days" },
-          { label: "Last sync", value: "Just now", status: "live" },
+          // A hard-coded "Last sync: Just now" with a live dot used to sit
+          // here. Nothing synced and nothing was live — this page has no
+          // realtime subscription (unlike Overview, whose "Live" status is
+          // backed by OverviewRealtime). Report something true instead: the
+          // scope these figures cover.
+          {
+            label: scope.mode === "single" ? "Facility" : "Scope",
+            value: scope.mode === "single" ? scope.name : "All facilities",
+          },
         ]}
         actions={
           <div className="flex items-center gap-10">

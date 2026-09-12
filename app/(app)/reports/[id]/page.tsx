@@ -4,11 +4,11 @@ import { getCurrentOrgContext } from "@/lib/data/user";
 import { getActiveScope } from "@/lib/facilityScope";
 import { getDatasetMeta, type ReportConfig } from "@/lib/reports-meta";
 import { runReport } from "@/lib/data/reports";
-import { deleteReport } from "../actions";
+import { DeleteReportButton } from "./DeleteReportButton";
 import { PageHeader } from "@/components/ui/PageHeader";
-import { CornerButton, CornerLink } from "@/components/ui/CornerButton";
+import { CornerLink } from "@/components/ui/CornerButton";
 import { EmptyState } from "@/components/ui/EmptyState";
-import { Download, Trash2, Table2 } from "lucide-react";
+import { Download, Table2 } from "lucide-react";
 
 export const metadata = { title: "Report" };
 
@@ -72,13 +72,7 @@ export default async function ReportRunPage({
               <Download size={11} strokeWidth={1.5} />
               Export CSV
             </CornerLink>
-            <form action={deleteReport}>
-              <input type="hidden" name="id" value={r.id} />
-              <CornerButton type="submit" variant="danger" size="sm">
-                <Trash2 size={11} strokeWidth={1.5} />
-                Delete
-              </CornerButton>
-            </form>
+            <DeleteReportButton reportId={r.id} reportName={r.name} />
           </div>
         }
       />

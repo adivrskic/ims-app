@@ -33,14 +33,19 @@ export async function registerSerials(
 
   if (!productId) return { error: "Pick a product" };
 
-  const serials = Array.from(
+  const parsed = Array.from(
     new Set(
       raw
         .split(/[\s,]+/)
         .map((s) => s.trim())
         .filter(Boolean)
     )
-  ).slice(0, MAX_BULK);
+  );
+  const serials = parsed.slice(0, MAX_BULK);
+  // Everything past the cap used to be dropped on the floor in silence — the
+  // operator saw "Registered 1000 serials" and had no way to know the rest of
+  // their paste never landed. Count it and say so.
+  const overCap = parsed.length - serials.length;
   if (serials.length === 0) return { error: "Enter at least one serial number" };
 
   const { data: product } = await ctx.supabase
@@ -65,7 +70,13 @@ export async function registerSerials(
   );
   const fresh = serials.filter((s) => !taken.has(s));
   if (fresh.length === 0) {
-    return { error: "All of those serials are already registered" };
+    return {
+      error: `All ${serials.length} of those serials are already registered${
+        overCap > 0
+          ? ` · ${overCap} more weren't checked (${MAX_BULK} per submission — paste the rest separately)`
+          : ""
+      }`,
+    };
   }
 
   const rows = fresh.map((serial_number) => ({
@@ -94,6 +105,10 @@ export async function registerSerials(
   return {
     success: `Registered ${fresh.length} serial${fresh.length === 1 ? "" : "s"}${
       skipped > 0 ? ` · ${skipped} already existed` : ""
+    }${
+      overCap > 0
+        ? ` · ${overCap} not processed (${MAX_BULK} per submission — paste the rest separately)`
+        : ""
     }`,
   };
 }

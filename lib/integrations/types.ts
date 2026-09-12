@@ -7,13 +7,22 @@
  */
 export const INTEGRATION_EVENTS = [
   "low_stock",
-  "scan_burst",
   "po_received",
   "cycle_count_variance",
-  "daily_summary",
 ] as const;
 
 export type IntegrationEvent = (typeof INTEGRATION_EVENTS)[number];
+
+/**
+ * Events we once offered but never dispatched. They stay listed (and keep
+ * their EVENT_META copy) only so rows that already store one still render a
+ * label instead of a raw slug — they're deliberately out of
+ * INTEGRATION_EVENTS so no one can subscribe to something that never fires.
+ * Re-promote one here the day a producer actually calls dispatchEvent for it.
+ */
+export const RETIRED_EVENTS = ["scan_burst", "daily_summary"] as const;
+
+export type RetiredEvent = (typeof RETIRED_EVENTS)[number];
 
 interface EventMetaEntry {
   label: string;
@@ -21,7 +30,10 @@ interface EventMetaEntry {
 }
 
 /** Human-readable copy for each event. */
-export const EVENT_META: Record<IntegrationEvent, EventMetaEntry> = {
+export const EVENT_META: Record<
+  IntegrationEvent | RetiredEvent,
+  EventMetaEntry
+> = {
   low_stock: {
     label: "Low stock alerts",
     description: "A product hit or dropped below its reorder point.",

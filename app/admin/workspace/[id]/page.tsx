@@ -33,8 +33,8 @@ function fmtDate(iso: string | null): string {
 /**
  * Staff-only workspace detail. The /admin layout already gates this behind
  * getStaffUser(), so every query here uses the service-role client to read
- * across the org boundary. Read-only: members, activity, and basic billing
- * fields (the billing integration itself is not yet wired).
+ * across the org boundary. Read-only: members, activity, and the Stripe ids
+ * behind the workspace's own billing settings.
  */
 export default async function AdminWorkspaceDetail({
   params,
@@ -214,8 +214,9 @@ export default async function AdminWorkspaceDetail({
             mono
           />
           <p className="mono-sm text-text-dim mt-4">
-            Billing is not yet wired to Stripe — these fields reflect stored ids
-            only.
+            Read-only mirror of the workspace&apos;s Stripe ids. Plan changes,
+            invoices and cancellations happen in the workspace&apos;s own
+            billing settings or in the Stripe dashboard.
           </p>
         </div>
       </section>

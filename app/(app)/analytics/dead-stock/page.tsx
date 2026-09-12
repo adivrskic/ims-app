@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
+import { getCurrentOrgContext } from "@/lib/data/user";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { KpiCard } from "@/components/ui/KpiCard";
 import { SectionTitle } from "@/components/ui/SectionTitle";
@@ -17,6 +18,19 @@ type Threshold = (typeof THRESHOLDS)[number];
 
 const SORT_KEYS = ["value", "quantity", "days_inactive"] as const;
 type SortKey = (typeof SORT_KEYS)[number];
+
+const SORT_LABEL: Record<SortKey, string> = {
+  value: "Tied-up value",
+  quantity: "Quantity",
+  days_inactive: "Days inactive",
+};
+
+/**
+ * Rows rendered in the table. The analysis itself covers the whole catalog —
+ * this only caps how much HTML we ship, and the rows kept are the top ones by
+ * the active sort, so changing the sort really does change what you can see.
+ */
+const DISPLAY_LIMIT = 500;
 
 interface SearchParams {
   warehouse?: string;
@@ -45,6 +59,18 @@ export default async function DeadStockPage({
   const scope = parseScope(params);
   const threshold = parseThreshold(params.threshold);
   const sortKey = parseSort(params.sort);
+  const ctx = await getCurrentOrgContext();
+  if (!ctx) {
+    return (
+      <PageHeader
+        backHref="/analytics"
+        backLabel="Analytics"
+        eyebrow="Analytics · Reports"
+        title="Dead stock"
+        description="No workspace."
+      />
+    );
+  }
   const supabase = await createClient();
 
   const today = new Date();
@@ -52,60 +78,44 @@ export default async function DeadStockPage({
   const thresholdDate = new Date(today);
   thresholdDate.setDate(today.getDate() - threshold);
 
-  // Pull everything we need in parallel:
-  //   1. warehouses (for the filter UI)
-  //   2. products with their locations + cost + category
-  //   3. pick scans within the threshold window — gives us the set of
-  //      products that ARE active. Anything not in this set is dormant.
-  const productsQ = supabase
-    .from("products")
-    .select(
-      `id, name, barcode, unit_cost, updated_at,
-       category:categories ( name ),
-       locations:locations ( quantity, warehouse_id )`
-    )
-    .order("name", { ascending: true })
-    // Hard cap so a huge catalog doesn't OOM us; fetch one extra to detect
-    // truncation accurately (the cap is on products FETCHED, not dead-stock rows).
-    .limit(501);
-
-  // Last pick per product over the past year, aggregated SQL-side (RLS scopes
-  // rows via the invoker client). One row per product replaces the two raw
-  // scan fetches this page used to make — the year-of-picks one silently
-  // truncated at PostgREST's 1000-row cap, which made results WRONG at scale.
+  // Last-pick display floor: the table shows "365+ days" for anything older,
+  // so the RPC only needs a year of pick history to render the date column.
   const oneYearAgo = new Date(today);
   oneYearAgo.setDate(today.getDate() - 365);
-  const lastPicksQ = supabase.rpc("last_pick_stats", {
+
+  /*
+   * The whole analysis now happens in Postgres
+   * (20260912120000_analytics_page_aggregate_rpcs). This page used to fetch the
+   * catalog with limit(501) — ordered by NAME — plus a nested locations embed,
+   * analyse the first 500 products and tell the user to "narrow with a
+   * warehouse filter or a shorter threshold". Neither helped: the cap was on
+   * products FETCHED alphabetically, so a shorter threshold changed nothing and
+   * products 501+ were simply invisible, KPIs included.
+   *
+   * app.dead_stock_rows filters and sorts the FULL catalog, returns the top
+   * DISPLAY_LIMIT rows by the sort the user actually picked, and carries the
+   * summary totals as window aggregates over every dormant row — so the KPIs
+   * are exact even when the table below them is capped, and the cap is now
+   * something the sort control genuinely moves.
+   */
+  const deadStockQ = supabase.rpc("dead_stock_rows", {
+    p_org: ctx.orgId,
+    p_threshold: thresholdDate.toISOString(),
     p_since: oneYearAgo.toISOString(),
+    p_warehouse: scope.warehouseId,
+    p_sort: sortKey,
+    p_limit: DISPLAY_LIMIT,
   });
 
-  const [{ data: warehouses }, { data: products }, { data: lastPicks }] =
-    await Promise.all([
-      supabase
-        .from("warehouses")
-        .select("id, name")
-        .eq("is_active", true)
-        .order("name", { ascending: true }),
-      productsQ,
-      lastPicksQ,
-    ]);
+  const [{ data: warehouses }, { data: deadStock }] = await Promise.all([
+    supabase
+      .from("warehouses")
+      .select("id, name")
+      .eq("is_active", true)
+      .order("name", { ascending: true }),
+    deadStockQ,
+  ]);
 
-  // Products picked within the threshold window are active (not dead stock);
-  // the same rows give the last-pick date for everything else.
-  const thresholdMs = thresholdDate.getTime();
-  const activeProductIds = new Set<string>();
-  const lastPickByProduct = new Map<string, string>();
-  for (const s of (lastPicks ?? []) as Array<{
-    product_id: string;
-    last_pick_at: string;
-  }>) {
-    lastPickByProduct.set(s.product_id, s.last_pick_at);
-    if (new Date(s.last_pick_at).getTime() >= thresholdMs) {
-      activeProductIds.add(s.product_id);
-    }
-  }
-
-  // Build the dead-stock rows: products with stock, NOT in the active set
   type Row = {
     id: string;
     name: string;
@@ -118,71 +128,48 @@ export default async function DeadStockPage({
     days_inactive: number; // 366 = "never within 365d"
   };
 
-  // The cap applies to products fetched from the catalog — track whether we hit
-  // it so the truncation notice reflects the real cause (not the filtered subset).
-  const productsTruncated = (products ?? []).length > 500;
+  // numeric/bigint arrive as strings over PostgREST — coerce, don't trust.
+  const deadRows = (deadStock ?? []) as Array<{
+    id: string;
+    name: string;
+    barcode: string;
+    category_name: string | null;
+    on_hand: number | string | null;
+    unit_cost: number | string | null;
+    tied_value: number | string | null;
+    last_pick_at: string | null;
+    total_skus: number | string | null;
+    total_units: number | string | null;
+    total_value: number | string | null;
+    valued_skus: number | string | null;
+  }>;
 
-  const rows: Row[] = (
-    ((products ?? []).slice(0, 500)) as Array<{
-      id: string;
-      name: string;
-      barcode: string;
-      unit_cost: string | null;
-      updated_at: string | null;
-      category: { name: string } | { name: string }[] | null;
-      locations: Array<{
-        quantity: number | null;
-        warehouse_id: string | null;
-      }> | null;
-    }>
-  )
-    .map((p) => {
-      // Apply warehouse filter to locations if scoped
-      const locs = scope.warehouseId
-        ? (p.locations ?? []).filter(
-            (l) => l.warehouse_id === scope.warehouseId
-          )
-        : p.locations ?? [];
-      const on_hand = locs.reduce((s, l) => s + (l.quantity ?? 0), 0);
-      const unit_cost = p.unit_cost ? parseFloat(p.unit_cost) : null;
-      const tied_value =
-        unit_cost != null && Number.isFinite(unit_cost)
-          ? unit_cost * on_hand
-          : null;
-      const lastPickIso = lastPickByProduct.get(p.id);
-      const last_pick = lastPickIso ? new Date(lastPickIso) : null;
-      const days_inactive = last_pick
+  const rows: Row[] = deadRows.map((r) => {
+    const last_pick = r.last_pick_at ? new Date(r.last_pick_at) : null;
+    return {
+      id: r.id,
+      name: r.name,
+      barcode: r.barcode,
+      category_name: r.category_name,
+      on_hand: Number(r.on_hand ?? 0),
+      unit_cost: r.unit_cost != null ? Number(r.unit_cost) : null,
+      tied_value: r.tied_value != null ? Number(r.tied_value) : null,
+      last_pick,
+      days_inactive: last_pick
         ? Math.floor((today.getTime() - last_pick.getTime()) / 86_400_000)
-        : 366;
-      const cat = Array.isArray(p.category) ? p.category[0] : p.category;
-      return {
-        id: p.id,
-        name: p.name,
-        barcode: p.barcode,
-        category_name: cat?.name ?? null,
-        on_hand,
-        unit_cost,
-        tied_value,
-        last_pick,
-        days_inactive,
-      };
-    })
-    .filter((r) => r.on_hand > 0 && !activeProductIds.has(r.id));
+        : 366,
+    };
+  });
 
-  // Sort
-  if (sortKey === "value") {
-    rows.sort((a, b) => (b.tied_value ?? -1) - (a.tied_value ?? -1));
-  } else if (sortKey === "quantity") {
-    rows.sort((a, b) => b.on_hand - a.on_hand);
-  } else {
-    rows.sort((a, b) => b.days_inactive - a.days_inactive);
-  }
-
-  // Aggregate KPIs
-  const totalSkus = rows.length;
-  const totalUnits = rows.reduce((s, r) => s + r.on_hand, 0);
-  const totalValueKnown = rows.reduce((s, r) => s + (r.tied_value ?? 0), 0);
-  const valuedSkus = rows.filter((r) => r.tied_value != null).length;
+  // Aggregate KPIs — window-functioned onto every row, so any row carries the
+  // true totals for the whole dormant set, not just the displayed page.
+  const first = deadRows[0];
+  const totalSkus = Number(first?.total_skus ?? 0);
+  const totalUnits = Number(first?.total_units ?? 0);
+  const totalValueKnown = Number(first?.total_value ?? 0);
+  const valuedSkus = Number(first?.valued_skus ?? 0);
+  // Honest truncation state: how many dormant products exist beyond the table.
+  const hiddenRows = Math.max(0, totalSkus - rows.length);
 
   // Threshold + sort link helpers — preserve other params
   const baseParams = new URLSearchParams();
@@ -259,13 +246,8 @@ export default async function DeadStockPage({
         />
         <div className="flex items-center gap-8">
           <span className="label-text text-text-muted">Sort by</span>
-          {(
-            [
-              { key: "value", label: "Tied-up value" },
-              { key: "quantity", label: "Quantity" },
-              { key: "days_inactive", label: "Days inactive" },
-            ] as Array<{ key: SortKey; label: string }>
-          ).map((opt) => {
+          {SORT_KEYS.map((key) => {
+            const opt = { key, label: SORT_LABEL[key] };
             const active = opt.key === sortKey;
             return (
               <Link
@@ -323,7 +305,16 @@ export default async function DeadStockPage({
         <SectionTitle
           numeral="02"
           eyebrow="Details"
-          title={`${rows.length} product${rows.length === 1 ? "" : "s"}`}
+          title={`${totalSkus.toLocaleString()} product${
+            totalSkus === 1 ? "" : "s"
+          }`}
+          action={
+            hiddenRows > 0 ? (
+              <span className="label-text text-text-muted">
+                Showing the top {rows.length.toLocaleString()}
+              </span>
+            ) : undefined
+          }
         />
         {rows.length === 0 ? (
           <EmptyState
@@ -440,11 +431,15 @@ export default async function DeadStockPage({
                 ))}
               </tbody>
             </table>
-            {productsTruncated && (
+            {hiddenRows > 0 && (
               <div className="px-20 py-10 hairline-t bg-[var(--bg-elevated)]">
                 <p className="label-text text-text-dim">
-                  Scanned the first 500 products — narrow with a warehouse filter
-                  or a shorter threshold to cover the rest of the catalog.
+                  Summary above covers all {totalSkus.toLocaleString()} dormant
+                  products. This table lists the top{" "}
+                  {rows.length.toLocaleString()} by{" "}
+                  {SORT_LABEL[sortKey].toLowerCase()} —{" "}
+                  {hiddenRows.toLocaleString()} more below the cut. Re-sort or
+                  pick a facility to bring them into view.
                 </p>
               </div>
             )}

@@ -61,7 +61,17 @@ export function SectionDetail({
   // Local mutable copy of locations — optimistic mutations land here.
   const [locations, setLocations] = useState<LocationRow[]>(initialLocations);
   const [selected, setSelected] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  // One banner, two tones. "Sent for approval" is a successful outcome, not a
+  // failure, and rendering it in danger red taught operators to read a working
+  // governance flow as a bug.
+  const [notice, setNotice] = useState<{
+    text: string;
+    tone: "error" | "info";
+  } | null>(null);
+  const error = notice?.tone === "error" ? notice.text : null;
+  const setError = (text: string | null) =>
+    setNotice(text ? { text, tone: "error" } : null);
+  const setQueuedNotice = (text: string) => setNotice({ text, tone: "info" });
   const [busyId, setBusyId] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const [movingId, setMovingId] = useState<string | null>(null);
@@ -136,7 +146,9 @@ export function SectionDetail({
     } else if (r.queued) {
       // Over the approval threshold — on-hand unchanged until an admin approves.
       setLocations(prev);
-      setError("Adjustment sent for approval — over the threshold.");
+      setQueuedNotice(
+        "Adjustment sent for approval — on-hand is unchanged until an admin approves it."
+      );
     } else if (r.location) {
       // Use the server's authoritative row in case anything else changed.
       setLocations((p) => p.map((l) => (l.id === locId ? r.location! : l)));
@@ -157,6 +169,13 @@ export function SectionDetail({
     if (r.error) {
       setLocations(prev);
       setError(r.error);
+    } else if (r.queued) {
+      // Removing a slot that holds stock is a write-off, so it clears the same
+      // approval bar — the slot stays put until someone signs it off.
+      setLocations(prev);
+      setQueuedNotice(
+        "Removal sent for approval — the slot stays until an admin approves it."
+      );
     }
   };
 
@@ -405,12 +424,19 @@ export function SectionDetail({
                     }`}
               </p>
 
-              {error && (
+              {notice && (
                 <div
+                  role={notice.tone === "error" ? "alert" : "status"}
                   className="hairline-subtle px-10 py-7 flex items-start gap-8"
                   style={{
-                    background: "var(--danger-dim)",
-                    color: "var(--danger)",
+                    background:
+                      notice.tone === "error"
+                        ? "var(--danger-dim)"
+                        : "var(--info-dim)",
+                    color:
+                      notice.tone === "error"
+                        ? "var(--danger)"
+                        : "var(--info)",
                   }}
                 >
                   <AlertTriangle
@@ -418,11 +444,11 @@ export function SectionDetail({
                     strokeWidth={1.5}
                     className="mt-1 shrink-0"
                   />
-                  <span className="mono-sm flex-1">{error}</span>
+                  <span className="mono-sm flex-1">{notice.text}</span>
                   <button
                     type="button"
-                    onClick={() => setError(null)}
-                    aria-label="Dismiss error"
+                    onClick={() => setNotice(null)}
+                    aria-label="Dismiss message"
                     className="shrink-0"
                   >
                     <X size={10} strokeWidth={1.5} />

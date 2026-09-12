@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentOrgContext } from "@/lib/data/user";
+import { getActiveScope } from "@/lib/facilityScope";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Badge } from "@/components/ui/Badge";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -54,8 +55,9 @@ export default async function TransfersPage() {
     return <PageHeader eyebrow="Flow" title="Transfers" description="No workspace." />;
   }
   const supabase = await createClient();
+  const scope = await getActiveScope();
 
-  const { data } = await supabase
+  let query = supabase
     .from("orders")
     .select(
       `id, order_number, status, created_at,
@@ -64,8 +66,18 @@ export default async function TransfersPage() {
        items:order_items ( count )`
     )
     .eq("org_id", ctx.orgId)
-    .eq("order_type", "internal_transfer")
-    .order("created_at", { ascending: false });
+    .eq("order_type", "internal_transfer");
+
+  // Honour the active facility like every other list. A transfer has two ends,
+  // so "at this facility" means either end — scoping on the source alone would
+  // hide everything inbound, which is the half you most need to see.
+  if (scope.mode === "single") {
+    query = query.or(
+      `warehouse_id.eq.${scope.id},destination_warehouse_id.eq.${scope.id}`
+    );
+  }
+
+  const { data } = await query.order("created_at", { ascending: false });
 
   type Row = {
     id: string;

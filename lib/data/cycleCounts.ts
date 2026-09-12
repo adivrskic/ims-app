@@ -90,10 +90,17 @@ const PRIORITIZED_LIMIT = 8;
 
 export function getCycleCountsPageData(
   orgId: string,
-  opts: { productId?: string | null; varianceOnly: boolean }
+  opts: {
+    productId?: string | null;
+    varianceOnly: boolean;
+    /** Active facility, or null for workspace-wide. Scopes the slot picker. */
+    facilityId?: string | null;
+  }
 ): Promise<CycleCountsPageData> {
   const productKey = opts.productId || "all";
   const varKey = opts.varianceOnly ? "variance" : "all";
+  const facilityId = opts.facilityId ?? null;
+  const facilityKey = facilityId ?? "all";
 
   return unstable_cache(
     async (): Promise<CycleCountsPageData> => {
@@ -125,8 +132,8 @@ export function getCycleCountsPageData(
         (async () => ({
           // Paginate: this feeds onHandByProduct — truncation understates the
           // on-hand hints and the risk-prioritization on-hand column.
-          data: await fetchAllPaged<Record<string, unknown>>((from, to) =>
-            admin
+          data: await fetchAllPaged<Record<string, unknown>>((from, to) => {
+            let q = admin
               .from("locations")
               .select(
                 `id, product_id, bay, level, quantity,
@@ -134,10 +141,13 @@ export function getCycleCountsPageData(
                  warehouse:warehouses ( name )`
               )
               .eq("org_id", orgId)
-              .not("product_id", "is", null)
-              .order("id", { ascending: true })
-              .range(from, to)
-          ),
+              .not("product_id", "is", null);
+            // Scope the slot picker to the active facility. Counting is a
+            // physical act — offering slots in a building the counter isn't
+            // standing in invites counts against the wrong shelf.
+            if (facilityId) q = q.eq("warehouse_id", facilityId);
+            return q.order("id", { ascending: true }).range(from, to);
+          }),
         }))(),
         (() => {
           let q = admin
@@ -336,7 +346,7 @@ export function getCycleCountsPageData(
             ?.auto_cycle_counts_enabled ?? false,
       };
     },
-    ["cycle-counts-page", orgId, productKey, varKey],
+    ["cycle-counts-page", orgId, productKey, varKey, facilityKey],
     { tags: [tags.cycleCounts(orgId), tags.inventory(orgId)], revalidate: 300 }
   )();
 }

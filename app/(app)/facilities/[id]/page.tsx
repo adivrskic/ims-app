@@ -1,8 +1,9 @@
 import { notFound } from "next/navigation";
-import { FileText, Pencil } from "lucide-react";
+import { FileText, LayoutDashboard, Pencil } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentOrgContext } from "@/lib/data/user";
 import { CornerLink } from "@/components/ui/CornerButton";
+import { EmptyState } from "@/components/ui/EmptyState";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { FacilityViewer } from "./FacilityViewer";
 import { ELEMENT_PRESETS } from "@/app/(app)/facilities/[id]/builder/elementPresets";
@@ -161,16 +162,42 @@ export default async function FacilityPage({
         }
       />
 
-      <div className="flex-1 min-h-0">
-        <FacilityViewer
-          facilityId={warehouse.id}
-          canvasWidth={Number(warehouse.floor_canvas_width)}
-          canvasHeight={Number(warehouse.floor_canvas_height)}
-          floorUnit={warehouse.floor_unit}
-          sections={sectionData}
-          elements={elementData}
+      {sectionData.length === 0 && elementData.length === 0 ? (
+        // Nothing drawn yet: an empty canvas reads as a broken page, so point
+        // at the builder (or at whoever can open it) instead.
+        <EmptyState
+          title="This facility has no layout yet"
+          description={
+            canEdit
+              ? "Draw racking sections, doors and walkways in the builder — the floor map, occupancy tints and bay labels all come from it."
+              : "Once someone with facility permissions draws the racking sections in the builder, the floor map shows up here."
+          }
+          icon={<LayoutDashboard size={20} strokeWidth={1.5} />}
+          action={
+            canEdit ? (
+              <CornerLink
+                href={`/facilities/${warehouse.id}/builder`}
+                variant="primary"
+                size="sm"
+              >
+                <Pencil size={11} strokeWidth={1.5} />
+                Open the builder
+              </CornerLink>
+            ) : undefined
+          }
         />
-      </div>
+      ) : (
+        <div className="flex-1 min-h-0">
+          <FacilityViewer
+            facilityId={warehouse.id}
+            canvasWidth={Number(warehouse.floor_canvas_width)}
+            canvasHeight={Number(warehouse.floor_canvas_height)}
+            floorUnit={warehouse.floor_unit}
+            sections={sectionData}
+            elements={elementData}
+          />
+        </div>
+      )}
     </>
   );
 }

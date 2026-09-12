@@ -108,11 +108,16 @@ export async function markPoCancelled(formData: FormData): Promise<void> {
   if ("error" in ctx) return;
   if (!ctx.can("purchasing.manage")) return;
   const id = String(formData.get("id") ?? "");
+  // Only an open PO can be cancelled. The button is hidden once a PO is fully
+  // received, but the guard lived only in the render — a replayed form post
+  // could cancel a PO whose goods are already on the shelf, stranding the
+  // receipt history under a cancelled document.
   await ctx.supabase
     .from("purchase_orders")
     .update({ status: "cancelled" })
     .eq("id", id)
-    .eq("org_id", ctx.orgId);
+    .eq("org_id", ctx.orgId)
+    .in("status", ["draft", "sent", "partially_received"]);
   revalidatePath(`/purchase-orders/${id}`);
   revalidatePath("/purchase-orders");
   revalidateTag(tags.purchaseOrders(ctx.orgId));
@@ -447,35 +452,40 @@ export async function receiveLineItem(
   // QC clears it. Linked to the PO line so review can release/remove exactly
   // these units. Held goods are not put away normally — they sit in quarantine
   // until passed, so this doesn't double-count with a later putaway.
-  if (qcHold && productId) {
-    const warehouseId =
-      (parentPo as { warehouse_id: string | null }).warehouse_id ?? null;
-    if (warehouseId) {
-      await ctx.supabase.from("locations").insert({
-        org_id: ctx.orgId,
-        warehouse_id: warehouseId,
-        product_id: productId,
-        section_id: null,
-        // Holding pseudo-slot (no section). bay/level must be > 0 per the
-        // locations_{bay,level}_check constraints.
-        bay: 1,
-        level: 1,
-        quantity: qty,
-        is_active: true,
-        quarantined: true,
-        po_line_id: lineId,
-        placed_by: ctx.user.id,
-      });
-      await ctx.supabase.from("scan_history").insert({
-        org_id: ctx.orgId,
-        product_id: productId,
-        warehouse_id: warehouseId,
-        scanned_by: ctx.user.id,
-        action: "receive",
-        quantity: qty,
-        notes: "Received to QC quarantine",
-      });
-    }
+  const parentWarehouseId =
+    (parentPo as { warehouse_id: string | null }).warehouse_id ?? null;
+
+  if (qcHold && productId && parentWarehouseId) {
+    await ctx.supabase.from("locations").insert({
+      org_id: ctx.orgId,
+      warehouse_id: parentWarehouseId,
+      product_id: productId,
+      section_id: null,
+      // Holding pseudo-slot (no section). bay/level must be > 0 per the
+      // locations_{bay,level}_check constraints.
+      bay: 1,
+      level: 1,
+      quantity: qty,
+      is_active: true,
+      quarantined: true,
+      po_line_id: lineId,
+      placed_by: ctx.user.id,
+    });
+  }
+
+  // Audit every receipt, not just QC-held ones. The insert used to sit inside
+  // the qcHold branch, so an ordinary PO receipt left no trace in activity —
+  // the ASN path always logged one, and the two disagreed about the same event.
+  if (productId) {
+    await ctx.supabase.from("scan_history").insert({
+      org_id: ctx.orgId,
+      product_id: productId,
+      warehouse_id: parentWarehouseId,
+      scanned_by: ctx.user.id,
+      action: "receive",
+      quantity: qty,
+      notes: qcHold ? "Received to QC quarantine" : "PO receipt",
+    });
   }
 
   // Re-evaluate parent PO status

@@ -123,7 +123,19 @@ export async function createProduct(
   // Quick-add: "how many do you have" becomes the product's first on-hand
   // row, in the holding area of the active facility (or the first one).
   if (initialQuantity && initialQuantity > 0) {
-    await placeInitialStock(ctx, newProduct.id, initialQuantity);
+    const placed = await placeInitialStock(ctx, newProduct.id, initialQuantity);
+    if (!placed) {
+      // The product exists but its count had nowhere to go. Say so — silently
+      // dropping the number the operator just typed is how on-hand starts
+      // disagreeing with the shelf on day one.
+      revalidatePath("/inventory");
+      revalidateTag(tags.products(ctx.orgId));
+      return {
+        success:
+          "Product registered, but the on-hand count wasn't saved — add a facility under Facilities first, then record the count.",
+        id: newProduct.id,
+      };
+    }
   }
 
   revalidatePath("/inventory");
@@ -141,7 +153,7 @@ async function placeInitialStock(
   ctx: Extract<Awaited<ReturnType<typeof getActionContext>>, { orgId: string }>,
   productId: string,
   quantity: number
-): Promise<void> {
+): Promise<boolean> {
   const scope = await getActiveScope();
   let warehouseId: string | null = scope.mode === "single" ? scope.id : null;
   if (!warehouseId) {
@@ -155,7 +167,7 @@ async function placeInitialStock(
       .maybeSingle();
     warehouseId = data?.id ?? null;
   }
-  if (!warehouseId) return;
+  if (!warehouseId) return false;
 
   const { error } = await ctx.supabase.from("locations").insert({
     org_id: ctx.orgId,
@@ -170,7 +182,7 @@ async function placeInitialStock(
   });
   if (error) {
     console.error("[createProduct] initial stock insert failed:", error.message);
-    return;
+    return false;
   }
   await ctx.supabase.from("scan_history").insert({
     org_id: ctx.orgId,
@@ -183,4 +195,5 @@ async function placeInitialStock(
   });
   revalidateTag(tags.inventory(ctx.orgId));
   revalidateTag(tags.scans(ctx.orgId));
+  return true;
 }

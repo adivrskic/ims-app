@@ -1,6 +1,7 @@
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
+import { getCurrentOrgContext } from "@/lib/data/user";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { ArrowLeft } from "lucide-react";
 import { BuilderShell } from "./BuilderShell";
@@ -24,6 +25,13 @@ export default async function BuilderPage({
 }) {
   const { id } = await params;
   const supabase = await createClient();
+
+  // Gate the page, not just the save. `saveLayout` has always refused without
+  // this permission, but the editor rendered for anyone — so a member could
+  // redraw a warehouse for twenty minutes and only discover it was forbidden
+  // when Save failed, losing the work.
+  const ctx = await getCurrentOrgContext();
+  if (!ctx?.can("facilities.manage")) redirect(`/facilities/${id}`);
 
   const { data: warehouse } = await supabase
     .from("warehouses")

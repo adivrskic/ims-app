@@ -66,6 +66,9 @@ export async function testShopify(): Promise<{
 }> {
   const ctx = await getCurrentOrgContext();
   if (!ctx) return { ok: false, error: "Not signed in" };
+  if (!ctx.can("integrations.manage")) {
+    return { ok: false, error: "Only admins can test integrations" };
+  }
 
   const admin = createAdminClient();
   const { data: row } = await admin

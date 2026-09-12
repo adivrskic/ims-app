@@ -103,7 +103,15 @@ export default async function InvitePage({ params }: PageProps) {
               title="Email mismatch"
               body={`This invite is for ${invite.email}. You're signed in as ${
                 user!.email
-              }. Sign out and sign in with the invited address to accept.`}
+              }. Sign out and sign back in as ${invite.email} to accept it.`}
+              // Was a dead end: the page told people to sign out but gave them
+              // no way to, and coming back meant finding the emailed link again.
+              cta={{
+                href: `/auth/signout?next=${encodeURIComponent(
+                  `/invite/${token}`
+                )}`,
+                label: "Sign out and switch accounts →",
+              }}
             />
           ) : (
             <InviteAcceptClient
