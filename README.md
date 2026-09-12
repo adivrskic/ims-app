@@ -89,8 +89,8 @@ All four share one **Supabase project** and one **design system** (`nimbus-desig
 
 ### Directory
 
-- **Suppliers** — Directory with a performance scorecard and default lead times.
-- **Customers** — Customer directory (business + individual).
+- **Suppliers** — Directory with a performance scorecard and default lead times, plus spreadsheet import.
+- **Customers** — Customer directory (business + individual), plus spreadsheet import.
 
 ### Facilities
 
@@ -265,15 +265,15 @@ app/
 ├── (app)/                   # Authenticated surfaces
 │   ├── layout.tsx           # Nav + side rail; fetches user + workspace
 │   ├── page.tsx             # Overview
-│   ├── inventory/           # Catalog, detail, CSV import/export
-│   ├── analytics/           # Metrics + dead-stock report
+│   ├── inventory/           # Catalog, detail, quick add, spreadsheet import, CSV export
+│   ├── analytics/           # Metrics, dead stock, forecast, slotting, valuation
 │   ├── cycle-counts/        # Variance + accuracy tracking
 │   ├── orders/              # Pick lists, deliveries, pickups
 │   ├── purchase-orders/     # Manual + AI-drafted POs
 │   ├── returns/             # Disposition routing
 │   ├── facilities/[id]/     # Viewer (2D/3D) + builder + sections
-│   ├── suppliers/           # Supplier directory + scorecard
-│   ├── customers/           # Customer directory
+│   ├── suppliers/           # Supplier directory + scorecard + import
+│   ├── customers/           # Customer directory + import
 │   ├── scan/                # HID barcode workstation
 │   ├── notifications/       # Inbox for alerts, scan summaries, system events
 │   ├── integrations/        # Slack, Shopify, Resend, Webhooks (+ stubs)
@@ -287,8 +287,9 @@ app/
 
 components/
 ├── nav/                     # TopNav, SideRail, CommandPalette, WorkspaceSwitcher
+├── import/                  # ImportPage + ImportWorkbench — every entity import
 ├── ui/                       # Button, Input, KpiCard, PageHeader, Badge, EmptyState, …
-├── dashboard/               # ScopeFilter, GlowCardGrid, ForecastNarration
+├── dashboard/               # ScopeFilter, GlowCardGrid, ForecastNarration, SampleData*
 ├── realtime/                # PageRealtime — per-page Supabase channel subscriptions
 ├── integrations/            # ProviderLogo, IntegrationGrid
 ├── print/                   # Zebra ZPL generation + WebUSB driver
@@ -299,6 +300,10 @@ lib/
 ├── ai/narrate.ts            # Edge-function wrapper
 ├── appUrl.ts                # Single source for the public origin (links in email/invites)
 ├── replenishment.ts         # velocity / ROP / EOQ math
+├── csv/parse.ts             # Delimited-text parser (RFC 4180, tab/semicolon, BOM)
+├── import/                  # Import engine: spec.ts + specs.ts + prepare.ts + server.ts
+├── sampleData/              # Industry demo catalogs + seed/teardown actions
+├── workspace/               # provision.ts — shared by /onboarding and /workspaces/new
 ├── integrations/            # Provider clients (shopify, slack, webhooks, resend)
 ├── data/                    # Request-cached fetchers
 │   ├── actionContext.ts     # getActionContext() — the org + RBAC gate every action uses
@@ -347,7 +352,9 @@ node scripts/seed-demo.mjs --org acme --wipe-only  # just remove seed data
 Uses `SUPABASE_SERVICE_ROLE_KEY`, so it **bypasses RLS** — point it only at a
 workspace you intend to modify. Every row it writes is tagged, and `--wipe`
 deletes only tagged rows, so it is safe to run against a shared dev project.
-Companion doc: [`docs/QA-TEST-PLAN.md`](docs/QA-TEST-PLAN.md).
+Companion doc: [`docs/QA-TEST-PLAN.md`](docs/QA-TEST-PLAN.md) — a route-complete manual test plan covering every page and route handler.
+
+For a quick demo without the script, use **Explore with sample data** on the overview's getting-started card: it seeds an industry-matched set (products with stock, suppliers, customers, a PO in transit, open orders, 14 days of scans) and clears itself in one click. The script is still the only way to get the 90 days of history the forecast, valuation and dead-stock reports need.
 
 ### Regenerate DB types after a schema change
 
@@ -373,14 +380,14 @@ A second Netlify site sharing the build profile with the marketing repo.
 
 ## Status snapshot
 
-**Live:** Operate (Overview, Inventory, Analytics, Cycle counts, Scan), Flow (Orders, POs incl. AI drafting, Returns), Directory (Suppliers, Customers), Facilities (2D + 3D viewer, full builder, slot management), Settings (TOTP MFA, Members + bulk invite, Devices, Billing, API keys, Audit, Webhooks), Integrations (Slack, Shopify, Resend, custom webhooks), Admin onboarding.
+**Live:** Operate (Overview + sample data, Inventory incl. spreadsheet import, Analytics, Cycle counts, Scan), Flow (Orders, POs incl. AI drafting, Returns), Directory (Suppliers, Customers, both importable), Facilities (2D + 3D viewer, full builder, slot management), Settings (TOTP MFA, Members + bulk invite, Devices, Billing, API keys, Audit, Webhooks), Integrations (Slack, Shopify, Resend, custom webhooks), Onboarding wizard (also serving second workspaces), Admin onboarding.
 
 **Stubbed / partial:**
 
 - **Integrations** — Square, WooCommerce, QuickBooks, Xero, Stripe, ShipStation, FedEx, Gmail, Zapier, HubSpot are "Not yet available" stubs.
 - **Shopify v2** — inventory write-back, fulfillment + tracking, multi-location routing, unknown-SKU mapping, reconciliation pull.
 - **3D builder** — only the viewer has a 2D/3D toggle; editing is 2D-only.
-- **Tests** — Vitest unit suite over critical pure logic (`npm test`); no E2E suite yet.
+- **Tests** — Vitest unit suite over critical pure logic (`npm test`, 238 tests); no E2E suite yet. Manual coverage is [`docs/QA-TEST-PLAN.md`](docs/QA-TEST-PLAN.md), which is route-complete.
 
 ---
 
