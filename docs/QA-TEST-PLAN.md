@@ -5,15 +5,17 @@
 
 > **Status of this document:** regenerated from the code on **2026-09-11**. Every route, permission, field, message and business rule below was read out of the repo, not assumed. Where something is unverified or environment-dependent it says so explicitly.
 >
-> ### 2026-09-12 — 58 defects fixed
+> ### 2026-09-12 — every open defect fixed
 >
-> Every open item in the register has been fixed, reclassified, or explained. §22.1 lists the
-> 48 fixed in this pass; the cases they map to now describe the **corrected** behaviour and are
-> marked *(regression)*, so a tester confirms the fix rather than reproducing the bug. Three
-> items remain genuinely open (§22.3) and three reported "bugs" were disproved by reading the
-> live database (§22.4). **A migration ships with this change** —
-> `20260912120000_analytics_page_aggregate_rpcs.sql` must be applied or `/analytics` and
-> `/analytics/dead-stock` will error.
+> The register has **no open items left**. §22.1 lists the 51 fixed in this pass and §22.3 the
+> last three, closed on the same day — including the one in the mobile repository. Every case
+> they map to now describes the **corrected** behaviour and is marked *(regression)*, so a
+> tester confirms the fix rather than reproducing the bug. Three reported "bugs" were disproved
+> by reading the live database and are recorded in §22.4 so nobody re-files them.
+>
+> **Two migrations ship with this change** and are already applied to the live project:
+> `20260912120000_analytics_page_aggregate_rpcs.sql` (without it `/analytics` and
+> `/analytics/dead-stock` error) and `20260912140000_asn_receive_atomic.sql`.
 >
 > ### What changed in the previous revision
 > - **Restructured to be route-complete.** The old phase-based layout covered maybe half the app. §3 is now a coverage index listing **all 79 pages and 22 route handlers**, each mapped to the section that tests it. Nothing is unlisted.
@@ -890,9 +892,9 @@ Shared engine; the same workbench serves suppliers and customers (§11.5).
 | 12.7.3 | **Over-receipt is rejected** *(regression)* | Typing more than remaining now errors like the PO path: "Can't receive X — only Y remaining on this line". Whole-pallet receive still takes all remaining per line (it has no quantity to get wrong) | ☐ |
 | 12.7.4 | Receive a pallet | Every line on that LPN is received at full remaining | ☐ |
 | 12.7.5 | Line then pallet | Receive one line, then the pallet → only the remainder is taken | ☐ |
-| 12.7.6 | **Optimistic lock** *(regression)* | Two concurrent receives of the same ASN line → the loser gets "This line was just received by someone else — refresh and retry so the counts don't collide." No double count | ☐ |
+| 12.7.6 | **Atomic receipt** *(regression)* | Two concurrent receives of the same ASN line → the loser is told to refresh, and no double count lands. Then the harder case: receive the **same PO line** from `/inbound/{id}` and `/purchase-orders/{id}` at the same moment → both increments must survive (the PO-side write used to be lost). Compare the PO line total against the sum of what was received | ☐ |
 | 12.7.7 | **Receive against a cancelled ASN** *(regression)* | A crafted POST against a cancelled (or already fully received) ASN is refused before any write, and its status is unchanged | ☐ |
-| 12.7.8 | ASN lot number *(regression)* | Receiving an ASN line carrying a lot number find-or-creates the `lots` row and flips the product to `track_lots`, like the PO path. For a PO-linked line the `lot_id` lands on the PO line, so FEFO and the Lots registry pick it up. ⚠️ A standalone (non-PO) ASN line still has nowhere to store `lot_id` — see §22.3 | ☐ |
+| 12.7.8 | ASN lot number *(regression)* | Receiving an ASN line carrying a lot number find-or-creates the `lots` row and flips the product to `track_lots`, like the PO path. The `lot_id` is stored on the ASN line **and** on the PO line when there is one — so it works for a **standalone** ASN too. Verify the lot then appears in `/lots` and carries a FEFO badge on a wave. Receiving the same line again without a lot must not clear the linkage | ☐ |
 
 ### 12.8 `/receiving` (QC queue)
 | # | Case | Expected | Result |
@@ -1483,7 +1485,7 @@ npx expo run:android
 | 19.12 | Work order build | Completes via the RPC | ☐ |
 | 19.13 | Return + restock | Friendly error mapping | ☐ |
 | 19.14 | **Offline queue** | Airplane mode → register / adjust / relocate queue, then sync on reconnect | ☐ |
-| 19.15 | **Offline indicator** | ⚠️ Expected to FAIL — the banner and pending badge exist but are never rendered. The operator gets no indication | ☐ |
+| 19.15 | **Offline indicator** *(regression)* | Go into airplane mode and queue a write → a banner appears under the header on **every** screen ("Offline — N pending"), and a count badge appears on the Home tab icon. Back online it reads "Syncing…", then both disappear once the queue drains | ☐ |
 | 19.16 | Offline-blocked actions | Picking/receiving are hard-blocked by design — confirm the message is clear | ☐ |
 | 19.17 | Conflict resolution | Keep-server / keep-mine modal | ☐ |
 | 19.18 | Push notification | With EAS configured, on a real device. Without it, the toggle flips back off with an alert | ☐ |
@@ -1605,11 +1607,13 @@ Every row below was open when this plan was written and has since been fixed. Th
 | 10 | S3 | Getting-started checklist silently dropped "Connect your store" | 6.1.6 |
 
 ### 22.3 Still open
-| # | Sev | Issue | Where | Why it is still open |
+**None.** The three items that survived the first fix pass were closed on 2026-09-12:
+
+| # | Sev | Was | Now | Case |
 |---|---|---|---|---|
-| 59 | S4 | Mobile offline banner / pending badge are never rendered | `lib/offlineUI.tsx` (**mobile repo**, `D:\hello-world2`) | Different repository — not in this codebase |
-| 60 | S3 | An ASN receive racing a **PO-page** receive on the same PO line can still lose an update | `app/(app)/inbound/actions.ts` | The ASN-line lock closes the double-count within the ASN path. Closing it across both paths means moving the PO-line write into an RPC — a bigger change than this pass, and worth doing deliberately |
-| 61 | S4 | A **standalone** (non-PO-linked) ASN line creates the lot row but has nowhere to store `lot_id` | `app.asn_lines` | The table has no `lot_id` column; adding one needs a migration. PO-linked lines are unaffected — the id lands on the PO line, which is what FEFO and the Lots registry read |
+| 59 | S4 | Mobile offline banner and pending badge existed but were never rendered, so an operator working offline got no indication at all — writes queued silently | `OfflineBanner` is mounted in the shared `ScreenHeader`, which every one of the 18 mobile screens uses, and `PendingBadge` sits on the Home tab icon. Both render nothing when online with an empty queue | 19.15 |
+| 60 | S3 | An ASN receive racing a receipt on the PO detail page could lose the PO-side increment, leaving the PO under-reporting goods already on the dock | `app.receive_asn_line` takes the ASN line **and** its linked PO line `FOR UPDATE` and writes both in one transaction | 12.7.6 |
+| 61 | S4 | A standalone (non-PO-linked) ASN line created the `lots` row but had nowhere to store `lot_id`, so the Lots registry, FEFO and expiry alerts never saw it | `app.asn_lines.lot_id` added; the same RPC sets it on the ASN line and on the PO line when there is one | 12.7.8 |
 
 ### 22.4 Reclassified after verification — **not bugs**
 Both were reported by the survey pass and disproved by reading the live database. Recorded so nobody re-files them.

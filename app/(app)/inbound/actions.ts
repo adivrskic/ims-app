@@ -403,36 +403,12 @@ async function receiveLines(
   for (const l of lines) {
     const remaining = l.quantity_expected - (l.quantity_received ?? 0);
     if (remaining <= 0) continue;
-    const qty = explicitQty != null ? explicitQty : remaining;
-    if (qty <= 0) continue;
-    const newReceived = (l.quantity_received ?? 0) + qty;
 
-    // Optimistic-lock the receipt against the qty we read, so two concurrent
-    // receipts on the same line can't lose an update (last-writer-wins on
-    // quantity_received). Stop at the first collision rather than pressing on:
-    // the lines already committed above stay consistent and get reconciled
-    // below, and the operator is told to refresh.
-    let lineUpd = ctx.supabase
-      .from("asn_lines")
-      .update({ quantity_received: newReceived })
-      .eq("id", l.id)
-      .eq("org_id", ctx.orgId);
-    lineUpd =
-      l.quantity_received == null
-        ? lineUpd.is("quantity_received", null)
-        : lineUpd.eq("quantity_received", l.quantity_received);
-    const { data: updatedLine } = await lineUpd.select("id");
-    if (!updatedLine || updatedLine.length === 0) {
-      conflict = true;
-      break;
-    }
-    totalReceived += qty;
-
-    // Lot capture: the ASN line carries a free-text lot number, which on its own
-    // is invisible to the Lots registry, FEFO picking and expiry alerts. Mirror
-    // the PO receive path — find-or-create the real lot row and mark the product
-    // lot-tracked. (No expiry is captured on an ASN line, so expires_at stays
-    // null for a new lot and an existing lot's value is left untouched.)
+    // Lot capture: the ASN line carries a free-text lot number, which on its
+    // own is invisible to the Lots registry, FEFO picking and expiry alerts.
+    // Mirror the PO receive path — find-or-create the real lot row and mark the
+    // product lot-tracked. (No expiry is captured on an ASN line, so expires_at
+    // stays null for a new lot and an existing lot's value is left untouched.)
     let lotId: string | null = null;
     if (l.lot_number && l.product_id) {
       const { data: existingLot } = await ctx.supabase
@@ -467,31 +443,39 @@ async function receiveLines(
         .eq("org_id", ctx.orgId);
     }
 
-    // Reconcile against the linked PO line (record receipt; putaway creates stock).
-    if (l.po_line_id) {
-      const { data: pol } = await ctx.supabase
-        .from("po_line_items")
-        .select("po_id, quantity_received")
-        .eq("id", l.po_line_id)
-        .maybeSingle();
-      const p = pol as { po_id: string; quantity_received: number | null } | null;
-      if (p) {
-        const poLineUpdate: Record<string, unknown> = {
-          quantity_received: (p.quantity_received ?? 0) + qty,
-          received_at: new Date().toISOString(),
-          received_by: ctx.user.id,
-        };
-        // asn_lines has no lot_id column, so the lot linkage lands on the PO
-        // line — the same row the Lots registry and FEFO already read from.
-        if (l.lot_number) poLineUpdate.lot_number = l.lot_number;
-        if (lotId) poLineUpdate.lot_id = lotId;
-        await ctx.supabase
-          .from("po_line_items")
-          .update(poLineUpdate)
-          .eq("id", l.po_line_id);
-        poIds.add(p.po_id);
+    // One transaction takes the ASN line AND its linked PO line FOR UPDATE and
+    // writes both. Doing it in two statements here meant an ASN receipt racing
+    // a receipt on the PO detail page could lose the PO-side increment, leaving
+    // the PO under-reporting goods that were physically on the dock.
+    const { data: result, error: receiveErr } = await ctx.supabase.rpc(
+      "receive_asn_line",
+      {
+        p_org: ctx.orgId,
+        p_line_id: l.id,
+        p_qty: explicitQty,
+        p_lot_id: lotId,
+        p_lot_number: l.lot_number,
       }
+    );
+
+    if (receiveErr) {
+      // The typo case is rejected before the loop starts, so an over-receipt
+      // surfacing here means the remaining changed underneath us — someone
+      // else received this line while the page was open.
+      conflict = true;
+      break;
     }
+
+    const outcome = (result ?? {}) as {
+      received?: number;
+      po_id?: string | null;
+      skipped?: boolean;
+    };
+    const qty = outcome.received ?? 0;
+    if (outcome.skipped || qty <= 0) continue;
+
+    totalReceived += qty;
+    if (outcome.po_id) poIds.add(outcome.po_id);
 
     await ctx.supabase.from("scan_history").insert({
       org_id: ctx.orgId,
