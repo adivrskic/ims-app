@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getCurrentOrgContext } from "@/lib/data/user";
+import { isTrialExpired, TRIAL_ENDED_ERROR } from "@/lib/data/entitlement";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { encrypt } from "@/lib/integrations/crypto";
 import { testSlackIntegration } from "@/lib/integrations/slack";
@@ -26,6 +27,7 @@ export async function connectSlack(
   if (!ctx.can("integrations.manage")) {
     return { error: "Only admins can configure integrations" };
   }
+  if (await isTrialExpired(ctx.orgId)) return { error: TRIAL_ENDED_ERROR };
 
   const webhookUrl = String(formData.get("webhook_url") ?? "").trim();
   const botName = String(formData.get("bot_name") ?? "").trim();
@@ -95,6 +97,7 @@ export async function disconnectSlack(): Promise<void> {
   const ctx = await getCurrentOrgContext();
   if (!ctx) return;
   if (!ctx.can("integrations.manage")) return;
+  if (await isTrialExpired(ctx.orgId)) return;
 
   const admin = createAdminClient();
   await admin
@@ -113,6 +116,9 @@ export async function reTestSlack(): Promise<{ ok: boolean; error?: string }> {
   if (!ctx) return { ok: false, error: "Not signed in" };
   if (!ctx.can("integrations.manage")) {
     return { ok: false, error: "Only admins can configure integrations" };
+  }
+  if (await isTrialExpired(ctx.orgId)) {
+    return { ok: false, error: TRIAL_ENDED_ERROR };
   }
 
   const admin = createAdminClient();

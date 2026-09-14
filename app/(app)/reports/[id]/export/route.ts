@@ -1,6 +1,10 @@
 import { type NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentOrgContext } from "@/lib/data/user";
+import {
+  isTrialExpired,
+  trialEndedExportResponse,
+} from "@/lib/data/entitlement";
 import { getDatasetMeta, type ReportConfig } from "@/lib/reports-meta";
 import { runReport } from "@/lib/data/reports";
 import { csvCell } from "@/lib/print/csv";
@@ -15,6 +19,7 @@ export async function GET(
   const { id } = await params;
   const ctx = await getCurrentOrgContext();
   if (!ctx) return new Response("Not signed in", { status: 401 });
+  if (await isTrialExpired(ctx.orgId)) return trialEndedExportResponse();
 
   const supabase = await createClient();
   const { data: report } = await supabase

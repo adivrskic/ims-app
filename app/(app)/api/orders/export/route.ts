@@ -1,5 +1,9 @@
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentOrgContext } from "@/lib/data/user";
+import {
+  isTrialExpired,
+  trialEndedExportResponse,
+} from "@/lib/data/entitlement";
 import { type NextRequest } from "next/server";
 import { csvCell } from "@/lib/print/csv";
 
@@ -47,6 +51,7 @@ export async function GET(req: NextRequest) {
   // workspace that genuinely has no orders. The sibling exports all do this.
   const ctx = await getCurrentOrgContext();
   if (!ctx) return new Response("Not signed in", { status: 401 });
+  if (await isTrialExpired(ctx.orgId)) return trialEndedExportResponse();
 
   const supabase = await createClient();
   const url = new URL(req.url);

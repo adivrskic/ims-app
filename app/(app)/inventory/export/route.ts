@@ -1,5 +1,9 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getCurrentOrgContext } from "@/lib/data/user";
+import {
+  isTrialExpired,
+  trialEndedExportResponse,
+} from "@/lib/data/entitlement";
 import { parseSort, parseOrder, type InventoryRow } from "@/lib/data/inventory";
 import { type NextRequest } from "next/server";
 import { csvCell } from "@/lib/print/csv";
@@ -20,6 +24,7 @@ const EXPORT_LIMIT = 100_000;
 export async function GET(req: NextRequest) {
   const ctx = await getCurrentOrgContext();
   if (!ctx) return new Response("Not signed in", { status: 401 });
+  if (await isTrialExpired(ctx.orgId)) return trialEndedExportResponse();
 
   const url = new URL(req.url);
   const q = url.searchParams.get("q");

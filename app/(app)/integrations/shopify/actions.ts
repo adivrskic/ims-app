@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getCurrentOrgContext } from "@/lib/data/user";
+import { isTrialExpired, TRIAL_ENDED_ERROR } from "@/lib/data/entitlement";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { clientFromIntegration } from "@/lib/integrations/shopify/client";
 import type { IntegrationRecord } from "@/lib/integrations/types";
@@ -18,6 +19,7 @@ export async function startShopifyOauth(
   if (!ctx.can("integrations.manage")) {
     return { error: "Only admins can connect integrations" };
   }
+  if (await isTrialExpired(ctx.orgId)) return { error: TRIAL_ENDED_ERROR };
 
   const shop = String(formData.get("shop") ?? "").trim();
   if (!shop) return { error: "Enter your shop domain" };
@@ -36,6 +38,7 @@ export async function updateDefaultFacility(
   if (!ctx.can("integrations.manage")) {
     return { error: "Only admins can edit integration config" };
   }
+  if (await isTrialExpired(ctx.orgId)) return { error: TRIAL_ENDED_ERROR };
 
   const admin = createAdminClient();
   const { data: integration } = await admin
@@ -68,6 +71,9 @@ export async function testShopify(): Promise<{
   if (!ctx) return { ok: false, error: "Not signed in" };
   if (!ctx.can("integrations.manage")) {
     return { ok: false, error: "Only admins can test integrations" };
+  }
+  if (await isTrialExpired(ctx.orgId)) {
+    return { ok: false, error: TRIAL_ENDED_ERROR };
   }
 
   const admin = createAdminClient();
@@ -114,6 +120,7 @@ export async function disconnectShopify(): Promise<void> {
   const ctx = await getCurrentOrgContext();
   if (!ctx) return;
   if (!ctx.can("integrations.manage")) return;
+  if (await isTrialExpired(ctx.orgId)) return;
 
   const admin = createAdminClient();
   const { data: row } = await admin

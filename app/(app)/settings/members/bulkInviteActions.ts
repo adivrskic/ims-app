@@ -7,6 +7,7 @@ import { randomBytes } from "crypto";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { sendInviteEmail } from "@/lib/email/invite";
+import { isTrialExpired, TRIAL_ENDED_ERROR } from "@/lib/data/entitlement";
 
 /**
  * Bulk team invite — CSV preview + execute. Relocated from the retired
@@ -189,6 +190,10 @@ export async function previewBulkInvite(
   }
   if (caller.role !== "owner" && caller.role !== "admin") {
     return { ...empty, fatal_error: "Only owners and admins can bulk-invite" };
+  }
+  // Also gates executeBulkInvite, which runs this preview first.
+  if (await isTrialExpired(orgId)) {
+    return { ...empty, fatal_error: TRIAL_ENDED_ERROR };
   }
 
   const text = await file.text();

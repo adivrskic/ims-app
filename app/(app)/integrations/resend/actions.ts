@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getCurrentOrgContext } from "@/lib/data/user";
+import { isTrialExpired, TRIAL_ENDED_ERROR } from "@/lib/data/entitlement";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { encrypt } from "@/lib/integrations/crypto";
 import { testResendIntegration } from "@/lib/integrations/resend";
@@ -29,6 +30,7 @@ export async function connectResend(
   if (!ctx.can("integrations.manage")) {
     return { error: "Only admins can configure integrations" };
   }
+  if (await isTrialExpired(ctx.orgId)) return { error: TRIAL_ENDED_ERROR };
 
   const apiKey = String(formData.get("api_key") ?? "").trim();
   const fromAddress = String(formData.get("from_address") ?? "").trim();
@@ -140,6 +142,7 @@ export async function disconnectResend(): Promise<void> {
   const ctx = await getCurrentOrgContext();
   if (!ctx) return;
   if (!ctx.can("integrations.manage")) return;
+  if (await isTrialExpired(ctx.orgId)) return;
 
   const admin = createAdminClient();
   await admin
@@ -160,6 +163,9 @@ export async function reTestResend(): Promise<{
   if (!ctx) return { ok: false, error: "Not signed in" };
   if (!ctx.can("integrations.manage")) {
     return { ok: false, error: "Only admins can configure integrations" };
+  }
+  if (await isTrialExpired(ctx.orgId)) {
+    return { ok: false, error: TRIAL_ENDED_ERROR };
   }
   if (!ctx.user.email) return { ok: false, error: "Your account has no email" };
 

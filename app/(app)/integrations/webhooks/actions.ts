@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getCurrentOrgContext } from "@/lib/data/user";
+import { isTrialExpired, TRIAL_ENDED_ERROR } from "@/lib/data/entitlement";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
   encryptEndpointSecrets,
@@ -34,6 +35,7 @@ export async function createWebhookEndpoint(
   if (!ctx.can("integrations.manage")) {
     return { error: "Only admins can create webhook endpoints" };
   }
+  if (await isTrialExpired(ctx.orgId)) return { error: TRIAL_ENDED_ERROR };
 
   const name = String(formData.get("name") ?? "").trim();
   const url = String(formData.get("url") ?? "").trim();
@@ -93,6 +95,7 @@ export async function updateWebhookEndpoint(
   if (!ctx.can("integrations.manage")) {
     return { error: "Only admins can edit endpoints" };
   }
+  if (await isTrialExpired(ctx.orgId)) return { error: TRIAL_ENDED_ERROR };
 
   const name = String(formData.get("name") ?? "").trim();
   const events = formData.getAll("events").map(String);
@@ -120,6 +123,7 @@ export async function toggleWebhookEndpoint(endpointId: string): Promise<void> {
   const ctx = await getCurrentOrgContext();
   if (!ctx) return;
   if (!ctx.can("integrations.manage")) return;
+  if (await isTrialExpired(ctx.orgId)) return;
 
   const admin = createAdminClient();
   const { data: current } = await admin
@@ -145,6 +149,7 @@ export async function deleteWebhookEndpoint(endpointId: string): Promise<void> {
   const ctx = await getCurrentOrgContext();
   if (!ctx) return;
   if (!ctx.can("integrations.manage")) return;
+  if (await isTrialExpired(ctx.orgId)) return;
 
   const admin = createAdminClient();
   await admin
@@ -165,6 +170,9 @@ export async function testWebhookEndpoint(
   if (!ctx) return { ok: false, error: "Not signed in" };
   if (!ctx.can("integrations.manage")) {
     return { ok: false, error: "Only admins can test endpoints" };
+  }
+  if (await isTrialExpired(ctx.orgId)) {
+    return { ok: false, error: TRIAL_ENDED_ERROR };
   }
 
   const admin = createAdminClient();

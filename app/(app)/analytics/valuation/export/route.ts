@@ -1,4 +1,8 @@
 import { getCurrentOrgContext } from "@/lib/data/user";
+import {
+  isTrialExpired,
+  trialEndedExportResponse,
+} from "@/lib/data/entitlement";
 import { getValuation } from "@/lib/data/valuation";
 import { csvCell } from "@/lib/print/csv";
 
@@ -8,6 +12,7 @@ export const dynamic = "force-dynamic";
 export async function GET(req: Request) {
   const ctx = await getCurrentOrgContext();
   if (!ctx) return new Response("Unauthorized", { status: 401 });
+  if (await isTrialExpired(ctx.orgId)) return trialEndedExportResponse();
 
   const facility = new URL(req.url).searchParams.get("facility");
   const r = await getValuation(ctx.orgId, facility || null);
