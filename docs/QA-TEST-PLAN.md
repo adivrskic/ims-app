@@ -189,7 +189,7 @@ Verified against the code on 2026-09-11. These **change what is testable**.
 
 ## 3. Route coverage index
 
-Every addressable surface in the app. **79 pages + 22 route handlers.** If a route isn't in a section you ran, it wasn't tested.
+Every addressable surface in the app. **80 pages + 22 route handlers.** If a route isn't in a section you ran, it wasn't tested.
 
 ### Authenticated pages
 
@@ -231,7 +231,7 @@ Every addressable surface in the app. **79 pages + 22 route handlers.** If a rou
 | `/settings/billing` | §16.6 | `/settings/api-keys` | §16.7 |
 | `/settings/audit` | §16.8 | `/settings/adjustments` | §16.9 |
 | `/admin` | §16.10 | `/admin/onboard` | §16.11 |
-| `/admin/workspace/[id]` | §16.12 | | |
+| `/admin/workspace/[id]` | §16.12 | `/trial-ended` | §15.9 |
 
 ### Route handlers
 
@@ -257,6 +257,8 @@ Every addressable surface in the app. **79 pages + 22 route handlers.** If a rou
 | `GET /(app)/api/orders/export` | **RLS only** | §17.4 |
 | `GET /(app)/analytics/valuation/export` | session | §17.4 |
 | `GET /(app)/reports/[id]/export` | session | §17.4 |
+
+For a workspace whose free trial has ended, `/api/v1/*` and the four `(app)` exports answer **402** (§15.9). Cron routes, webhooks and `/admin` are never gated.
 
 ---
 
@@ -1179,6 +1181,7 @@ curl.exe -i -H "Authorization: Bearer YOUR_KEY" https://app.nautilusinventory.co
 | 15.7.14 | Limit clamp | `?limit=9999` → clamped to 500; **no pagination beyond it** | ☐ |
 | 15.7.15 | Audit attribution | A scan posted by a key is attributed to the key's **issuer**, not to "system" | ☐ |
 | 15.7.16 | `/inventory` totals *(regression)* | On a workspace with >1 000 location rows the per-product totals are now complete (paged server-side). Cross-check one SKU against its detail page. A failed page returns 500 rather than a short 200 | ☐ |
+| 15.7.17 | **Expired trial** | A valid key from a workspace whose trial has ended → **402** `{"error":"This workspace's free trial has ended…","code":"trial_ended","trial_ended_at":"…"}` on all three endpoints, **before** any scope check. Back to 200 as soon as the workspace has an `active` subscription | ☐ |
 
 ### 15.8 Cron jobs
 All are **POST-only** with `Authorization: Bearer $CRON_SECRET`. Verification is constant-time and **fail-closed** (an unset secret 401s everything).
@@ -1199,6 +1202,38 @@ curl.exe -i -X POST https://app.nautilusinventory.com/api/cron/stockout-alerts -
 | 15.8.8 | `webhook-retries` | Set `next_retry_at = now()` on a failed delivery and re-run → re-sent with the same delivery id | ☐ |
 | 15.8.9 | Notifications land | After a successful run, `/notifications` shows the new rows (see §5.5.3 about missing filter chips) | ☐ |
 | 15.8.10 | Vault secrets | Confirm `cron_app_url` + `cron_secret` exist and match `CRON_SECRET`. ⚠️ `net.http_post` is fire-and-forget — a 401 still logs a *successful* job run. **Check `net._http_response` for the real status** | ☐ |
+
+### 15.9 Free trial & the entitlement gate
+Every workspace created after `20260913120000_trial_clock.sql` is applied gets a **7-day trial**: exactly 168 hours from creation, no card. Workspaces that existed before it are **grandfathered** (`orgs.trial_started_at IS NULL`) and are never gated, and so is any workspace with a live Stripe subscription (`active`, `trialing`, `past_due`). The rules live in `lib/entitlement.ts`.
+
+Nobody should wait a week. Move a **test** workspace's clock from the SQL editor (a trigger refuses the change from client sessions):
+
+```sql
+update app.orgs set trial_started_at = now() - interval '6 days 23 hours 58 minutes' where id = '<test org>'; -- 2 minutes left
+update app.orgs set trial_started_at = now() - interval '8 days' where id = '<test org>';                    -- expired
+update app.orgs set trial_started_at = null where id = '<test org>';                                         -- grandfathered again
+```
+
+| # | Case | Expected | Result |
+|---|---|---|---|
+| 15.9.1 | New workspace | Sign up → onboarding → the side rail shows **"7 days left in your trial"** (mobile top bar: "7d left"; collapsed rail: "7d"). `trial_started_at` is set on the org | ☐ |
+| 15.9.2 | Existing workspace | A workspace created before the migration: no pill, no gate, `trial_started_at` NULL | ☐ |
+| 15.9.3 | Pill link | With `billing.manage` the pill links to `/settings/billing`; without it the pill is plain text | ☐ |
+| 15.9.4 | Last two days | With 2 days or fewer left the pill switches to the warning tone | ☐ |
+| 15.9.5 | Billing page during the trial | "Free trial" panel with days left, the end date and time, and **Talk to us**; the plan picker still renders below | ☐ |
+| 15.9.6 | **Expired → one screen** | Expire the clock, then load any `(app)` page (`/`, `/inventory`, `/settings/members`, `/kiosk`…) → `/trial-ended` | ☐ |
+| 15.9.7 | Owner view | `/trial-ended`: **Choose a plan →** (to billing; hidden when Stripe isn't configured) and **Talk to us** (nautilusinventory.com/contact) | ☐ |
+| 15.9.8 | Member view | "Ask a workspace owner…" listing the owners; no billing button | ☐ |
+| 15.9.9 | Still reachable | `/settings/billing` (checkout and portal work), `/workspaces/new`, Sign out, `/invite/[token]`, `/login`, `/signup`, `/auth/*`; staff reach `/admin/*` | ☐ |
+| 15.9.10 | **Soft navigation can't escape** | Expired, on `/settings/billing`: click Inventory in the side rail, a Settings tab, and a ⌘K result → each ends on `/trial-ended` behind a brief loader, never the page itself | ☐ |
+| 15.9.11 | Tab left open across the end | Load a page with 2 minutes left and leave the tab alone → within about a minute of the end it moves to `/trial-ended` without a reload | ☐ |
+| 15.9.12 | Writes refused | From a tab opened before expiry, save something (a product edit) → "This workspace's free trial has ended, so changes can't be saved…" and nothing is written | ☐ |
+| 15.9.13 | Exports | `/inventory/export`, `/api/orders/export`, `/analytics/valuation/export`, `/reports/[id]/export` → **402** | ☐ |
+| 15.9.14 | Pay to restore | Test-mode checkout from `/settings/billing` → once the webhook lands every page works again, with nothing lost | ☐ |
+| 15.9.15 | past_due and canceled | A `past_due` subscription is never gated. `canceled` on an expired clock → gated; `canceled` on a grandfathered workspace → not gated | ☐ |
+| 15.9.16 | Two workspaces | A user in two workspaces, one expired: `/trial-ended` offers the switcher; switching to the healthy one lands on `/` | ☐ |
+| 15.9.17 | **Clock and payment can't be self-served** | With your own session through PostgREST: PATCH your org's `trial_started_at` to null → refused (42501); insert or update `org_subscriptions` → permission denied. **S1 if either succeeds** | ☐ |
+| 15.9.18 | Fails open | Against a clone without the migration, every workspace works normally and the server logs `[entitlement] … failing open` once | ☐ |
 
 ---
 
@@ -1273,7 +1308,8 @@ curl.exe -i -X POST https://app.nautilusinventory.com/api/cron/stockout-alerts -
 | 16.6.4 | Query-param banners | `?checkout=success`, `?checkout=cancelled`, `?error=no_customer`, `?error=unknown_plan` each render their message | ☐ |
 | 16.6.5 | **As a member** | Plan buttons render and **silently no-op**. Record | ☐ |
 | 16.6.6 | Crafted POST | A member posting `tier=enterprise&period=annual` gets nothing | ☐ |
-| 16.6.7 | Multi-workspace | The subscription query has no explicit org filter — after switching workspaces, confirm the right subscription shows | ☐ |
+| 16.6.7 | Multi-workspace | The subscription, member-count and checkout-customer reads are now filtered to the active workspace — after switching workspaces, confirm the right subscription, member count and trial panel show, and that checkout reuses *this* workspace's Stripe customer | ☐ |
+| 16.6.8 | past_due | A `past_due` subscription shows the current plan with **Manage billing** (to fix the card), not the plan picker | ☐ |
 
 ### 16.7 `/settings/api-keys`
 | # | Case | Expected | Result |
