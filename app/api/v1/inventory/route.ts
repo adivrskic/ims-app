@@ -2,10 +2,12 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import {
   authenticateApiKey,
   apiUnauthorized,
+  apiTrialEnded,
   apiMissingScope,
   apiRateLimited,
   API_RATE_LIMIT,
 } from "@/lib/apiAuth";
+import { isEntitled } from "@/lib/entitlement";
 import { rateLimit } from "@/lib/rateLimit";
 import { fetchAllPaged } from "@/lib/data/paginate";
 
@@ -20,6 +22,7 @@ export const dynamic = "force-dynamic";
 export async function GET(req: Request) {
   const auth = await authenticateApiKey(req);
   if (!auth) return apiUnauthorized();
+  if (!isEntitled(auth.entitlement)) return apiTrialEnded(auth.entitlement);
   if (!auth.hasScope("location:read")) return apiMissingScope("location:read");
 
   const rl = await rateLimit(

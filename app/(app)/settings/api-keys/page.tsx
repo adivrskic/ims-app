@@ -152,6 +152,8 @@ export default async function ApiKeysPage() {
             . A request must satisfy both gates: the key needs the endpoint&apos;s
             scope, and the member who created it must still hold the matching
             permission. A missing scope returns 403 naming the scope required.
+            Once the workspace&apos;s free trial has ended, every endpoint returns
+            402 until it&apos;s on a plan.
           </p>
           <ul className="flex flex-col gap-6">
             <EndpointRow

@@ -3,6 +3,8 @@ import { createHash } from "crypto";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { effectivePermissions, type Permission } from "@/lib/permissions";
 import type { ApiScope } from "@/lib/apiScopes";
+import { getOrgEntitlement } from "@/lib/data/entitlement";
+import type { Entitlement } from "@/lib/entitlement";
 
 /**
  * Authentication for the public API (Authorization: Bearer <key>).
@@ -26,6 +28,11 @@ export interface ApiKeyContext {
   can: (p: Permission) => boolean;
   /** Does this key carry the given scope? See lib/apiScopes.ts. */
   hasScope: (s: ApiScope) => boolean;
+  /**
+   * The key's workspace entitlement (lib/entitlement.ts). Routes answer 402
+   * with apiTrialEnded() when it isn't entitled, straight after authenticating.
+   */
+  entitlement: Entitlement;
 }
 
 function extractBearer(req: Request): string | null {
@@ -61,12 +68,17 @@ export async function authenticateApiKey(
 
   // Resolve the issuing member's effective RBAC for this org. If they've since
   // been removed, the key is inert (we don't silently grant orphaned access).
-  const { data: member } = await admin
-    .from("org_members")
-    .select("role, permissions")
-    .eq("org_id", k.org_id)
-    .eq("user_id", k.created_by)
-    .maybeSingle();
+  // The workspace's entitlement loads alongside. It never throws and fails
+  // open, so it can't turn a valid key into a 401 or a 500.
+  const [{ data: member }, entitlement] = await Promise.all([
+    admin
+      .from("org_members")
+      .select("role, permissions")
+      .eq("org_id", k.org_id)
+      .eq("user_id", k.created_by)
+      .maybeSingle(),
+    getOrgEntitlement(k.org_id),
+  ]);
   if (!member) return null;
 
   const m = member as { role: string; permissions: string[] | null };
@@ -89,6 +101,7 @@ export async function authenticateApiKey(
     scopes: [...scopes],
     can: (p: Permission) => perms.has(p),
     hasScope: (s: ApiScope) => scopes.has(s),
+    entitlement,
   };
 }
 
@@ -106,6 +119,24 @@ export function apiRateLimited(retryAfter: number): Response {
         "Retry-After": String(retryAfter),
       },
     }
+  );
+}
+
+/**
+ * Standard 402 when the key's workspace is on a free trial that has run out
+ * unpaid. Checked straight after authentication, before scopes: nothing else
+ * the key could be refused for matters until the workspace is on a plan, and
+ * "subscribe" is the actionable answer. The key works again the moment it is.
+ */
+export function apiTrialEnded(entitlement: Entitlement): Response {
+  return new Response(
+    JSON.stringify({
+      error:
+        "This workspace's free trial has ended. An owner can choose a plan in Settings → Billing to restore API access.",
+      code: "trial_ended",
+      trial_ended_at: entitlement.trialEndsAt,
+    }),
+    { status: 402, headers: { "Content-Type": "application/json" } }
   );
 }
 

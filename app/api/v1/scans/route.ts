@@ -2,11 +2,13 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import {
   authenticateApiKey,
   apiUnauthorized,
+  apiTrialEnded,
   apiForbidden,
   apiMissingScope,
   apiRateLimited,
   API_RATE_LIMIT,
 } from "@/lib/apiAuth";
+import { isEntitled } from "@/lib/entitlement";
 import { rateLimit } from "@/lib/rateLimit";
 
 export const dynamic = "force-dynamic";
@@ -33,6 +35,7 @@ const ALLOWED_ACTIONS = new Set([
 export async function POST(req: Request) {
   const auth = await authenticateApiKey(req);
   if (!auth) return apiUnauthorized();
+  if (!isEntitled(auth.entitlement)) return apiTrialEnded(auth.entitlement);
   /* Two gates: the key must carry the scope, AND its issuer must still hold
      the RBAC permission. Scope first — it's the cheaper, more specific "no". */
   if (!auth.hasScope("scan:write")) return apiMissingScope("scan:write");
