@@ -42,7 +42,16 @@ export async function updateSession(request: NextRequest) {
           cookiesToSet.forEach(({ name, value }) =>
             request.cookies.set(name, value)
           );
-          response = NextResponse.next({ request });
+          // Forward the updated request (so the refreshed cookies travel on)
+          // AND stamp x-url again. Passing `{ request }` alone forwarded the
+          // original headers, which never carried x-url, so every
+          // token-refresh request reached the layouts without it — the trial
+          // gate and lib/kiosk.ts both read it.
+          const refreshedHeaders = new Headers(request.headers);
+          refreshedHeaders.set("x-url", request.url);
+          response = NextResponse.next({
+            request: { headers: refreshedHeaders },
+          });
           cookiesToSet.forEach(({ name, value, options }) =>
             response.cookies.set(name, value, options)
           );
