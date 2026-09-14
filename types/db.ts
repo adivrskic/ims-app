@@ -54,6 +54,11 @@ export interface OrgRow {
   onboarding: unknown;
   /** Self-serve wizard completion (onboarded_at is the staff marker). */
   onboarding_completed_at: string | null;
+  /**
+   * Start of the 7-day free trial; null = grandfathered (created before trials
+   * shipped, never gated). Only lib/entitlement.ts interprets it.
+   */
+  trial_started_at: string | null;
 }
 
 export interface OrgMemberRow {
