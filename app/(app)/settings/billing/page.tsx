@@ -1,7 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { SectionTitle } from "@/components/ui/SectionTitle";
 import { Badge } from "@/components/ui/Badge";
-import { CornerButton } from "@/components/ui/CornerButton";
+import { CornerButton, CornerLink } from "@/components/ui/CornerButton";
 import {
   CreditCard,
   ExternalLink,
@@ -10,9 +10,17 @@ import {
   Calendar,
   Check,
   AlertTriangle,
+  Hourglass,
 } from "lucide-react";
 import { stripeConfigured } from "@/lib/stripe";
-import { TIER_LABEL } from "@/lib/billing/plans";
+import { CONTACT_SALES_URL, TIER_LABEL } from "@/lib/billing/plans";
+import { getCurrentOrgContext } from "@/lib/data/user";
+import { getOrgEntitlement } from "@/lib/data/entitlement";
+import {
+  TRIAL_DAYS,
+  formatDaysLeft,
+  isPaidSubscriptionStatus,
+} from "@/lib/entitlement";
 import {
   getDefaultCard,
   getInvoices,
@@ -75,21 +83,31 @@ export default async function BillingPage({
   searchParams: Promise<{ checkout?: string; error?: string }>;
 }) {
   const { checkout, error } = await searchParams;
+  const ctx = await getCurrentOrgContext();
+  // The (app) layout has already sent anyone without a workspace to onboarding.
+  if (!ctx) return null;
   const supabase = await createClient();
   const configured = stripeConfigured();
+  const canManageBilling = ctx.can("billing.manage");
 
-  const [{ data: subRaw }, { count: memberCount }] = await Promise.all([
-    supabase
-      .from("org_subscriptions")
-      .select(
-        "tier, seats, status, trial_ends_at, current_period_end, cancel_at_period_end, stripe_customer_id, stripe_subscription_id"
-      )
-      .limit(1)
-      .maybeSingle(),
-    supabase
-      .from("org_members")
-      .select("user_id", { count: "exact", head: true }),
-  ]);
+  // Both reads are filtered to the ACTIVE workspace. Unfiltered, they returned
+  // whatever RLS let through — for someone in two workspaces, possibly the
+  // other one's subscription, and members counted across both.
+  const [{ data: subRaw }, { count: memberCount }, entitlement] =
+    await Promise.all([
+      supabase
+        .from("org_subscriptions")
+        .select(
+          "tier, seats, status, trial_ends_at, current_period_end, cancel_at_period_end, stripe_customer_id, stripe_subscription_id"
+        )
+        .eq("org_id", ctx.orgId)
+        .maybeSingle(),
+      supabase
+        .from("org_members")
+        .select("user_id", { count: "exact", head: true })
+        .eq("org_id", ctx.orgId),
+      getOrgEntitlement(ctx.orgId),
+    ]);
 
   const sub = subRaw as SubscriptionRow | null;
   const customerId = sub?.stripe_customer_id ?? null;
@@ -108,8 +126,13 @@ export default async function BillingPage({
     : null;
   const notice = noticeKey ? NOTICE[noticeKey] : null;
 
-  const hasActivePlan =
-    !!sub && (sub.status === "active" || sub.status === "trialing");
+  // "Has a plan" is the entitlement module's definition of paid: active,
+  // trialing or past_due. A past_due workspace now sees its plan with Manage
+  // billing to fix the card, rather than a plan picker that would start a
+  // second subscription.
+  const hasActivePlan = !!sub && isPaidSubscriptionStatus(sub.status);
+  const onTrialClock =
+    entitlement.state === "trial" || entitlement.state === "expired";
   const willCancel = !!sub?.cancel_at_period_end;
   const seatUsage = memberCount ?? 0;
 
@@ -154,6 +177,17 @@ export default async function BillingPage({
             <code>STRIPE_PRICE_*</code> env vars to enable self-serve plans.
           </p>
         </div>
+      )}
+
+      {/* Free trial — only while the workspace is on the trial clock. */}
+      {onTrialClock && (
+        <TrialStatus
+          ended={entitlement.state === "expired"}
+          daysLeft={entitlement.daysLeft ?? 0}
+          trialEndsAt={entitlement.trialEndsAt}
+          canManageBilling={canManageBilling}
+          configured={configured}
+        />
       )}
 
       {/* Current plan */}
@@ -393,6 +427,106 @@ function PlanGrid({ prices }: { prices: PlanPriceInfo[] }) {
         );
       })}
     </div>
+  );
+}
+
+/**
+ * The free-trial panel, shown only while the workspace is on the trial clock
+ * (running or ended). State and day count come from lib/entitlement.ts; this
+ * only puts them into words.
+ */
+function TrialStatus({
+  ended,
+  daysLeft,
+  trialEndsAt,
+  canManageBilling,
+  configured,
+}: {
+  ended: boolean;
+  daysLeft: number;
+  trialEndsAt: string | null;
+  canManageBilling: boolean;
+  configured: boolean;
+}) {
+  const endsAt = trialEndsAt
+    ? new Date(trialEndsAt).toLocaleString(undefined, {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
+        timeZoneName: "short",
+      })
+    : "—";
+  const nextStep = configured
+    ? "choose a plan below"
+    : "talk to us about a plan";
+
+  const body = ended
+    ? canManageBilling
+      ? `The workspace is paused until it's on a plan — ${nextStep} and your team picks up exactly where they left off. Nothing has been changed or deleted.`
+      : "The workspace is paused until an owner chooses a plan. Nothing has been changed or deleted."
+    : canManageBilling
+    ? `Full access for ${TRIAL_DAYS} days, no card required. To keep going without a break, ${nextStep} before it ends.`
+    : `Full access for ${TRIAL_DAYS} days, no card required. A workspace owner can choose a plan here to keep it going.`;
+
+  return (
+    <section aria-labelledby="trial">
+      <SectionTitle
+        eyebrow="No card required"
+        title="Free trial"
+        action={
+          canManageBilling ? (
+            <CornerLink
+              href={CONTACT_SALES_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              variant="ghost"
+              size="sm"
+            >
+              <ExternalLink size={11} strokeWidth={1.5} />
+              Talk to us
+            </CornerLink>
+          ) : undefined
+        }
+      />
+      <div className="hairline bg-[var(--surface)] p-20 flex flex-col gap-20">
+        <div className="flex flex-col gap-6">
+          <div className="flex items-center gap-10 flex-wrap">
+            <h3
+              className="text-text"
+              style={{
+                fontFamily: "var(--display)",
+                fontSize: 22,
+                fontWeight: 600,
+              }}
+            >
+              {ended ? "Your trial has ended" : formatDaysLeft(daysLeft)}
+            </h3>
+            <Badge
+              tone={ended ? "danger" : daysLeft <= 2 ? "warning" : "info"}
+              variant="filled"
+            >
+              {ended ? "Ended" : "Trial"}
+            </Badge>
+          </div>
+          <p className="mono-sm text-text-muted">{body}</p>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-12 hairline-t pt-20">
+          <StatBlock
+            icon={<Hourglass size={11} strokeWidth={1.5} />}
+            label="Days left"
+            primary={String(ended ? 0 : daysLeft)}
+          />
+          <StatBlock
+            icon={<Calendar size={11} strokeWidth={1.5} />}
+            label={ended ? "Ended" : "Ends"}
+            primary={endsAt}
+          />
+        </div>
+      </div>
+    </section>
   );
 }
 
