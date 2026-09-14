@@ -6,6 +6,7 @@ import { MobileNav } from "@/components/nav/MobileNav";
 import { MobileTopBar } from "@/components/nav/MobileTopBar";
 import { CommandPalette } from "@/components/nav/CommandPalette";
 import { KeyboardShortcuts } from "@/components/nav/KeyboardShortcuts";
+import { TrialGuard } from "@/components/billing/TrialGuard";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentFacilityState } from "@/lib/currentFacility";
 import {
@@ -14,6 +15,12 @@ import {
   getMemberships,
   getActiveMembership,
 } from "@/lib/data/user";
+import {
+  getOrgEntitlement,
+  getRequestPathname,
+} from "@/lib/data/entitlement";
+import { isTrialExemptPath } from "@/lib/entitlement";
+import { effectivePermissions } from "@/lib/permissions";
 import type { WorkspaceOption } from "@/components/nav/WorkspaceSwitcher";
 import type { NotificationItem } from "@/components/nav/NotificationsDropdown";
 import { ScannerProvider } from "@/components/scanner/ScannerProvider";
@@ -52,6 +59,8 @@ export default async function AppLayout({
     notifResult,
     unreadResult,
     facilityState,
+    activeEntitlement,
+    pathname,
   ] = await Promise.all([
     getProfile(),
     getMemberships(),
@@ -68,12 +77,38 @@ export default async function AppLayout({
       .eq("user_id", user.id)
       .is("read_at", null),
     getCurrentFacilityState(),
+    // Chained off the request-cached membership lookup, so the entitlement
+    // read joins this batch instead of queueing behind it.
+    getActiveMembership().then((m) =>
+      m ? getOrgEntitlement(m.org_id) : null
+    ),
+    getRequestPathname(),
   ]);
 
   // Onboarding guard — also covers the activeMembership null case.
   if (!memberships || memberships.length === 0 || !activeMembership) {
     redirect("/onboarding");
   }
+
+  // Trial gate (the rules live in lib/entitlement.ts). A workspace whose free
+  // trial ran out unpaid gets one screen, /trial-ended, from every (app) page
+  // except the few it needs in order to pay. Without an x-url header the path
+  // is unknown, and this deliberately doesn't guess — bouncing an owner off the
+  // billing page they came to pay on is the worse mistake — so TrialGuard below
+  // makes that call in the browser, where the path is always known.
+  const entitlement =
+    activeEntitlement ?? (await getOrgEntitlement(activeMembership.org_id));
+  if (
+    entitlement.state === "expired" &&
+    pathname !== null &&
+    !isTrialExemptPath(pathname)
+  ) {
+    redirect("/trial-ended");
+  }
+  const canManageBilling = effectivePermissions(
+    activeMembership.role,
+    activeMembership.permissions
+  ).has("billing.manage");
 
   const workspaces: WorkspaceOption[] = memberships.map((m) => ({
     id: m.org?.id ?? "",
@@ -108,6 +143,7 @@ export default async function AppLayout({
             <KioskGate />
           </Suspense>
           <KeyboardShortcuts />
+          <TrialGuard entitlement={entitlement} />
           <MobileNav
             industry={activeMembership.org?.industry ?? null}
             navPrefs={profile?.nav_prefs ?? null}
@@ -126,10 +162,16 @@ export default async function AppLayout({
             industry={activeMembership.org?.industry ?? null}
             navPrefs={profile?.nav_prefs ?? null}
             orgModules={activeMembership.org?.enabled_modules ?? null}
+            entitlement={entitlement}
+            canManageBilling={canManageBilling}
           />
 
           <div className="flex-1 min-w-0 flex flex-col min-h-screen">
-            <MobileTopBar unreadCount={unread} />
+            <MobileTopBar
+              unreadCount={unread}
+              entitlement={entitlement}
+              canManageBilling={canManageBilling}
+            />
 
             <main className="flex-1 relative flex flex-col min-h-0">
               <div

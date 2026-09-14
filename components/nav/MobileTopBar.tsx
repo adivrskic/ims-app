@@ -4,9 +4,15 @@ import Link from "next/link";
 import { Menu, Search, Bell } from "lucide-react";
 import { Logo } from "@/components/ui/Logo";
 import { ThemeToggle } from "@/components/nav/ThemeToggle";
+import { TrialPill } from "@/components/billing/TrialPill";
+import type { Entitlement } from "@/lib/entitlement";
 
 interface Props {
   unreadCount: number;
+  /** The active workspace's entitlement — drives the trial countdown pill. */
+  entitlement: Entitlement;
+  /** The countdown links to billing only for billing.manage holders. */
+  canManageBilling: boolean;
 }
 
 /**
@@ -15,11 +21,16 @@ interface Props {
  * Replaces the old TopNav on viewports < md. Just three things the user
  * needs at all times: brand (Home link), notifications, and the hamburger
  * to open the MobileNav drawer (which carries everything else: nav, search,
- * workspace, user menu).
+ * workspace, user menu). While a free trial runs, a compact countdown sits
+ * beside the brand.
  *
  * Hidden on md+ — the desktop sidebar absorbs all of this.
  */
-export function MobileTopBar({ unreadCount }: Props) {
+export function MobileTopBar({
+  unreadCount,
+  entitlement,
+  canManageBilling,
+}: Props) {
   const openMobileNav = () => {
     window.dispatchEvent(new Event("open-mobile-nav"));
   };
@@ -50,6 +61,13 @@ export function MobileTopBar({ unreadCount }: Props) {
           Nautilus
         </span>
       </Link>
+
+      <TrialPill
+        entitlement={entitlement}
+        canManageBilling={canManageBilling}
+        variant="short"
+        className="block shrink-0"
+      />
 
       <div className="flex-1" />
 

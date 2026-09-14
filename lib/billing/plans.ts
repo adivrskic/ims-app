@@ -19,6 +19,13 @@ export const TIER_LABEL: Record<PaidTier, string> = {
   enterprise: "Enterprise",
 };
 
+/**
+ * Where "talk to us" goes (the trial-ended screen, the billing page). The app
+ * has no sales address of its own, so this is the marketing site's contact
+ * page rather than an invented mailbox.
+ */
+export const CONTACT_SALES_URL = "https://nautilusinventory.com/contact";
+
 function env(key: string): string {
   return (process.env[key] ?? "").trim();
 }

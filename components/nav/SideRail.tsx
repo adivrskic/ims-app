@@ -34,6 +34,8 @@ import { FacilitiesNavItem } from "./FacilitiesNavItem";
 import type { FacilityOption } from "@/lib/currentFacility";
 import { SidebarDeviceBar } from "./SidebarDeviceBar";
 import { ThemeToggle } from "./ThemeToggle";
+import { TrialPill } from "@/components/billing/TrialPill";
+import type { Entitlement } from "@/lib/entitlement";
 
 /** Cookie key shared with the server-side layout. */
 const SIDEBAR_COOKIE = "Nautilus-sidebar-collapsed";
@@ -60,6 +62,10 @@ interface Props {
   navPrefs: NavPrefs | null;
   /** Org modules enabled at onboarding (between industry and user prefs). */
   orgModules: string[] | null;
+  /** The active workspace's entitlement — drives the trial countdown pill. */
+  entitlement: Entitlement;
+  /** The countdown links to billing only for billing.manage holders. */
+  canManageBilling: boolean;
 }
 
 /**
@@ -87,6 +93,8 @@ export function SideRail({
   industry,
   navPrefs,
   orgModules,
+  entitlement,
+  canManageBilling,
 }: Props) {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(initialCollapsed);
@@ -206,6 +214,15 @@ export function SideRail({
           </Link>
         )}
 
+        {/* Free-trial countdown — renders nothing outside a running trial. */}
+        <TrialPill
+          entitlement={entitlement}
+          canManageBilling={canManageBilling}
+          variant={collapsed ? "tiny" : "full"}
+          className={
+            collapsed ? "flex justify-center px-6 pb-8" : "block px-10 pb-10"
+          }
+        />
         </div>
 
         {/* ── Panel 2 · Navigate ──────────────────────────────────── */}
