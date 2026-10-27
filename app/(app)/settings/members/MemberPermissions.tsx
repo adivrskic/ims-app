@@ -5,6 +5,7 @@ import { ShieldCheck, ChevronDown } from "lucide-react";
 import { CornerButton } from "@/components/ui/CornerButton";
 import { Checkbox } from "@/components/ui/Checkbox";
 import { FormActions } from "@/components/ui/FormActions";
+import { FormNotice } from "@/components/ui/FormNotice";
 import { PERMISSIONS } from "@/lib/permissions";
 import { setMemberPermissions } from "../actions";
 
@@ -18,7 +19,15 @@ const GROUPS = [...new Set(PERMISSIONS.map((p) => p.group))];
 
 export function MemberPermissions({ userId, current, isCustom }: Props) {
   const [open, setOpen] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const currentSet = new Set(current);
+
+  // The action answers with an error string when it refuses (e.g. granting a
+  // permission the caller doesn't hold); undefined means saved or no-op.
+  const submit = async (formData: FormData) => {
+    const err = await setMemberPermissions(formData);
+    setError(err ?? null);
+  };
 
   return (
     <div className="ml-42">
@@ -45,8 +54,9 @@ export function MemberPermissions({ userId, current, isCustom }: Props) {
       </button>
 
       {open && (
-        <form action={setMemberPermissions} className="mt-10 flex flex-col gap-12">
+        <form action={submit} className="mt-10 flex flex-col gap-12">
           <input type="hidden" name="user_id" value={userId} />
+          {error && <FormNotice>{error}</FormNotice>}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-16 gap-y-10">
             {GROUPS.map((group) => (
               <div key={group} className="flex flex-col gap-4">

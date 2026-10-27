@@ -19,6 +19,8 @@ interface SearchParams {
   pageSize?: string;
 }
 
+export const metadata = { title: "Customers" };
+
 export default async function CustomersPage({
   searchParams,
 }: {

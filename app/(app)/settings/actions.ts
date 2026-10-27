@@ -6,9 +6,15 @@ import { createClient } from "@/lib/supabase/server";
 import { getActionContext } from "@/lib/data/actionContext";
 import { sendInviteEmail } from "@/lib/email/invite";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { ALL_PERMISSIONS } from "@/lib/permissions";
+import {
+  ALL_PERMISSIONS,
+  defaultPermissionsFor,
+  type Permission,
+} from "@/lib/permissions";
 import { sanitizeScopes } from "@/lib/apiScopes";
 import { appUrl as resolveAppUrl } from "@/lib/appUrl";
+import { EMAIL_RE } from "@/lib/modules";
+import { rateLimit } from "@/lib/rateLimit";
 
 // ─── MEMBERS ───────────────────────────────────────────────────
 
@@ -21,7 +27,7 @@ export async function inviteMember(_prev: unknown, formData: FormData) {
     .toLowerCase();
   const role = String(formData.get("role") ?? "member");
 
-  if (!email || !email.includes("@")) {
+  if (!email || email.length > 254 || !EMAIL_RE.test(email)) {
     return { error: "Enter a valid email" };
   }
   if (!["admin", "member"].includes(role)) {
@@ -29,6 +35,21 @@ export async function inviteMember(_prev: unknown, formData: FormData) {
   }
   if (!ctx.can("members.manage")) {
     return { error: "Only admins can invite" };
+  }
+  // A member who holds members.manage may invite members, but minting an
+  // admin (who inherits every permission) is reserved for owners and admins —
+  // otherwise members.manage alone escalates to full admin via a proxy.
+  if (role === "admin" && ctx.role !== "owner" && ctx.role !== "admin") {
+    return { error: "Only owners and admins can invite admins" };
+  }
+
+  // Cap invites per workspace per day: the invite path sends mail on behalf
+  // of the workspace, so an unbounded loop is a spam vector.
+  const rl = await rateLimit(`invite:${ctx.orgId}`, 50, 86400);
+  if (!rl.allowed) {
+    return {
+      error: "This workspace has sent its daily limit of invites — try again tomorrow",
+    };
   }
 
   const token = randomBytes(16).toString("hex");
@@ -157,11 +178,18 @@ async function removeMemberInner(
   revalidatePath("/settings/members");
 }
 
-/** Set (or reset) a member's explicit permission overrides. */
-export async function setMemberPermissions(formData: FormData): Promise<void> {
+/**
+ * Set (or reset) a member's explicit permission overrides.
+ *
+ * Returns an error string when the request is refused, or undefined on
+ * success / silent no-op (the form treats both the same way today).
+ */
+export async function setMemberPermissions(
+  formData: FormData
+): Promise<string | undefined> {
   const ctx = await getActionContext();
-  if ("error" in ctx) return;
-  if (!ctx.can("members.manage")) return;
+  if ("error" in ctx) return ctx.error;
+  if (!ctx.can("members.manage")) return "You can't manage members";
   const userId = String(formData.get("user_id") ?? "");
   if (!userId || userId === ctx.user.id) return; // can't edit own permissions
 
@@ -191,6 +219,24 @@ export async function setMemberPermissions(formData: FormData): Promise<void> {
   // Submitting with every box unchecked writes [] — a full lockout that's almost
   // always an accident. Treat it as a no-op; remove the member to revoke access.
   if (permissions !== null && permissions.length === 0) return;
+
+  // No escalation by proxy: unless the caller is an owner, every permission
+  // they grant must be one they hold themselves. Resetting to the role default
+  // is likewise refused when that default exceeds the caller's own set (a
+  // member default is a subset of any admin's, so this only bites a trimmed
+  // admin resetting a member).
+  if (ctx.role !== "owner") {
+    const granted =
+      permissions ?? (defaultPermissionsFor(targetRole) as readonly string[]);
+    const beyond = granted.filter(
+      (p) => !ctx.permissions.has(p as Permission)
+    );
+    if (beyond.length > 0) {
+      return `You can't grant permissions you don't hold yourself (${beyond.join(
+        ", "
+      )})`;
+    }
+  }
 
   await ctx.supabase
     .from("org_members")
@@ -226,7 +272,13 @@ export async function createApiKey(_prev: unknown, formData: FormData) {
   const full = `${prefix}_${raw}`;
   const hash = createHash("sha256").update(full).digest("hex");
 
-  const { error } = await ctx.supabase.from("api_keys").insert({
+  /* The live app.api_keys table has SELECT and UPDATE (revoke) policies but
+     no INSERT policy, so the session-scoped client is refused by RLS. The
+     settings.manage check above is the authorisation; the insert goes through
+     the service-role client with every column stamped from the verified
+     context. (20261026120000_rls_hardening adds the policy; this keeps the
+     action working either side of that deploy.) */
+  const { error } = await createAdminClient().from("api_keys").insert({
     org_id: ctx.orgId,
     name,
     key_prefix: prefix,

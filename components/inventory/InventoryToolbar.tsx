@@ -40,8 +40,15 @@ export function InventoryToolbar({ categories }: Props) {
 
   useEffect(() => {
     setTerm(urlQuery);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [urlQuery]);
+
+  // Never let a pending debounce call router.replace after unmount.
+  useEffect(
+    () => () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    },
+    []
+  );
 
   function pushParams(mutate: (next: URLSearchParams) => void) {
     const next = new URLSearchParams(params.toString());

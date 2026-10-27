@@ -2,14 +2,13 @@ import { createClient } from "@/lib/supabase/server";
 import { SectionTitle } from "@/components/ui/SectionTitle";
 import { Badge } from "@/components/ui/Badge";
 import { CornerButton, CornerLink } from "@/components/ui/CornerButton";
+import { FormNotice } from "@/components/ui/FormNotice";
+import { formatMoney } from "@/lib/format";
 import {
   CreditCard,
   ExternalLink,
-  Receipt,
   Users,
   Calendar,
-  Check,
-  AlertTriangle,
   Hourglass,
 } from "lucide-react";
 import { stripeConfigured } from "@/lib/stripe";
@@ -43,11 +42,9 @@ interface SubscriptionRow {
   stripe_subscription_id: string | null;
 }
 
+/** Stripe amounts are integer minor units (cents). */
 function money(cents: number, currency = "usd"): string {
-  return new Intl.NumberFormat(undefined, {
-    style: "currency",
-    currency: currency.toUpperCase(),
-  }).format(cents / 100);
+  return formatMoney(cents / 100, currency.toUpperCase());
 }
 
 const NOTICE: Record<string, { tone: "info" | "danger"; text: string }> = {
@@ -139,34 +136,9 @@ export default async function BillingPage({
   return (
     <div className="flex flex-col gap-40">
       {notice && (
-        <div
-          className={`hairline px-16 py-12 flex items-center gap-12 ${
-            notice.tone === "danger"
-              ? "border-[var(--danger-border)] bg-[var(--danger-dim)]"
-              : "border-[var(--border-subtle)] bg-[var(--surface-2)]"
-          }`}
-        >
-          {notice.tone === "danger" ? (
-            <AlertTriangle
-              size={14}
-              strokeWidth={1.5}
-              className="text-[var(--danger)] shrink-0"
-            />
-          ) : (
-            <Check
-              size={14}
-              strokeWidth={1.5}
-              className="text-[var(--accent)] shrink-0"
-            />
-          )}
-          <p
-            className={`mono-sm ${
-              notice.tone === "danger" ? "text-[var(--danger)]" : "text-text-secondary"
-            }`}
-          >
-            {notice.text}
-          </p>
-        </div>
+        <FormNotice tone={notice.tone === "danger" ? "error" : "info"}>
+          {notice.text}
+        </FormNotice>
       )}
 
       {!configured && (
@@ -193,7 +165,7 @@ export default async function BillingPage({
       {/* Current plan */}
       {hasActivePlan && sub && (
         <section aria-labelledby="plan">
-          <SectionTitle eyebrow="Subscription" title="Current plan" />
+          <SectionTitle id="plan" eyebrow="Subscription" title="Current plan" />
           <div className="hairline bg-[var(--surface)] p-20 flex flex-col gap-20">
             <div className="flex items-start justify-between gap-16 flex-wrap">
               <div className="flex flex-col gap-6">
@@ -265,7 +237,7 @@ export default async function BillingPage({
       {/* Plan picker — when no active plan and Stripe is configured */}
       {!hasActivePlan && configured && planPrices.length > 0 && (
         <section aria-labelledby="plans">
-          <SectionTitle eyebrow="Plans" title="Choose a plan" />
+          <SectionTitle id="plans" eyebrow="Plans" title="Choose a plan" />
           <PlanGrid prices={planPrices} />
         </section>
       )}
@@ -274,6 +246,7 @@ export default async function BillingPage({
       {hasActivePlan && (
         <section aria-labelledby="payment">
           <SectionTitle
+            id="payment"
             eyebrow="Payment"
             title="Payment method"
             action={
@@ -317,7 +290,7 @@ export default async function BillingPage({
       {/* Invoices */}
       {hasActivePlan && (
         <section aria-labelledby="invoices">
-          <SectionTitle eyebrow="Receipts" title="Invoice history" />
+          <SectionTitle id="invoices" eyebrow="Receipts" title="Invoice history" />
           {invoices.length === 0 ? (
             <div className="hairline bg-[var(--surface-2)] px-20 py-16">
               <p className="mono-sm text-text-muted">
@@ -473,6 +446,7 @@ function TrialStatus({
   return (
     <section aria-labelledby="trial">
       <SectionTitle
+        id="trial"
         eyebrow="No card required"
         title="Free trial"
         action={

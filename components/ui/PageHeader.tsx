@@ -85,6 +85,7 @@ function HeaderInner({
           {title}
           {live && (
             <span
+              role="img"
               className="dot dot-live ml-10 inline-block align-middle"
               aria-label="Live — auto-refreshing"
               title="Live — auto-refreshing"
@@ -98,8 +99,8 @@ function HeaderInner({
         <div className={styles.rightCluster}>
           {meta && meta.length > 0 && (
             <dl className={styles.meta}>
-              {meta.map((m, i) => (
-                <div key={i} className={styles.metaItem}>
+              {meta.map((m) => (
+                <div key={m.label} className={styles.metaItem}>
                   {m.status && (
                     <span className={`dot dot-${m.status}`} aria-hidden />
                   )}

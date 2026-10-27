@@ -12,7 +12,8 @@ import { CompleteWorkOrderButton } from "./CompleteWorkOrderButton";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { SectionTitle } from "@/components/ui/SectionTitle";
 import { Badge } from "@/components/ui/Badge";
-import { CornerButton } from "@/components/ui/CornerButton";
+import { SubmitButton } from "@/components/ui/SubmitButton";
+import { Th, Td } from "@/components/ui/Table";
 import { Boxes } from "lucide-react";
 
 export const metadata = { title: "Work order" };
@@ -79,9 +80,9 @@ export default async function WorkOrderDetailPage({
                 {wo.assignedTo === ctx.user.id && (
                   <input type="hidden" name="release" value="1" />
                 )}
-                <CornerButton type="submit" variant="ghost" size="sm">
+                <SubmitButton variant="ghost" size="sm">
                   {wo.assignedTo === ctx.user.id ? "Release" : "Claim"}
-                </CornerButton>
+                </SubmitButton>
               </form>
             )}
             {wo.status === "draft" && (
@@ -91,7 +92,13 @@ export default async function WorkOrderDetailPage({
               <CompleteWorkOrderButton workOrderId={wo.id} disabled={!canComplete} />
             )}
             {isOpen && (
-              <StatusForm id={wo.id} status="cancelled" label="Cancel" variant="danger" />
+              <StatusForm
+                id={wo.id}
+                status="cancelled"
+                label="Cancel"
+                variant="danger"
+                confirm={`Cancel work order ${wo.code} (${wo.quantity} × ${wo.productName})? It cannot be reopened.`}
+              />
             )}
           </div>
         }
@@ -114,6 +121,7 @@ export default async function WorkOrderDetailPage({
       {/* Component requirements */}
       <section aria-labelledby="components">
         <SectionTitle
+          id="components"
           numeral="01"
           eyebrow="Consume"
           title="Components"
@@ -125,13 +133,17 @@ export default async function WorkOrderDetailPage({
         />
         <div className="hairline bg-[var(--surface)] overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full" style={{ borderCollapse: "collapse" }}>
+            <table
+              className="w-full"
+              style={{ borderCollapse: "collapse" }}
+              aria-label="Component requirements"
+            >
               <thead>
                 <tr className="hairline-b bg-[var(--surface-2)]">
                   <Th>Component</Th>
-                  <Th className="text-right">Required</Th>
-                  <Th className="text-right">On hand</Th>
-                  <Th className="text-right">
+                  <Th align="right">Required</Th>
+                  <Th align="right">On hand</Th>
+                  <Th align="right">
                     {wo.status === "complete" ? "Consumed" : "Short"}
                   </Th>
                 </tr>
@@ -149,10 +161,10 @@ export default async function WorkOrderDetailPage({
                       </Link>
                       {l.sku && <span className="mono-sm text-text-dim ml-8">{l.sku}</span>}
                     </Td>
-                    <Td className="text-right">
+                    <Td align="right">
                       <span className="mono-body tnum text-text">{l.required}</span>
                     </Td>
-                    <Td className="text-right">
+                    <Td align="right">
                       <span
                         className={`mono-sm tnum ${
                           l.onHand >= l.required ? "text-text-secondary" : "text-[var(--warning)]"
@@ -161,7 +173,7 @@ export default async function WorkOrderDetailPage({
                         {l.onHand}
                       </span>
                     </Td>
-                    <Td className="text-right">
+                    <Td align="right">
                       {wo.status === "complete" ? (
                         <span className="mono-sm tnum text-text-secondary">{l.consumed}</span>
                       ) : l.short > 0 ? (
@@ -181,7 +193,12 @@ export default async function WorkOrderDetailPage({
       {/* Multi-level BOM tree */}
       {wo.bom && (wo.bom.children.length > 0) && (
         <section aria-labelledby="bom">
-          <SectionTitle numeral="02" eyebrow="Structure" title="Bill of materials" />
+          <SectionTitle
+            id="bom"
+            numeral="02"
+            eyebrow="Structure"
+            title="Bill of materials"
+          />
           <div className="hairline bg-[var(--surface)] p-16 flex flex-col gap-2">
             {wo.bom.children.map((child, i) => (
               <BomRow key={`${child.productId}-${i}`} node={child} />
@@ -237,42 +254,22 @@ function StatusForm({
   status,
   label,
   variant,
+  confirm,
 }: {
   id: string;
   status: WorkOrderStatus;
   label: string;
   variant: "primary" | "ghost" | "danger";
+  confirm?: string;
 }) {
   return (
     <form action={setWorkOrderStatus}>
       <input type="hidden" name="id" value={id} />
       <input type="hidden" name="status" value={status} />
-      <CornerButton type="submit" variant={variant} size="sm">
+      <SubmitButton variant={variant} size="sm" confirm={confirm}>
         {label}
-      </CornerButton>
+      </SubmitButton>
     </form>
   );
 }
 
-function Th({
-  children,
-  className = "",
-}: {
-  children?: React.ReactNode;
-  className?: string;
-}) {
-  return (
-    <th className={`label-text text-left px-14 py-12 font-normal ${className}`}>
-      {children}
-    </th>
-  );
-}
-function Td({
-  children,
-  className = "",
-}: {
-  children?: React.ReactNode;
-  className?: string;
-}) {
-  return <td className={`px-14 py-12 ${className}`}>{children}</td>;
-}

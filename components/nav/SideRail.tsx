@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import {
   ChevronsLeft,
   ChevronsRight,
@@ -28,7 +28,6 @@ import {
   type NavPrefs,
 } from "@/lib/navData";
 import { WorkspaceSwitcher, type WorkspaceOption } from "./WorkspaceSwitcher";
-import type { NotificationItem } from "./NotificationsDropdown";
 import { signOut } from "@/app/(auth)/actions";
 import { FacilitiesNavItem } from "./FacilitiesNavItem";
 import type { FacilityOption } from "@/lib/currentFacility";
@@ -36,9 +35,8 @@ import { SidebarDeviceBar } from "./SidebarDeviceBar";
 import { ThemeToggle } from "./ThemeToggle";
 import { TrialPill } from "@/components/billing/TrialPill";
 import type { Entitlement } from "@/lib/entitlement";
-
-/** Cookie key shared with the server-side layout. */
-const SIDEBAR_COOKIE = "Nautilus-sidebar-collapsed";
+import { SIDEBAR_COOKIE } from "@/lib/sidebarCookie";
+import { useDropdown } from "@/lib/useDropdown";
 
 /** Space between the floating rail and the viewport / main content. */
 const GUTTER = 12;
@@ -49,8 +47,6 @@ interface Props {
   user: { email: string; full_name?: string | null } | null;
   workspace: WorkspaceOption | null;
   workspaces: WorkspaceOption[];
-  /** Accepted for parity with the old TopNav — the actual list lives at /notifications */
-  notifications: NotificationItem[];
   unreadCount: number;
   /** SSR-rendered initial state from the cookie. Avoids hydration flicker. */
   initialCollapsed: boolean;
@@ -101,9 +97,12 @@ export function SideRail({
   const [moreOpen, setMoreOpen] = useState(false);
 
   useEffect(() => {
+    // Secure on https so the preference cookie is never sent in the clear;
+    // omitted on plain-http localhost, where a Secure cookie is dropped.
+    const secure = location.protocol === "https:" ? "; Secure" : "";
     document.cookie = `${SIDEBAR_COOKIE}=${collapsed}; path=/; max-age=${
       60 * 60 * 24 * 365
-    }; SameSite=Lax`;
+    }; SameSite=Lax${secure}`;
   }, [collapsed]);
 
   useEffect(() => {
@@ -227,6 +226,7 @@ export function SideRail({
 
         {/* ── Panel 2 · Navigate ──────────────────────────────────── */}
         <nav
+          aria-label="Primary"
           className={`hairline panel-float bg-[var(--surface)] flex-1 min-h-0 overflow-y-auto flex flex-col ${
             collapsed ? "px-6 py-10 gap-10" : "px-10 py-12 gap-16"
           }`}
@@ -400,7 +400,7 @@ export function SideRail({
              Scan + Print as 50/50 tiles when expanded, stacked icons when
              collapsed. Spacing alone separates it from the row above — the
              panel edge already does the dividing work. */}
-          <div aria-label="Devices">
+          <div role="group" aria-label="Devices">
             <SidebarDeviceBar collapsed={collapsed} />
           </div>
 
@@ -542,26 +542,31 @@ function SidebarUserMenu({
   user: { email: string; full_name?: string | null };
   collapsed: boolean;
 }) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
+  // Outside click + Escape (which also hands focus back to the trigger).
+  const { open, setOpen, ref } = useDropdown<HTMLDivElement>();
+  const menuId = useId();
+  const menuRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    if (!open) return;
-    const onClickOutside = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
-    };
-    document.addEventListener("mousedown", onClickOutside);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onClickOutside);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [open]);
+  // ArrowUp/Down rove through the menu items; Home/End jump.
+  const onMenuKey = (e: React.KeyboardEvent) => {
+    if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(e.key)) return;
+    const items = Array.from(
+      menuRef.current?.querySelectorAll<HTMLElement>('[role="menuitem"]') ??
+        []
+    );
+    if (items.length === 0) return;
+    e.preventDefault();
+    const i = items.indexOf(document.activeElement as HTMLElement);
+    const next =
+      e.key === "Home"
+        ? 0
+        : e.key === "End"
+        ? items.length - 1
+        : e.key === "ArrowDown"
+        ? (i + 1) % items.length
+        : (i - 1 + items.length) % items.length;
+    items[next]?.focus();
+  };
 
   const initials = (user.full_name || user.email)
     .split(" ")
@@ -580,7 +585,21 @@ function SidebarUserMenu({
           collapsed ? "justify-center" : "gap-8 px-10"
         }`}
         aria-label="Account menu"
+        aria-haspopup="menu"
         aria-expanded={open}
+        aria-controls={open ? menuId : undefined}
+        onKeyDown={(e) => {
+          if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+            e.preventDefault();
+            if (!open) setOpen(true);
+            // Menu mounts on the next paint; focus its first item then.
+            requestAnimationFrame(() =>
+              menuRef.current
+                ?.querySelector<HTMLElement>('[role="menuitem"]')
+                ?.focus()
+            );
+          }
+        }}
         title={collapsed ? user.email : undefined}
       >
         <span
@@ -602,6 +621,11 @@ function SidebarUserMenu({
 
       {open && (
         <div
+          ref={menuRef}
+          id={menuId}
+          role="menu"
+          aria-label="Account"
+          onKeyDown={onMenuKey}
           className="absolute bottom-full left-0 mb-8 w-[240px] hairline bg-[var(--surface)] flex flex-col"
           style={{ zIndex: 50 }}
         >
@@ -624,13 +648,14 @@ function SidebarUserMenu({
             </p>
           </header>
 
-          <nav className="py-4">
+          <div className="py-4">
             {USER_MENU_ITEMS.map((item) => {
               const Icon = item.icon;
               return (
                 <Link
                   key={item.href}
                   href={item.href}
+                  role="menuitem"
                   onClick={() => setOpen(false)}
                   className="flex items-center gap-10 px-14 py-8 text-text-secondary hover:text-text hover:bg-[var(--surface-2)] transition-colors"
                 >
@@ -639,12 +664,13 @@ function SidebarUserMenu({
                 </Link>
               );
             })}
-          </nav>
+          </div>
 
           <div className="hairline-t">
             <form action={signOut}>
               <button
                 type="submit"
+                role="menuitem"
                 className="w-full flex items-center gap-10 px-14 py-10 text-[var(--danger)] hover:bg-[var(--danger-dim)] transition-colors"
               >
                 <LogOut size={12} strokeWidth={1.5} />

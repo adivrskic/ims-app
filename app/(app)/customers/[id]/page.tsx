@@ -15,6 +15,17 @@ import { getCustomer } from "../actions";
 import { paymentTermsLabel } from "../types";
 import { CustomerActiveToggle } from "./CustomerActiveToggle";
 
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
+  const { id } = await params;
+  const r = await getCustomer(id);
+  const name = r.customer?.name;
+  return { title: name ? name : "Customer" };
+}
+
 export default async function CustomerDetailPage({
   params,
 }: {

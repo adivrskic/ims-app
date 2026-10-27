@@ -6,9 +6,14 @@ interface Props {
   eyebrow?: string;
   title: string;
   action?: ReactNode;
+  /**
+   * Id for the <h2>, so a wrapping `<section aria-labelledby={id}>` resolves.
+   * Every section that labels itself this way must pass the same string.
+   */
+  id?: string;
 }
 
-export function SectionTitle({ numeral, eyebrow, title, action }: Props) {
+export function SectionTitle({ numeral, eyebrow, title, action, id }: Props) {
   return (
     <div className="flex items-baseline justify-between gap-16 mb-12 pb-10 hairline-b">
       <div className="flex items-baseline gap-10 min-w-0">
@@ -18,6 +23,7 @@ export function SectionTitle({ numeral, eyebrow, title, action }: Props) {
           </span>
         )}
         <h2
+          id={id}
           className="text-text"
           style={{
             fontFamily: "var(--display)",

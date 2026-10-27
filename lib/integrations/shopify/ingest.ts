@@ -1,4 +1,5 @@
 import "server-only";
+import { randomUUID } from "crypto";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { ShopifyOrder, ShopifyConfig } from "./types";
 
@@ -14,8 +15,22 @@ import type { ShopifyOrder, ShopifyConfig } from "./types";
  *   - unit_price + line_total are new columns added for e-commerce orders.
  *     Manual orders may leave them null.
  *
- * Idempotency: (source, external_id) unique index — same Shopify ID
- * upserts in place. Safe to retry.
+ * Idempotency: the existing order is looked up by (org_id, source,
+ * external_id) and updated in place; a miss inserts. The lookup is explicit
+ * rather than an upsert because the live unique index is on
+ * (source, external_id) WITHOUT org_id — an upsert on that index could match
+ * another workspace's order carrying the same Shopify id. The
+ * 20261026120000_rls_hardening migration recreates the index with org_id.
+ *
+ * Re-ingest (orders/updated, redeliveries) is NON-DESTRUCTIVE:
+ *   - header fields are refreshed, but `status` never moves backwards — the
+ *     warehouse owns pick/pack progress; Shopify only gets to say "cancelled";
+ *   - existing lines (matched by Shopify line id) get their quantity_requested
+ *     / pricing refreshed; quantity_picked and quantity_allocated are left
+ *     alone, so a redelivery mid-pick can't zero out picked stock;
+ *   - new lines are inserted with quantity_picked 0.
+ *   Lines Shopify removed from the order are left in place (a removed line
+ *   that was already picked needs a human decision, not a silent delete).
  *
  * SKU matching:
  *   1. Match Nautilus product by barcode (Shopify SKU is often a UPC)
@@ -40,6 +55,21 @@ function mapStatus(o: ShopifyOrder): string {
   return "created";
 }
 
+/** Shopify money strings → number; anything unparsable counts as 0. */
+function money(raw: string | null | undefined): number {
+  const n = parseFloat(raw ?? "");
+  return Number.isFinite(n) ? n : 0;
+}
+
+/**
+ * Status to store on re-ingest. Cancellation from Shopify always wins; any
+ * other payload keeps whatever the warehouse has moved the order to.
+ */
+function resolveStatus(existing: string, incoming: string): string {
+  if (incoming === "cancelled") return "cancelled";
+  return existing;
+}
+
 export async function ingestShopifyOrder(
   orgId: string,
   config: ShopifyConfig,
@@ -47,19 +77,17 @@ export async function ingestShopifyOrder(
 ): Promise<IngestResult> {
   const admin = createAdminClient();
 
-  // ── 1. Upsert the order itself ────────────────────────────────────
+  // ── 1. Insert or update the order header ───────────────────────────
   const externalId = String(shopifyOrder.id);
   const customerName = shopifyOrder.customer
     ? `${shopifyOrder.customer.first_name ?? ""} ${
         shopifyOrder.customer.last_name ?? ""
       }`.trim()
     : null;
+  const incomingStatus = mapStatus(shopifyOrder);
 
-  const orderRow = {
-    org_id: orgId,
+  const headerFields = {
     warehouse_id: config.default_facility_id,
-    source: "shopify",
-    external_id: externalId,
     external_synced_at: new Date().toISOString(),
     external_raw: shopifyOrder as unknown as Record<string, unknown>,
     order_number: shopifyOrder.name, // e.g. "#1001"
@@ -67,78 +95,157 @@ export async function ingestShopifyOrder(
     customer_name: customerName || null,
     customer_email: shopifyOrder.email || shopifyOrder.customer?.email || null,
     customer_phone: shopifyOrder.phone || null,
-    status: mapStatus(shopifyOrder),
-    total: parseFloat(shopifyOrder.total_price),
+    total: money(shopifyOrder.total_price),
     currency: shopifyOrder.currency,
     placed_at: shopifyOrder.created_at,
     cancelled_at: shopifyOrder.cancelled_at,
     notes: shopifyOrder.note ?? null,
   };
 
-  const { data: upsertedOrder, error: orderErr } = await admin
+  const { data: existing, error: lookupErr } = await admin
     .from("orders")
-    .upsert(orderRow, { onConflict: "source,external_id" })
-    .select("id")
-    .single();
-
-  if (orderErr || !upsertedOrder) {
+    .select("id, status")
+    .eq("org_id", orgId)
+    .eq("source", "shopify")
+    .eq("external_id", externalId)
+    .maybeSingle();
+  if (lookupErr) {
     return {
       ok: false,
       created: false,
       needsMappingCount: 0,
-      error: `Order upsert failed: ${orderErr?.message}`,
+      error: `Order lookup failed: ${lookupErr.message}`,
     };
   }
 
-  const orderId = upsertedOrder.id as string;
+  let orderId: string;
+  let created: boolean;
 
-  // Detect first-ingest vs. update for the return value
-  const { data: existingLines } = await admin
+  if (existing) {
+    orderId = existing.id as string;
+    created = false;
+    const { error: updateErr } = await admin
+      .from("orders")
+      .update({
+        ...headerFields,
+        status: resolveStatus(existing.status as string, incomingStatus),
+      })
+      .eq("id", orderId)
+      .eq("org_id", orgId);
+    if (updateErr) {
+      return {
+        ok: false,
+        created,
+        needsMappingCount: 0,
+        error: `Order update failed: ${updateErr.message}`,
+      };
+    }
+  } else {
+    const { data: inserted, error: insertErr } = await admin
+      .from("orders")
+      .insert({
+        org_id: orgId,
+        source: "shopify",
+        external_id: externalId,
+        status: incomingStatus,
+        ...headerFields,
+      })
+      .select("id")
+      .single();
+    if (insertErr || !inserted) {
+      return {
+        ok: false,
+        created: false,
+        needsMappingCount: 0,
+        error: `Order insert failed: ${insertErr?.message}`,
+      };
+    }
+    orderId = inserted.id as string;
+    created = true;
+  }
+
+  // ── 2. Reconcile line items (never wipe) ───────────────────────────
+  const { data: existingLineRows, error: linesReadErr } = await admin
     .from("order_items")
-    .select("id")
-    .eq("order_id", orderId)
-    .limit(1);
-  const created = !existingLines || existingLines.length === 0;
-
-  // ── 2. Wipe + rebuild line items ──────────────────────────────────
-  // Shopify orders rarely mutate line items post-creation; when they
-  // do, the whole order updates wholesale. Simpler to wipe-and-rebuild
-  // than to reconcile.
-  await admin.from("order_items").delete().eq("order_id", orderId);
+    .select("id, external_id")
+    .eq("order_id", orderId);
+  if (linesReadErr) {
+    return {
+      ok: false,
+      created,
+      needsMappingCount: 0,
+      error: `Line items read failed: ${linesReadErr.message}`,
+    };
+  }
+  const existingByExternalId = new Map<string, string>();
+  for (const row of (existingLineRows ?? []) as Array<{
+    id: string;
+    external_id: string | null;
+  }>) {
+    if (row.external_id) existingByExternalId.set(row.external_id, row.id);
+  }
 
   let needsMappingCount = 0;
-  const lineRows: Array<Record<string, unknown>> = [];
+  const newLineRows: Array<Record<string, unknown>> = [];
 
   for (const line of shopifyOrder.line_items) {
+    const lineExternalId = String(line.id);
+    const unitPrice = money(line.price);
+    const quantity =
+      Number.isInteger(line.quantity) && line.quantity > 0 ? line.quantity : 0;
+
+    const existingLineId = existingByExternalId.get(lineExternalId);
+    if (existingLineId) {
+      // Refresh what Shopify owns. product_id stays as-is (the desk may have
+      // re-mapped a stub), and the picked/allocated counters are untouched.
+      const { error: lineUpdErr } = await admin
+        .from("order_items")
+        .update({
+          quantity_requested: quantity,
+          external_sku: line.sku,
+          unit_price: unitPrice,
+          line_total: unitPrice * quantity,
+          notes: line.variant_title,
+        })
+        .eq("id", existingLineId)
+        .eq("order_id", orderId);
+      if (lineUpdErr) {
+        return {
+          ok: false,
+          created,
+          needsMappingCount,
+          error: `Line item update failed: ${lineUpdErr.message}`,
+        };
+      }
+      continue;
+    }
+
     const matched = await matchOrCreateProduct(
       orgId,
       line.sku,
       line.title,
       line.vendor
     );
-
     if (matched.needsMapping) needsMappingCount++;
 
-    const unitPrice = parseFloat(line.price);
-
-    lineRows.push({
+    newLineRows.push({
       order_id: orderId,
       product_id: matched.productId,
-      external_id: String(line.id),
+      external_id: lineExternalId,
       external_sku: line.sku,
-      quantity_requested: line.quantity,
+      quantity_requested: quantity,
       quantity_picked: 0,
       unit_price: unitPrice,
-      line_total: unitPrice * line.quantity,
+      line_total: unitPrice * quantity,
       needs_mapping: matched.needsMapping,
       notes: line.variant_title,
     });
   }
 
-  if (lineRows.length > 0) {
+  if (newLineRows.length > 0) {
     const { error: linesErr } = await admin
       .from("order_items")
-      .insert(lineRows);
+      .insert(newLineRows);
     if (linesErr) {
       return {
         ok: false,
@@ -191,13 +298,15 @@ async function matchOrCreateProduct(
     if (bySku) return { productId: bySku.id, needsMapping: false };
   }
 
-  // 3. Auto-create stub
+  // 3. Auto-create stub. The placeholder barcode is a UUID, not a timestamp:
+  //    two SKU-less lines ingested in the same millisecond used to collide on
+  //    the barcode unique constraint and fail the whole order.
   const { data: stub, error } = await admin
     .from("products")
     .insert({
       org_id: orgId,
       name: title.slice(0, 200),
-      barcode: sku || `shopify-stub-${Date.now()}`,
+      barcode: sku || `shopify-stub-${randomUUID()}`,
       internal_sku: sku,
       manufacturer: vendor,
       reorder_point: 0,

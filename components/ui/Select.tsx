@@ -228,17 +228,28 @@ export function Select({
   return (
     <div ref={rootRef} className={`field relative ${className ?? ""}`}>
       {/*
-        Hidden input for form submission. Only rendered if name is provided —
-        otherwise the parent is expected to manage form value via its own
-        hidden inputs.
+        Form-submission mirror. Only rendered if name is provided — otherwise
+        the parent is expected to manage form value via its own hidden inputs.
+        It is an invisible TEXT input, not type="hidden": `required` is a
+        no-op on hidden inputs (and on readonly ones, which are barred from
+        constraint validation), so an empty required Select used to submit.
+        It sits exactly under the trigger with opacity 0 so the browser's
+        "Please select an item" bubble anchors to the visible control; the
+        onInvalid handler then moves focus to the trigger. Out of the Tab
+        order and the accessibility tree; the trigger carries the semantics.
       */}
       {name && (
         <input
-          type="hidden"
+          type="text"
           name={name}
-          value={value}
+          value={value ?? ""}
+          onChange={() => {}}
           required={required}
+          tabIndex={-1}
           aria-hidden
+          onInvalid={() => buttonRef.current?.focus()}
+          className="absolute inset-0 w-full h-full opacity-0 pointer-events-none"
+          style={{ zIndex: -1 }}
         />
       )}
 
@@ -255,9 +266,18 @@ export function Select({
         disabled={disabled}
         onClick={() => !disabled && setOpen((o) => !o)}
         onKeyDown={onKeyDown}
+        // ARIA 1.2 select-only combobox: the role that carries
+        // aria-required / aria-activedescendant (a plain button cannot).
+        role="combobox"
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-controls={open ? listboxId : undefined}
+        aria-activedescendant={
+          open && highlightedIndex >= 0
+            ? `${listboxId}-opt-${highlightedIndex}`
+            : undefined
+        }
+        aria-required={required || undefined}
         aria-label={ariaLabel ?? label}
         className={`field-shell w-full text-left ${
           compact ? "field-shell--compact" : ""
@@ -322,10 +342,20 @@ export function Select({
             id={listboxId}
             role="listbox"
             aria-label={ariaLabel ?? label}
+            aria-activedescendant={
+              highlightedIndex >= 0
+                ? `${listboxId}-opt-${highlightedIndex}`
+                : undefined
+            }
             className="py-4 max-h-[260px] overflow-y-auto"
           >
             {filteredOptions.length === 0 ? (
-              <li className="px-14 py-10 mono-sm text-text-dim" aria-disabled>
+              <li
+                role="option"
+                aria-selected={false}
+                aria-disabled
+                className="px-14 py-10 mono-sm text-text-dim"
+              >
                 No results
               </li>
             ) : (
@@ -336,6 +366,7 @@ export function Select({
                   <li key={opt.value} role="presentation">
                     <button
                       type="button"
+                      id={`${listboxId}-opt-${i}`}
                       role="option"
                       aria-selected={isCurrent}
                       data-option-index={i}

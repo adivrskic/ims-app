@@ -3,7 +3,9 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { SectionTitle } from "@/components/ui/SectionTitle";
 import { Badge } from "@/components/ui/Badge";
 import { EmptyState } from "@/components/ui/EmptyState";
-import { CornerButton, CornerLink } from "@/components/ui/CornerButton";
+import { CornerLink } from "@/components/ui/CornerButton";
+import { SubmitButton } from "@/components/ui/SubmitButton";
+import { LocalTime } from "@/components/ui/LocalTime";
 import { Building2, MapPin, Phone, Layers, Package, Edit3 } from "lucide-react";
 import { AddWarehouseForm } from "./AddWarehouseForm";
 import { getCurrentOrgContext } from "@/lib/data/user";
@@ -27,7 +29,8 @@ interface WarehouseRow {
     name: string | null;
     color: string | null;
   }> | null;
-  locations: Array<{ id: string }> | null;
+  /** PostgREST embedded count — `locations(count)` returns `[{ count }]`. */
+  locations: Array<{ count: number }> | null;
 }
 
 export default async function FacilitiesPage() {
@@ -42,7 +45,7 @@ export default async function FacilitiesPage() {
   const { data, error } = await supabase
     .from("warehouses")
     .select(
-      "id, name, address, city, state, zip, phone, is_active, created_at, sections:sections ( id, code, name, color ), locations:locations ( id )"
+      "id, name, address, city, state, zip, phone, is_active, created_at, sections:sections ( id, code, name, color ), locations ( count )"
     )
     .eq("org_id", ctx?.orgId ?? "")
     .order("created_at", { ascending: true });
@@ -80,6 +83,7 @@ export default async function FacilitiesPage() {
         className="flex flex-col gap-12"
       >
         <SectionTitle
+          id="active-heading"
           eyebrow="Workspace"
           title={`Active · ${active.length}`}
           action={<AddWarehouseForm />}
@@ -106,6 +110,7 @@ export default async function FacilitiesPage() {
           className="flex flex-col gap-12"
         >
           <SectionTitle
+            id="archived-heading"
             eyebrow="Archive"
             title={`Archived · ${archived.length}`}
           />
@@ -137,9 +142,9 @@ export default async function FacilitiesPage() {
                 </div>
                 <form action={restoreWarehouse}>
                   <input type="hidden" name="id" value={w.id} />
-                  <CornerButton type="submit" variant="ghost" size="sm">
+                  <SubmitButton variant="ghost" size="sm">
                     Restore
-                  </CornerButton>
+                  </SubmitButton>
                 </form>
               </li>
             ))}
@@ -152,7 +157,7 @@ export default async function FacilitiesPage() {
 
 function WarehouseCard({ warehouse: w }: { warehouse: WarehouseRow }) {
   const sectionCount = (w.sections ?? []).length;
-  const locationCount = (w.locations ?? []).length;
+  const locationCount = w.locations?.[0]?.count ?? 0;
   const cityState = [w.city, w.state].filter(Boolean).join(", ");
 
   return (
@@ -212,9 +217,13 @@ function WarehouseCard({ warehouse: w }: { warehouse: WarehouseRow }) {
           </CornerLink>
           <form action={archiveWarehouse}>
             <input type="hidden" name="id" value={w.id} />
-            <CornerButton type="submit" variant="ghost" size="sm">
+            <SubmitButton
+              variant="ghost"
+              size="sm"
+              confirm={`Archive ${w.name}? It disappears from pickers and scoping until restored; its sections and stock are kept.`}
+            >
               Archive
-            </CornerButton>
+            </SubmitButton>
           </form>
         </div>
       </div>
@@ -232,15 +241,7 @@ function WarehouseCard({ warehouse: w }: { warehouse: WarehouseRow }) {
         />
         <StatBlock
           label="Added"
-          valueStr={
-            w.created_at
-              ? new Date(w.created_at).toLocaleDateString(undefined, {
-                  year: "numeric",
-                  month: "short",
-                  day: "numeric",
-                })
-              : "—"
-          }
+          valueStr={<LocalTime iso={w.created_at} format="date" />}
         />
       </div>
     </li>
@@ -256,7 +257,7 @@ function StatBlock({
   icon?: React.ReactNode;
   label: string;
   value?: number;
-  valueStr?: string;
+  valueStr?: React.ReactNode;
 }) {
   return (
     <div className="flex flex-col gap-4">

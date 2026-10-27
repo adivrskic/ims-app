@@ -11,16 +11,20 @@ import {
 } from "react";
 import {
   getPairedPrinter,
-  isSupported,
   PrintError,
   printerLabel,
   printZpl,
   requestPrinter,
   type ZebraDevice,
 } from "@/lib/print/zebra";
+import { useWebUsbSupported } from "@/lib/print/useWebUsbSupported";
 
 interface PrinterState {
-  /** True iff WebUSB is available in this browser. */
+  /**
+   * True iff WebUSB is available in this browser. False on the server and
+   * for the first client render (hydration-safe) — read this, never
+   * `isSupported()`, from anything that renders.
+   */
   supported: boolean;
   /** Current paired printer, or null. */
   device: ZebraDevice | null;
@@ -52,7 +56,7 @@ export function PrinterProvider({ children }: { children: ReactNode }) {
   const [device, setDevice] = useState<ZebraDevice | null>(null);
   const [printing, setPrinting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const supported = isSupported();
+  const supported = useWebUsbSupported();
 
   // Auto-reconnect to a previously-paired device on mount.
   useEffect(() => {

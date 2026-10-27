@@ -7,6 +7,8 @@ import {
 import { parseSort, parseOrder, type InventoryRow } from "@/lib/data/inventory";
 import { type NextRequest } from "next/server";
 import { csvCell } from "@/lib/print/csv";
+import { PAGE } from "@/lib/data/paginate";
+import { isUuid } from "@/lib/net/validate";
 
 /*
  * Inventory CSV export.
@@ -33,29 +35,41 @@ export async function GET(req: NextRequest) {
   const sort = parseSort(url.searchParams.get("sort") ?? undefined);
   const order = parseOrder(url.searchParams.get("order") ?? undefined);
   const facilityParam = url.searchParams.get("facility");
+  if (facilityParam && facilityParam !== "all" && !isUuid(facilityParam)) {
+    return new Response("facility must be a UUID", { status: 400 });
+  }
+  if (category && !isUuid(category)) {
+    return new Response("category must be a UUID", { status: 400 });
+  }
   const facilityId =
     facilityParam && facilityParam !== "all" ? facilityParam : null;
 
   const admin = createAdminClient();
 
-  const { data, error } = await admin.rpc("inventory_list", {
-    p_org: ctx.orgId,
-    p_facility: facilityId,
-    p_q: q?.trim() || null,
-    p_category: category || null,
-    p_low_only: low,
-    p_sort: sort,
-    p_order: order,
-    p_limit: EXPORT_LIMIT,
-    p_offset: 0,
-  });
-
-  if (error) {
-    console.error("inventory export rpc failed:", error.message);
-    return new Response("Export failed", { status: 500 });
+  // Page the RPC through its own p_limit/p_offset: a single p_limit=100000
+  // call is still capped at PostgREST's ~1000 rows, so a big catalog's CSV
+  // was quietly short. Any page erroring is a 500, not a partial file.
+  const rows: InventoryRow[] = [];
+  for (let offset = 0; offset < EXPORT_LIMIT; offset += PAGE) {
+    const { data, error } = await admin.rpc("inventory_list", {
+      p_org: ctx.orgId,
+      p_facility: facilityId,
+      p_q: q?.trim() || null,
+      p_category: category || null,
+      p_low_only: low,
+      p_sort: sort,
+      p_order: order,
+      p_limit: PAGE,
+      p_offset: offset,
+    });
+    if (error) {
+      console.error("inventory export rpc failed:", error.message);
+      return new Response("Export failed", { status: 500 });
+    }
+    const page = (data as InventoryRow[]) ?? [];
+    rows.push(...page);
+    if (page.length < PAGE) break;
   }
-
-  const rows = (data as InventoryRow[]) ?? [];
 
   const lines: string[] = [];
   lines.push(

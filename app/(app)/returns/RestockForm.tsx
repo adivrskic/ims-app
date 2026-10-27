@@ -26,7 +26,10 @@ export function RestockForm({
   /** Destination options (label = section · bay · level, hint = on hand). */
   locations: SelectOption[];
 }) {
-  const [state, formAction] = useActionState(restockReturn, undefined);
+  const [state, formAction, pending] = useActionState(
+    restockReturn,
+    undefined
+  );
   const [open, setOpen] = useState(false);
   const [locationId, setLocationId] = useState("");
   const [qty, setQty] = useState(String(quantity));
@@ -85,14 +88,15 @@ export function RestockForm({
           step={1}
           value={qty}
           onChange={(e) => setQty(e.target.value)}
-          className="hairline-subtle bg-[var(--surface-2)] mono-sm text-text px-8 py-6 focus:border-[var(--accent)] outline-none tnum"
+          className="hairline-subtle bg-[var(--surface-2)] mono-sm text-text px-8 py-6 focus:border-[var(--accent)] outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] tnum"
           aria-label="Quantity to restock"
         />
       </label>
 
       <button
         type="submit"
-        disabled={!locationId}
+        disabled={!locationId || pending}
+        aria-busy={pending || undefined}
         className="hairline-subtle bg-[var(--accent-dim)] text-[var(--accent)] px-10 py-7 inline-flex items-center gap-6 hover:border-[var(--accent)] transition-colors disabled:opacity-50"
         aria-label="Confirm restock"
       >

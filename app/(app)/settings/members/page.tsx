@@ -1,13 +1,15 @@
 import { createClient } from "@/lib/supabase/server";
 import { SectionTitle } from "@/components/ui/SectionTitle";
 import { Badge } from "@/components/ui/Badge";
-import { CornerButton } from "@/components/ui/CornerButton";
+import { SubmitButton } from "@/components/ui/SubmitButton";
+import { LocalTime } from "@/components/ui/LocalTime";
+import { PendingButton } from "@/app/(app)/_components/PendingButton";
 import { InviteForm } from "./InviteForm";
 import { BulkInviteButton } from "./BulkInviteButton";
 import { MemberPermissions } from "./MemberPermissions";
 import { removeMember, revokeInvite } from "../actions";
 import { effectivePermissions } from "@/lib/permissions";
-import { getCurrentOrgContext } from "@/lib/data/user";
+import { getCurrentOrgContext, getCurrentUser } from "@/lib/data/user";
 import { appUrl as resolveAppUrl } from "@/lib/appUrl";
 import { CopyInviteLink } from "./CopyInviteLink";
 import { Mail, X } from "lucide-react";
@@ -24,9 +26,7 @@ const ROLE_TONE: Record<OrgRole, "accent" | "info" | "neutral"> = {
 
 export default async function MembersPage() {
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = await getCurrentUser();
 
   // Resolve the ACTIVE workspace, not an arbitrary membership. This page used
   // to pick the caller's role with `.limit(1).maybeSingle()` on org_members,
@@ -74,6 +74,7 @@ export default async function MembersPage() {
 
       <section aria-labelledby="members-heading">
         <SectionTitle
+          id="members-heading"
           eyebrow="Workspace"
           title="Members"
           action={
@@ -153,21 +154,21 @@ export default async function MembersPage() {
                     {role}
                   </Badge>
                   <span className="mono-sm text-text-dim hidden md:inline w-[100px] text-right">
-                    {m.joined_at
-                      ? new Date(m.joined_at).toLocaleDateString()
-                      : "—"}
+                    <LocalTime iso={m.joined_at} format="date" />
                   </span>
                   {isAdmin && !isSelf && role !== "owner" && (
                     <form action={removeMember}>
                       <input type="hidden" name="user_id" value={m.user_id} />
-                      <CornerButton
-                        type="submit"
+                      <SubmitButton
                         variant="danger"
                         size="sm"
                         ariaLabel={`Remove ${p?.email ?? "member"}`}
+                        confirm={`Remove ${
+                          p?.full_name || p?.email || "this member"
+                        } from the workspace? They lose access immediately and would need a new invite to return.`}
                       >
                         Remove
-                      </CornerButton>
+                      </SubmitButton>
                     </form>
                   )}
                   </div>
@@ -187,6 +188,7 @@ export default async function MembersPage() {
 
       <section aria-labelledby="invites-heading">
         <SectionTitle
+          id="invites-heading"
           eyebrow="Pending"
           title="Invites"
           action={
@@ -240,9 +242,7 @@ export default async function MembersPage() {
                       </p>
                       <p className="mono-sm text-text-muted">
                         Invited{" "}
-                        {inv.created_at
-                          ? new Date(inv.created_at).toLocaleDateString()
-                          : "—"}
+                        <LocalTime iso={inv.created_at} format="date" />
                         {expiresAt && (
                           <>
                             {" · "}
@@ -251,9 +251,17 @@ export default async function MembersPage() {
                                 isExpired ? "text-[var(--danger)]" : ""
                               }
                             >
-                              {isExpired
-                                ? "Expired"
-                                : `Expires ${expiresAt.toLocaleDateString()}`}
+                              {isExpired ? (
+                                "Expired"
+                              ) : (
+                                <>
+                                  Expires{" "}
+                                  <LocalTime
+                                    iso={expiresAt.toISOString()}
+                                    format="date"
+                                  />
+                                </>
+                              )}
                             </span>
                           </>
                         )}
@@ -271,13 +279,13 @@ export default async function MembersPage() {
                     {isAdmin && (
                       <form action={revokeInvite}>
                         <input type="hidden" name="id" value={inv.id} />
-                        <button
-                          type="submit"
-                          className="hairline-subtle p-6 hover:border-[var(--danger)] hover:text-[var(--danger)] text-text-muted transition-colors"
+                        <PendingButton
+                          confirm={`Revoke the invite to ${inv.email}? Their link stops working.`}
+                          className="hairline-subtle p-6 hover:border-[var(--danger)] hover:text-[var(--danger)] text-text-muted transition-colors disabled:opacity-50"
                           aria-label={`Revoke invite to ${inv.email}`}
                         >
                           <X size={12} strokeWidth={1.5} />
-                        </button>
+                        </PendingButton>
                       </form>
                     )}
                   </li>

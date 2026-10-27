@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Check, Link2 } from "lucide-react";
 
 /**
@@ -10,12 +10,20 @@ import { Check, Link2 } from "lucide-react";
  */
 export function CopyInviteLink({ url, email }: { url: string; email: string }) {
   const [copied, setCopied] = useState(false);
+  // Timer id kept in a ref so an unmount mid-countdown cannot set
+  // state on a gone component.
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    return () => {
+      if (timer.current) clearTimeout(timer.current);
+    };
+  }, []);
 
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(url);
       setCopied(true);
-      setTimeout(() => setCopied(false), 1800);
+      timer.current = setTimeout(() => setCopied(false), 1800);
     } catch {
       // Clipboard blocked — nothing sensible to do silently.
     }

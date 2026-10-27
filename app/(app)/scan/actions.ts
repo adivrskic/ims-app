@@ -1,6 +1,7 @@
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
+import { getCurrentOrgContext } from "@/lib/data/user";
 import { getActiveScope } from "@/lib/facilityScope";
 
 export interface ScanLookupResult {
@@ -45,6 +46,12 @@ export async function lookupBarcode(
     return { found: false, barcode, error: "Empty barcode" };
   }
 
+  // Scope to the ACTIVE workspace explicitly. RLS lets a user read every org
+  // they belong to, so for a multi-workspace user a barcode shared across two
+  // workspaces resolved to whichever row PostgREST returned first.
+  const ctx = await getCurrentOrgContext();
+  if (!ctx) return { found: false, barcode: trimmed, error: "Not signed in" };
+
   const supabase = await createClient();
   const scope = await getActiveScope();
 
@@ -61,6 +68,7 @@ export async function lookupBarcode(
     `
     )
     .eq("barcode", trimmed)
+    .eq("org_id", ctx.orgId)
     // Soft-deleted slots must not count toward the on-hand figures this panel
     // shows, or a scanned SKU reads higher here than on the inventory list.
     .eq("locations.is_active", true)

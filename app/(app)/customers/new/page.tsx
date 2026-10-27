@@ -1,6 +1,8 @@
 import { PageHeader } from "@/components/ui/PageHeader";
 import { CustomerForm } from "../CustomerForm";
 
+export const metadata = { title: "New customer" };
+
 export default function NewCustomerPage() {
   return (
     <>

@@ -5,7 +5,20 @@ import { getCurrentOrgContext, getActiveMembership } from "@/lib/data/user";
 import { getWaveDetail } from "@/lib/data/picking";
 import { PaperDocument } from "@/components/print/PaperDocument";
 
-export const metadata = { title: "Pick list" };
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
+  const { id } = await params;
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("pick_waves")
+    .select("code")
+    .eq("id", id)
+    .maybeSingle();
+  return { title: data?.code ? `Pick list ${data.code}` : "Pick list" };
+}
 
 /**
  * Printable pick list for a wave — same zoned walk order the wave detail

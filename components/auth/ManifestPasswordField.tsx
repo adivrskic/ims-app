@@ -13,19 +13,26 @@ import styles from "./manifest.module.css";
  *
  * The button is type="button" so it never accidentally submits the form
  * when the user clicks it.
+ *
+ * `id` is forwarded to the <input> (generated when not given) so the
+ * enclosing ManifestRow's `inputId` can point a real <label> at it.
  */
 export function ManifestPasswordField({
   className = "",
   onChange,
+  id,
   ...rest
 }: Omit<InputHTMLAttributes<HTMLInputElement>, "type">) {
   const [visible, setVisible] = useState(false);
   const labelId = useId();
+  const fallbackId = useId();
+  const inputId = id ?? fallbackId;
 
   return (
     <div className="flex items-center gap-12" style={{ position: "relative" }}>
       <input
         {...rest}
+        id={inputId}
         type={visible ? "text" : "password"}
         aria-describedby={labelId}
         onChange={onChange}

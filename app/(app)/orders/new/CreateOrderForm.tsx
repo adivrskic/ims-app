@@ -49,7 +49,7 @@ const ORDER_TYPES = [
 const CUSTOMER_TYPES = new Set(["installer_job", "customer_pickup"]);
 
 function newId(): string {
-  return Math.random().toString(36).slice(2, 10);
+  return crypto.randomUUID();
 }
 
 export function CreateOrderForm({

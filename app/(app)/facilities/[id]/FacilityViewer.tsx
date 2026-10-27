@@ -98,12 +98,15 @@ export function FacilityViewer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode]);
 
-  // Prefetch the section detail route so click feels snappy in either view.
-  useEffect(() => {
-    for (const s of sections) {
-      router.prefetch(`/facilities/${facilityId}/sections/${s.id}`);
-    }
-  }, [router, facilityId, sections]);
+  // Prefetch a section's detail route when it is hovered or focused, so the
+  // click feels snappy without fetching every section on mount (a big
+  // facility used to fire dozens of prefetches before anything was touched).
+  const prefetched = useRef(new Set<string>());
+  const prefetchSection = (sectionId: string) => {
+    if (prefetched.current.has(sectionId)) return;
+    prefetched.current.add(sectionId);
+    router.prefetch(`/facilities/${facilityId}/sections/${sectionId}`);
+  };
 
   const goToSection = (sectionId: string) =>
     router.push(`/facilities/${facilityId}/sections/${sectionId}`);
@@ -123,6 +126,7 @@ export function FacilityViewer({
           containerRef={containerRef}
           viewportApi={viewportApi}
           onSectionClick={goToSection}
+          onSectionHover={prefetchSection}
         />
       ) : (
         <FacilityViewer3D
@@ -132,6 +136,7 @@ export function FacilityViewer({
           sections={sections}
           elements={elements}
           onSectionClick={goToSection}
+          onSectionHover={prefetchSection}
         />
       )}
     </div>

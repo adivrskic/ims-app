@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Printer, Check, Loader2, AlertTriangle, X } from "lucide-react";
 import { CornerButton } from "@/components/ui/CornerButton";
 import { usePrinter } from "./PrinterProvider";
@@ -51,6 +51,14 @@ export function BulkPrintBayLabels({
   const { supported, device, print, connect } = usePrinter();
   const [progress, setProgress] = useState<PrintProgress | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  // The "Done" readout timer — cleared on unmount.
+  const resetRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (resetRef.current) clearTimeout(resetRef.current);
+    },
+    []
+  );
 
   const totalLabels = sections.reduce(
     (sum, s) => sum + s.total_bays * s.total_levels,
@@ -117,7 +125,8 @@ export function BulkPrintBayLabels({
     }
 
     setProgress({ total: totalLabels, done, current: null });
-    setTimeout(() => setProgress(null), 2400);
+    if (resetRef.current) clearTimeout(resetRef.current);
+    resetRef.current = setTimeout(() => setProgress(null), 2400);
   };
 
   if (progress) {

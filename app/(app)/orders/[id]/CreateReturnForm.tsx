@@ -33,7 +33,10 @@ export function CreateReturnForm({
   orderId: string;
   items: ReturnableItem[];
 }) {
-  const [state, formAction] = useActionState(createReturnFromOrder, undefined);
+  const [state, formAction, pending] = useActionState(
+    createReturnFromOrder,
+    undefined
+  );
   const [open, setOpen] = useState(false);
   const [itemId, setItemId] = useState("");
   const [reason, setReason] = useState("");
@@ -114,7 +117,7 @@ export function CreateReturnForm({
             value={qty}
             onChange={(e) => setQty(e.target.value)}
             disabled={!itemId}
-            className="hairline-subtle bg-[var(--surface-2)] mono-sm text-text px-8 py-6 focus:border-[var(--accent)] outline-none tnum"
+            className="hairline-subtle bg-[var(--surface-2)] mono-sm text-text px-8 py-6 focus:border-[var(--accent)] outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] tnum"
             aria-label="Quantity to return"
           />
         </label>
@@ -139,7 +142,7 @@ export function CreateReturnForm({
             type="text"
             maxLength={500}
             autoComplete="off"
-            className="hairline-subtle bg-[var(--surface-2)] mono-sm text-text px-8 py-6 focus:border-[var(--accent)] outline-none"
+            className="hairline-subtle bg-[var(--surface-2)] mono-sm text-text px-8 py-6 focus:border-[var(--accent)] outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
             aria-label="Return note"
           />
         </label>
@@ -161,7 +164,8 @@ export function CreateReturnForm({
         </CornerButton>
         <button
           type="submit"
-          disabled={!itemId || !reason}
+          disabled={!itemId || !reason || pending}
+          aria-busy={pending || undefined}
           className="hairline-subtle bg-[var(--accent-dim)] text-[var(--accent)] px-10 py-7 inline-flex items-center gap-6 hover:border-[var(--accent)] transition-colors disabled:opacity-50"
           aria-label="Log return"
         >

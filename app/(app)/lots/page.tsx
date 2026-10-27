@@ -5,6 +5,8 @@ import { SectionTitle } from "@/components/ui/SectionTitle";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ListPagination } from "@/components/ui/ListPagination";
 import { CalendarClock, Trash2 } from "lucide-react";
+import { Th, Td } from "@/components/ui/Table";
+import { PendingButton } from "@/app/(app)/_components/PendingButton";
 import {
   expiryStatus,
   expiryLabel,
@@ -20,6 +22,9 @@ import { RegisterLotForm } from "./RegisterLotForm";
 import { deleteLot, setProductLotTracking } from "./actions";
 
 export const metadata = { title: "Lots" };
+
+/** PostgREST's default max rows — anything at the cap is probably truncated. */
+const PICKER_CAP = 1000;
 
 const STATUS_COLOR: Record<ExpiryStatus, string> = {
   expired: "var(--danger)",
@@ -92,16 +97,20 @@ export default async function LotsPage({
     { count: soonCountRaw },
   ] = await Promise.all([
     lotsCall((page - 1) * pageSize),
+    // PostgREST caps a select at 1,000 rows silently; make the cap explicit
+    // and tell the user when it is hit. TODO: async search picker.
     supabase
       .from("products")
       .select("id, name, barcode, track_lots")
       .eq("org_id", orgId)
-      .order("name", { ascending: true }),
+      .order("name", { ascending: true })
+      .limit(PICKER_CAP),
     supabase
       .from("suppliers")
       .select("id, name")
       .eq("org_id", orgId)
-      .order("name", { ascending: true }),
+      .order("name", { ascending: true })
+      .limit(PICKER_CAP),
     supabase
       .from("lots")
       .select("id", { count: "exact", head: true })
@@ -212,7 +221,12 @@ export default async function LotsPage({
 
       {/* Register */}
       <section aria-labelledby="register">
-        <SectionTitle numeral="01" eyebrow="Record" title="Register a lot" />
+        <SectionTitle
+          id="register"
+          numeral="01"
+          eyebrow="Record"
+          title="Register a lot"
+        />
         <RegisterLotForm
           products={trackedProducts.map((p) => ({
             id: p.id,
@@ -221,11 +235,19 @@ export default async function LotsPage({
           }))}
           suppliers={suppliers}
         />
+        {(products.length >= PICKER_CAP || suppliers.length >= PICKER_CAP) && (
+          <p className="mono-sm text-text-muted mt-8" role="status">
+            Showing the first {PICKER_CAP.toLocaleString()}{" "}
+            {products.length >= PICKER_CAP ? "products" : "suppliers"} by name —
+            search in Inventory to find the rest.
+          </p>
+        )}
       </section>
 
       {/* Lot list */}
       <section aria-labelledby="lots">
         <SectionTitle
+          id="lots"
           numeral="02"
           eyebrow="Registry"
           title={`Lots (${totalCount})`}
@@ -239,13 +261,17 @@ export default async function LotsPage({
         ) : (
           <div className="hairline bg-[var(--surface)] overflow-hidden">
             <div className="overflow-x-auto">
-              <table className="w-full" style={{ borderCollapse: "collapse" }}>
+              <table
+                className="w-full"
+                style={{ borderCollapse: "collapse" }}
+                aria-label="Registered lots"
+              >
                 <thead>
                   <tr className="hairline-b bg-[var(--surface-2)]">
                     <Th>Product</Th>
                     <Th>Lot / batch</Th>
                     <Th>Supplier</Th>
-                    <Th className="text-right">On hand</Th>
+                    <Th align="right">On hand</Th>
                     <Th>Expiry</Th>
                     <th aria-hidden style={{ width: 44 }} />
                   </tr>
@@ -278,7 +304,7 @@ export default async function LotsPage({
                             {supplier?.name ?? "—"}
                           </span>
                         </Td>
-                        <Td className="text-right">
+                        <Td align="right">
                           <span className="mono-sm text-text-secondary tnum">
                             {Math.max(0, onHandByLot.get(l.id) ?? 0).toLocaleString()}
                           </span>
@@ -302,17 +328,19 @@ export default async function LotsPage({
                             {expiryLabel(l.expires_at, now)}
                           </span>
                         </Td>
-                        <Td className="text-right">
+                        <Td align="right">
                           <form action={deleteLot} style={{ display: "inline" }}>
                             <input type="hidden" name="id" value={l.id} />
-                            <button
-                              type="submit"
-                              className="hairline-subtle p-6 text-text-muted hover:text-[var(--danger)] hover:border-[var(--danger)] transition-colors"
+                            <PendingButton
+                              confirm={`Delete lot ${l.lot_number}${
+                                product?.name ? ` of ${product.name}` : ""
+                              }? Its received and picked history stays, but the lot can no longer be chosen.`}
+                              className="hairline-subtle p-6 text-text-muted hover:text-[var(--danger)] hover:border-[var(--danger)] transition-colors disabled:opacity-50"
                               aria-label={`Delete lot ${l.lot_number}`}
                               title="Delete lot"
                             >
                               <Trash2 size={11} strokeWidth={1.5} />
-                            </button>
+                            </PendingButton>
                           </form>
                         </Td>
                       </tr>
@@ -339,6 +367,7 @@ export default async function LotsPage({
       {/* Lot-tracked products (opt-in) */}
       <section aria-labelledby="tracked">
         <SectionTitle
+          id="tracked"
           numeral="03"
           eyebrow="Setup"
           title="Lot-tracked products"
@@ -405,25 +434,3 @@ export default async function LotsPage({
   );
 }
 
-function Th({
-  children,
-  className = "",
-}: {
-  children?: React.ReactNode;
-  className?: string;
-}) {
-  return (
-    <th className={`label-text text-left px-14 py-12 font-normal ${className}`}>
-      {children}
-    </th>
-  );
-}
-function Td({
-  children,
-  className = "",
-}: {
-  children?: React.ReactNode;
-  className?: string;
-}) {
-  return <td className={`px-14 py-12 ${className}`}>{children}</td>;
-}

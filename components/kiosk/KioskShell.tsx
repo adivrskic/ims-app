@@ -68,6 +68,12 @@ export function KioskShell({
           return;
         }
         wakeRef.current = sentinel;
+        // The browser releases the lock itself when the tab is hidden or
+        // the display sleeps; forget it so the visibilitychange handler
+        // below re-acquires instead of seeing a stale sentinel.
+        sentinel.addEventListener("release", () => {
+          if (wakeRef.current === sentinel) wakeRef.current = null;
+        });
       } catch {
         // Permission denied or unsupported — silently continue.
       }
@@ -100,4 +106,5 @@ export function KioskShell({
  */
 type WakeLockSentinel = {
   release: () => Promise<void>;
+  addEventListener: (type: "release", listener: () => void) => void;
 };

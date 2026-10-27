@@ -93,15 +93,7 @@ export function verifyShopifyOauthCallback(
   const givenHmac = searchParams.get("hmac");
   if (!givenHmac) return false;
 
-  // Reconstruct the signed message: alphabetically sorted params,
-  // excluding `hmac` and `signature`, joined as &k=v
-  const pairs: string[] = [];
-  for (const [k, v] of searchParams.entries()) {
-    if (k === "hmac" || k === "signature") continue;
-    pairs.push(`${k}=${v}`);
-  }
-  pairs.sort();
-  const message = pairs.join("&");
+  const message = buildShopifyHmacMessage(searchParams.entries());
   const expected = createHmac("sha256", apiSecret)
     .update(message)
     .digest("hex");
@@ -110,6 +102,33 @@ export function verifyShopifyOauthCallback(
   const givenBuf = Buffer.from(givenHmac);
   if (expectedBuf.length !== givenBuf.length) return false;
   return timingSafeEqual(expectedBuf, givenBuf);
+}
+
+/**
+ * Reconstruct the message Shopify signed for an OAuth callback / app proxy
+ * request, per https://shopify.dev/docs/apps/build/authentication-authorization/access-tokens/authorization-code-grant#verify-a-request
+ *
+ *   - drop `hmac` and `signature`
+ *   - in BOTH key and value, replace `%` → `%25`, `&` → `%26`, `=` → `%3D`
+ *   - join each pair with `=`, sort the pairs, join with `&`
+ *
+ * The previous version skipped the escaping step, so any param carrying one
+ * of those characters (a `host` value is base64 and routinely ends in `=`)
+ * produced a different message than Shopify signed and the install failed.
+ * Pure — exported for unit tests.
+ */
+export function buildShopifyHmacMessage(
+  entries: Iterable<[string, string]>
+): string {
+  const escape = (s: string) =>
+    s.replace(/%/g, "%25").replace(/&/g, "%26").replace(/=/g, "%3D");
+  const pairs: string[] = [];
+  for (const [k, v] of entries) {
+    if (k === "hmac" || k === "signature") continue;
+    pairs.push(`${escape(k)}=${escape(v)}`);
+  }
+  pairs.sort();
+  return pairs.join("&");
 }
 
 /** Exchange OAuth code for permanent access token. */

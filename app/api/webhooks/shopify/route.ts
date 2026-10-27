@@ -5,10 +5,15 @@ import {
   ingestShopifyOrder,
   cancelShopifyOrder,
 } from "@/lib/integrations/shopify/ingest";
-import type {
-  ShopifyConfig,
-  ShopifyOrder,
+import { normalizeShopDomain } from "@/lib/integrations/shopify/oauth";
+import {
+  SHOPIFY_WEBHOOK_TOPICS,
+  type ShopifyConfig,
+  type ShopifyOrder,
+  type ShopifyWebhookTopic,
 } from "@/lib/integrations/shopify/types";
+
+const HANDLED_TOPICS = new Set<string>(SHOPIFY_WEBHOOK_TOPICS);
 
 export const runtime = "nodejs";
 
@@ -40,12 +45,26 @@ export async function POST(req: NextRequest) {
     return new NextResponse("Invalid signature", { status: 401 });
   }
 
-  const topic = req.headers.get("x-shopify-topic") ?? "";
-  const shopDomain = req.headers.get("x-shopify-shop-domain") ?? "";
+  const topicRaw = req.headers.get("x-shopify-topic") ?? "";
+  const shopDomainRaw = req.headers.get("x-shopify-shop-domain") ?? "";
   const webhookId = req.headers.get("x-shopify-webhook-id") ?? "";
 
-  if (!topic || !shopDomain) {
+  // Every real Shopify delivery carries all three. Without the webhook id the
+  // log row has no idempotency key, and an unknown topic has no handler — in
+  // both cases a 400 tells Shopify (and us, in its delivery log) exactly why.
+  if (!topicRaw || !shopDomainRaw || !webhookId) {
     return new NextResponse("Missing headers", { status: 400 });
+  }
+  if (!HANDLED_TOPICS.has(topicRaw)) {
+    return new NextResponse(`Unsupported topic: ${topicRaw}`, { status: 400 });
+  }
+  const topic = topicRaw as ShopifyWebhookTopic;
+  // The integration row stores the normalised "shop.myshopify.com" form, so
+  // the lookup below must use the same shape (and refuse anything that isn't
+  // a myshopify domain at all).
+  const shopDomain = normalizeShopDomain(shopDomainRaw);
+  if (!shopDomain) {
+    return new NextResponse("Invalid shop domain", { status: 400 });
   }
 
   // Look up the integration by shop domain to find the org
@@ -82,7 +101,7 @@ export async function POST(req: NextRequest) {
       {
         org_id: integration.org_id,
         topic,
-        shopify_webhook_id: webhookId || null,
+        shopify_webhook_id: webhookId,
         shop_domain: shopDomain,
         payload: payload as Record<string, unknown>,
       },
@@ -127,19 +146,19 @@ export async function POST(req: NextRequest) {
         break;
       }
       case "app/uninstalled": {
-        // User uninstalled our app from Shopify. Mark integration disconnected.
+        // User uninstalled our app from Shopify. Mark integration disconnected
+        // and drop the access token: Shopify has already revoked it, and a
+        // dead token at rest is only a liability.
         await admin
           .from("integrations")
           .update({
             status: "disconnected",
             last_error: "App uninstalled from Shopify",
+            credentials_encrypted: null,
           })
           .eq("id", integration.id);
         break;
       }
-      default:
-        // Unknown topic — log but don't error
-        console.warn(`[shopify webhook] unhandled topic: ${topic}`);
     }
   } catch (err) {
     processError = err instanceof Error ? err.message : "Processor threw";

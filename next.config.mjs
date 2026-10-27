@@ -15,6 +15,14 @@ const isDev = process.env.NODE_ENV !== "production";
  *
  * connect-src must reach Supabase over both https (PostgREST/Auth) and wss
  * (Realtime — the *Realtime components that keep dashboards live).
+ *
+ * frame-src 'none': nothing in the app embeds a third-party frame (frame-
+ * ancestors above is the other direction — who may embed US).
+ * worker-src 'self' blob:: Next's dev overlay and any future OffscreenCanvas /
+ * Web Worker are spawned from same-origin or blob: URLs.
+ * manifest-src 'self': the PWA manifest is served from this origin.
+ * upgrade-insecure-requests: production only — it would break plain-http
+ * localhost in dev.
  */
 const supabaseOrigin = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
 const supabaseWs = supabaseOrigin.replace(/^https:/, "wss:");
@@ -28,10 +36,14 @@ const csp = [
   `img-src 'self' data: blob: https://cdn.simpleicons.org`,
   `font-src 'self' data:`,
   `connect-src 'self' ${supabaseOrigin} ${supabaseWs}`.trim(),
+  `frame-src 'none'`,
   `frame-ancestors 'self'`,
+  `worker-src 'self' blob:`,
+  `manifest-src 'self'`,
   `object-src 'none'`,
   `base-uri 'self'`,
   `form-action 'self'`,
+  isDev ? "" : "upgrade-insecure-requests",
 ]
   .filter(Boolean)
   .join("; ");
@@ -44,9 +56,13 @@ const securityHeaders = [
   { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
   // No page in this app uses camera/mic/geolocation. The barcode scanner is
   // keyboard-wedge (lib/useScanner.ts), not getUserMedia — so deny all three.
+  // Payment Request is likewise unused (Stripe runs on its own hosted
+  // checkout page, not in-app), so deny it too. WebUSB must stay allowed:
+  // the Zebra label printer pairs over navigator.usb (lib/print/zebra.ts).
   {
     key: "Permissions-Policy",
-    value: "camera=(), microphone=(), geolocation=(), interest-cohort=()",
+    value:
+      "camera=(), microphone=(), geolocation=(), interest-cohort=(), payment=()",
   },
   // HSTS is a one-way door on a custom domain — only send it in production.
   ...(isDev

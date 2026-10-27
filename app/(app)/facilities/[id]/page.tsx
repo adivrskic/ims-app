@@ -17,6 +17,21 @@ const VALID_ELEMENT_KINDS: readonly ElementKind[] = [
   "staging",
 ] as const;
 
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
+  const { id } = await params;
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("warehouses")
+    .select("name")
+    .eq("id", id)
+    .maybeSingle();
+  return { title: data?.name ?? "Facility" };
+}
+
 export default async function FacilityPage({
   params,
 }: {
@@ -25,27 +40,27 @@ export default async function FacilityPage({
   const { id } = await params;
   const supabase = await createClient();
 
-  const { data: warehouse } = await supabase
-    .from("warehouses")
-    .select(
-      "id, name, address, city, state, floor_canvas_width, floor_canvas_height, floor_unit"
-    )
-    .eq("id", id)
-    .maybeSingle();
-
-  if (!warehouse) notFound();
-
-  // Permission check for the edit affordance — purely cosmetic, server still
-  // enforces on save. Keyed on the granular permission (cookie-aware context),
-  // not role, so a granted member sees the affordance and a revoked admin doesn't.
-  const ctx = await getCurrentOrgContext();
-  const canEdit = ctx?.can("facilities.manage") ?? false;
-
-  // Layout + occupancy in parallel. The occupancy aggregate is cheap (one
-  // row per section in this warehouse) and lets the viewer tint sections
-  // by how full they are.
-  const [{ data: sections }, { data: elements }, { data: occupancy }] =
-    await Promise.all([
+  // Everything here keys off the route id alone, so the warehouse, the org
+  // context (for the edit affordance — purely cosmetic, the server still
+  // enforces on save; keyed on the granular permission so a granted member
+  // sees it and a revoked admin doesn't), the layout and the occupancy
+  // aggregate (one row per section, lets the viewer tint sections by how
+  // full they are) all load in one round.
+  const [
+    { data: warehouse },
+    ctx,
+    { data: sections },
+    { data: elements },
+    { data: occupancy },
+  ] = await Promise.all([
+      supabase
+        .from("warehouses")
+        .select(
+          "id, name, address, city, state, floor_canvas_width, floor_canvas_height, floor_unit"
+        )
+        .eq("id", id)
+        .maybeSingle(),
+      getCurrentOrgContext(),
       supabase
         .from("sections")
         .select(
@@ -70,6 +85,9 @@ export default async function FacilityPage({
         .eq("is_active", true)
         .not("product_id", "is", null),
     ]);
+
+  if (!warehouse) notFound();
+  const canEdit = ctx?.can("facilities.manage") ?? false;
 
   // Build a distinct-(bay,level) count per section_id.
   const occMap = new Map<string, Set<string>>();

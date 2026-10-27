@@ -349,6 +349,20 @@ export function PaperDocument({
     setPortalTarget(document.body);
   }, []);
 
+  // While the document overlay is up, the app chrome underneath it (rail,
+  // nav, page) is still in the Tab order and the accessibility tree. The
+  // (app) layout marks its outer wrapper `#app-shell`; making it inert
+  // removes everything behind the overlay until this unmounts.
+  useEffect(() => {
+    if (!portalTarget) return;
+    const shell = document.getElementById("app-shell");
+    if (!shell) return;
+    shell.inert = true;
+    return () => {
+      shell.inert = false;
+    };
+  }, [portalTarget]);
+
   const doc = (
     <div className="paper-doc-root">
       <style>{PAPER_CSS}</style>

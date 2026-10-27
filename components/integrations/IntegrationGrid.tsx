@@ -4,6 +4,7 @@ import { AlertTriangle, Check, Plug } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import { CornerButton, CornerLink } from "@/components/ui/CornerButton";
 import { useGlowCards } from "@/lib/useGlowCards";
+import { LocalTime } from "@/components/ui/LocalTime";
 import { ProviderLogo } from "@/components/integrations/ProviderLogo";
 import type { ProviderInfo } from "@/app/(app)/integrations/providers";
 
@@ -22,19 +23,6 @@ interface Props {
   byProvider: Map<string, IntegrationRow>;
   /** "connected" grid is denser by default (3-up); "available" same. */
   columns?: 2 | 3;
-}
-
-function relTime(iso: string | null): string {
-  if (!iso) return "never";
-  const ms = Date.now() - new Date(iso).getTime();
-  const m = Math.floor(ms / 60000);
-  if (m < 1) return "just now";
-  if (m < 60) return `${m}m ago`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h ago`;
-  const d = Math.floor(h / 24);
-  if (d < 7) return `${d}d ago`;
-  return new Date(iso).toLocaleDateString();
 }
 
 export function IntegrationGrid({ providers, byProvider, columns = 3 }: Props) {
@@ -107,12 +95,14 @@ export function IntegrationGrid({ providers, byProvider, columns = 3 }: Props) {
                   )}
                   <div className="flex items-center justify-between gap-12">
                     <span className="label-text text-text-dim">Last sync</span>
-                    <span
+                    {/* Hydration-safe: the old Date.now()/toLocaleDateString
+                        pair rendered differently on the server and client. */}
+                    <LocalTime
+                      iso={integration.last_synced_at}
+                      format="relative"
+                      fallback="never"
                       className="mono-sm text-text-secondary"
-                      style={{ fontSize: 11 }}
-                    >
-                      {relTime(integration.last_synced_at)}
-                    </span>
+                    />
                   </div>
                   {integration.last_error && (
                     <p

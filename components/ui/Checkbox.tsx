@@ -1,7 +1,7 @@
 "use client";
 
-import { forwardRef, useId } from "react";
-import type { InputHTMLAttributes, ReactNode } from "react";
+import { useId } from "react";
+import type { InputHTMLAttributes, ReactNode, Ref } from "react";
 import { Check } from "lucide-react";
 
 interface Props
@@ -11,6 +11,8 @@ interface Props
   description?: ReactNode;
   /** Applied to the outer <label>. */
   className?: string;
+  /** React 19: `ref` is an ordinary prop, forwarded to the <input>. */
+  ref?: Ref<HTMLInputElement>;
 }
 
 /**
@@ -20,10 +22,16 @@ interface Props
  * see the Checkbox block in globals.css. Replaces the two ad-hoc styles
  * (native accent-color and appearance-none squares) that used to coexist.
  */
-export const Checkbox = forwardRef<HTMLInputElement, Props>(function Checkbox(
-  { label, description, className, disabled, id, title, ...props },
-  ref
-) {
+export function Checkbox({
+  label,
+  description,
+  className,
+  disabled,
+  id,
+  title,
+  ref,
+  ...props
+}: Props) {
   const generatedId = useId();
   const inputId = id ?? generatedId;
   return (
@@ -52,4 +60,4 @@ export const Checkbox = forwardRef<HTMLInputElement, Props>(function Checkbox(
       </span>
     </label>
   );
-});
+}

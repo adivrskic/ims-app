@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { getCurrentUser } from "@/lib/data/user";
 import { SectionTitle } from "@/components/ui/SectionTitle";
 import { Badge } from "@/components/ui/Badge";
 
@@ -14,9 +15,7 @@ const ROLE_TONE: Record<OrgRole, "accent" | "info" | "neutral"> = {
 
 export default async function AccountSettingsPage() {
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = await getCurrentUser();
 
   const { data: profile } = user
     ? await supabase
@@ -36,7 +35,7 @@ export default async function AccountSettingsPage() {
   return (
     <div className="flex flex-col gap-40">
       <section aria-labelledby="account-heading">
-        <SectionTitle eyebrow="Identity" title="Account details" />
+        <SectionTitle id="account-heading" eyebrow="Identity" title="Account details" />
         <dl className="hairline bg-[var(--surface)] divide-y divide-[var(--border-subtle)]">
           <Row label="Email" value={user?.email ?? "—"} mono />
           <Row label="Full name" value={profile?.full_name ?? "Not set"} />
@@ -55,7 +54,7 @@ export default async function AccountSettingsPage() {
       </section>
 
       <section aria-labelledby="workspaces-heading">
-        <SectionTitle eyebrow="Access" title="Workspaces" />
+        <SectionTitle id="workspaces-heading" eyebrow="Access" title="Workspaces" />
         {!orgs || orgs.length === 0 ? (
           <p className="hairline bg-[var(--surface)] px-20 py-16 mono-sm text-text-muted">
             You&apos;re not a member of any workspaces yet.

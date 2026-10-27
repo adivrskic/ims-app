@@ -97,8 +97,17 @@ async function digestFor(
     // Only mail when something arrived after the last digest — an untouched
     // unread pile shouldn't generate the same email every morning.
     if (user.digest_last_sent_at) {
-      const newest = items[0]?.created_at;
-      if (!newest || newest <= user.digest_last_sent_at) return "skipped";
+      // Compare instants, not strings: Postgres timestamptz text can differ
+      // in precision/offset from what the app wrote, so a lexical compare
+      // could skip (or resend) a digest on formatting alone.
+      const newest = Date.parse(items[0]?.created_at ?? "");
+      const lastSent = Date.parse(user.digest_last_sent_at);
+      if (
+        !Number.isFinite(newest) ||
+        (Number.isFinite(lastSent) && newest <= lastSent)
+      ) {
+        return "skipped";
+      }
     }
 
     const mail = digestEmail({

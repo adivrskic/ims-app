@@ -20,6 +20,7 @@ const TABS: Tab[] = [
   { href: "/settings/security", label: "Security" },
   { href: "/settings/members", label: "Members" },
   { href: "/settings/devices", label: "Devices" },
+  { href: "/settings/adjustments", label: "Adjustments" },
   { href: "/settings/billing", label: "Billing" },
   { href: "/settings/api-keys", label: "API keys" },
   { href: "/settings/audit", label: "Audit log" },

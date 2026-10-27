@@ -1,6 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { SectionTitle } from "@/components/ui/SectionTitle";
-import { CornerButton } from "@/components/ui/CornerButton";
+import { SubmitButton } from "@/components/ui/SubmitButton";
+import { LocalTime } from "@/components/ui/LocalTime";
 import { CreateKeyForm } from "./CreateKeyForm";
 import { revokeApiKey } from "../actions";
 import { KeyRound } from "lucide-react";
@@ -15,19 +16,6 @@ interface ApiKeyRow {
   last_used_at: string | null;
   created_at: string | null;
   revoked_at: string | null;
-}
-
-function timeAgo(iso: string | null): string {
-  if (!iso) return "Never";
-  const diffMs = Date.now() - new Date(iso).getTime();
-  const m = Math.floor(diffMs / 60000);
-  if (m < 1) return "just now";
-  if (m < 60) return `${m}m ago`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h ago`;
-  const d = Math.floor(h / 24);
-  if (d < 30) return `${d}d ago`;
-  return new Date(iso).toLocaleDateString();
 }
 
 function EndpointRow({
@@ -73,6 +61,7 @@ export default async function ApiKeysPage() {
 
       <section aria-labelledby="active-keys">
         <SectionTitle
+          id="active-keys"
           eyebrow="Live"
           title="Active keys"
           action={
@@ -121,19 +110,23 @@ export default async function ApiKeysPage() {
                 <div className="hidden md:flex flex-col items-end gap-2 w-[140px]">
                   <span className="label-text text-text-muted">Last used</span>
                   <span className="mono-sm text-text-secondary">
-                    {timeAgo(k.last_used_at)}
+                    <LocalTime
+                      iso={k.last_used_at}
+                      format="relative"
+                      fallback="Never"
+                    />
                   </span>
                 </div>
                 <form action={revokeApiKey}>
                   <input type="hidden" name="id" value={k.id} />
-                  <CornerButton
-                    type="submit"
+                  <SubmitButton
                     variant="danger"
                     size="sm"
                     ariaLabel={`Revoke ${k.name}`}
+                    confirm={`Revoke the API key "${k.name}" (${k.key_prefix}…)? Anything still using it stops working immediately.`}
                   >
                     Revoke
-                  </CornerButton>
+                  </SubmitButton>
                 </form>
               </li>
             ))}
@@ -142,7 +135,7 @@ export default async function ApiKeysPage() {
       </section>
 
       <section aria-labelledby="endpoints">
-        <SectionTitle eyebrow="Reference" title="Endpoints" />
+        <SectionTitle id="endpoints" eyebrow="Reference" title="Endpoints" />
         <div className="hairline bg-[var(--surface)] px-20 py-16 flex flex-col gap-10">
           <p className="mono-sm text-text-muted">
             Authenticate with{" "}
@@ -178,6 +171,7 @@ export default async function ApiKeysPage() {
       {revoked.length > 0 && (
         <section aria-labelledby="revoked-keys">
           <SectionTitle
+            id="revoked-keys"
             eyebrow="Archive"
             title="Revoked"
             action={
@@ -217,7 +211,7 @@ export default async function ApiKeysPage() {
                   </code>
                 </div>
                 <span className="mono-sm text-text-dim">
-                  Revoked {timeAgo(k.revoked_at)}
+                  Revoked <LocalTime iso={k.revoked_at} format="relative" />
                 </span>
               </li>
             ))}

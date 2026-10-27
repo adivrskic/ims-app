@@ -11,7 +11,11 @@ import {
 import { PageHeader } from "@/components/ui/PageHeader";
 import { SectionTitle } from "@/components/ui/SectionTitle";
 import { Badge } from "@/components/ui/Badge";
-import { CornerButton, CornerLink } from "@/components/ui/CornerButton";
+import { CornerLink } from "@/components/ui/CornerButton";
+import { SubmitButton } from "@/components/ui/SubmitButton";
+import { FormNotice } from "@/components/ui/FormNotice";
+import { Th, Td } from "@/components/ui/Table";
+import { PendingButton } from "@/app/(app)/_components/PendingButton";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { MapPin, X, Waypoints, Printer } from "lucide-react";
 
@@ -49,16 +53,7 @@ export default async function WaveDetailPage({
 
   return (
     <div className="flex flex-col gap-32">
-      {actionError && (
-        <div className="hairline border-[var(--danger-border)] bg-[var(--danger-dim)] px-16 py-12 flex items-start gap-12">
-          <X
-            size={14}
-            strokeWidth={1.5}
-            className="text-[var(--danger)] shrink-0 mt-2"
-          />
-          <p className="mono-sm text-[var(--danger)]">{actionError}</p>
-        </div>
-      )}
+      {actionError && <FormNotice tone="error">{actionError}</FormNotice>}
       <PageHeader
         backHref="/picking"
         backLabel="All waves"
@@ -90,9 +85,9 @@ export default async function WaveDetailPage({
                 {wave.assignedTo === ctx.user.id && (
                   <input type="hidden" name="release" value="1" />
                 )}
-                <CornerButton type="submit" variant="ghost" size="sm">
+                <SubmitButton variant="ghost" size="sm">
                   {wave.assignedTo === ctx.user.id ? "Release" : "Claim"}
-                </CornerButton>
+                </SubmitButton>
               </form>
             )}
             {wave.status === "planned" && (
@@ -102,7 +97,15 @@ export default async function WaveDetailPage({
               <StatusForm waveId={wave.id} status="complete" label="Mark complete" variant="primary" />
             )}
             {!isTerminal && (
-              <StatusForm waveId={wave.id} status="cancelled" label="Cancel" variant="danger" />
+              <StatusForm
+                waveId={wave.id}
+                status="cancelled"
+                label="Cancel"
+                variant="danger"
+                confirm={`Cancel wave ${wave.code}? Its ${wave.orders.length} order${
+                  wave.orders.length === 1 ? "" : "s"
+                } go back to the unwaved pool.`}
+              />
             )}
           </div>
         }
@@ -110,7 +113,7 @@ export default async function WaveDetailPage({
 
       {/* Orders in the wave */}
       <section aria-labelledby="orders">
-        <SectionTitle numeral="01" eyebrow="Batch" title="Orders" />
+        <SectionTitle id="orders" numeral="01" eyebrow="Batch" title="Orders" />
         <ul className="hairline bg-[var(--surface)] divide-y divide-[var(--border-subtle)]">
           {wave.orders.map((o) => (
             <li key={o.id} className="px-20 py-12 flex items-center gap-14">
@@ -129,14 +132,18 @@ export default async function WaveDetailPage({
                 <form action={removeOrderFromWave}>
                   <input type="hidden" name="wave_id" value={wave.id} />
                   <input type="hidden" name="order_id" value={o.id} />
-                  <button
-                    type="submit"
-                    className="hairline-subtle p-6 hover:border-[var(--danger)] text-text-muted hover:text-[var(--danger)] transition-colors"
-                    aria-label="Remove from wave"
+                  <PendingButton
+                    confirm={`Remove order ${
+                      o.orderNumber ?? o.id.slice(0, 8)
+                    } from wave ${wave.code}?`}
+                    className="hairline-subtle p-6 hover:border-[var(--danger)] text-text-muted hover:text-[var(--danger)] transition-colors disabled:opacity-50"
+                    aria-label={`Remove order ${
+                      o.orderNumber ?? o.id.slice(0, 8)
+                    } from wave`}
                     title="Remove from wave"
                   >
                     <X size={11} strokeWidth={1.5} />
-                  </button>
+                  </PendingButton>
                 </form>
               )}
             </li>
@@ -147,6 +154,7 @@ export default async function WaveDetailPage({
       {/* Zoned pick list */}
       <section aria-labelledby="picklist">
         <SectionTitle
+          id="picklist"
           numeral="02"
           eyebrow="Walk order"
           title="Pick list"
@@ -179,13 +187,17 @@ export default async function WaveDetailPage({
                   </span>
                 </div>
                 <div className="overflow-x-auto">
-                  <table className="w-full" style={{ borderCollapse: "collapse" }}>
+                  <table
+                    className="w-full"
+                    style={{ borderCollapse: "collapse" }}
+                    aria-label={`Pick tasks in zone ${z.zone}`}
+                  >
                     <thead>
                       <tr className="hairline-b">
                         <Th>Slot</Th>
                         <Th>Product</Th>
                         <Th>Order</Th>
-                        <Th className="text-right">Pick qty</Th>
+                        <Th align="right">Pick qty</Th>
                       </tr>
                     </thead>
                     <tbody>
@@ -236,7 +248,7 @@ export default async function WaveDetailPage({
                               {t.orderNumber ?? t.orderId.slice(0, 8)}
                             </Link>
                           </Td>
-                          <Td className="text-right">
+                          <Td align="right">
                             <span className="mono-body tnum text-text">{t.quantity}</span>
                           </Td>
                         </tr>
@@ -264,42 +276,22 @@ function StatusForm({
   status,
   label,
   variant,
+  confirm,
 }: {
   waveId: string;
   status: WaveStatus;
   label: string;
   variant: "primary" | "ghost" | "danger";
+  confirm?: string;
 }) {
   return (
     <form action={setWaveStatus}>
       <input type="hidden" name="wave_id" value={waveId} />
       <input type="hidden" name="status" value={status} />
-      <CornerButton type="submit" variant={variant} size="sm">
+      <SubmitButton variant={variant} size="sm" confirm={confirm}>
         {label}
-      </CornerButton>
+      </SubmitButton>
     </form>
   );
 }
 
-function Th({
-  children,
-  className = "",
-}: {
-  children?: React.ReactNode;
-  className?: string;
-}) {
-  return (
-    <th className={`label-text text-left px-14 py-12 font-normal ${className}`}>
-      {children}
-    </th>
-  );
-}
-function Td({
-  children,
-  className = "",
-}: {
-  children?: React.ReactNode;
-  className?: string;
-}) {
-  return <td className={`px-14 py-12 ${className}`}>{children}</td>;
-}

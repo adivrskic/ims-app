@@ -3,6 +3,7 @@
 import { revalidatePath, revalidateTag } from "next/cache";
 import { tags } from "@/lib/cache-tags";
 import { getActionContext } from "@/lib/data/actionContext";
+import { assertOrgOwns } from "@/lib/data/assertOrgOwns";
 import type { SectionDraft, LayoutElementDraft, ElementKind } from "./types";
 
 const UUID_RE =
@@ -80,6 +81,12 @@ export async function saveLayout({
     return {
       error: `Two sections share the code "${duplicate}" — codes must be unique within a facility`,
     };
+  }
+
+  // warehouseId is client-supplied and stamped onto every new section and
+  // element below — confirm it's one of this workspace's facilities first.
+  if (!(await assertOrgOwns(ctx.supabase, "warehouses", warehouseId, ctx.orgId))) {
+    return { error: "That facility is not in this workspace" };
   }
 
   if (deletedSectionIds.length > 0) {
@@ -295,6 +302,9 @@ export async function createSnapshot({
   if ("error" in ctx) return { error: ctx.error };
   if (!ctx.can("facilities.manage")) {
     return { error: "Only admins can manage snapshots" };
+  }
+  if (!(await assertOrgOwns(ctx.supabase, "warehouses", warehouseId, ctx.orgId))) {
+    return { error: "That facility is not in this workspace" };
   }
 
   const payload: SnapshotPayload = {

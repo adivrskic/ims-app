@@ -2,6 +2,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentOrgContext } from "@/lib/data/user";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { Th, Td } from "@/components/ui/Table";
 import { KpiCard } from "@/components/ui/KpiCard";
 import { SectionTitle } from "@/components/ui/SectionTitle";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -268,7 +269,7 @@ export default async function DeadStockPage({
       </div>
 
       <section aria-labelledby="summary">
-        <SectionTitle numeral="01" eyebrow="Summary" title="What's dormant" />
+        <SectionTitle id="summary" numeral="01" eyebrow="Summary" title="What's dormant" />
         <div className="grid grid-cols-1 md:grid-cols-3 gap-16">
           <KpiCard
             label="Dormant SKUs"
@@ -303,6 +304,7 @@ export default async function DeadStockPage({
 
       <section aria-labelledby="rows">
         <SectionTitle
+          id="rows"
           numeral="02"
           eyebrow="Details"
           title={`${totalSkus.toLocaleString()} product${
@@ -324,7 +326,11 @@ export default async function DeadStockPage({
           />
         ) : (
           <div className="hairline bg-[var(--surface)] overflow-hidden">
-            <table className="w-full" style={{ borderCollapse: "collapse" }}>
+            <table
+              className="w-full"
+              style={{ borderCollapse: "collapse" }}
+              aria-label="Dead stock products"
+            >
               <thead>
                 <tr className="hairline-b bg-[var(--surface-2)]">
                   <Th>Product</Th>
@@ -333,7 +339,7 @@ export default async function DeadStockPage({
                   <Th align="right">Unit cost</Th>
                   <Th align="right">Tied value</Th>
                   <Th align="right">Last pick</Th>
-                  <Th align="right" srOnly>
+                  <Th align="right" className="sr-only">
                     Open
                   </Th>
                 </tr>
@@ -451,42 +457,3 @@ export default async function DeadStockPage({
 }
 
 // ─── tiny th/td primitives (local to this page) ────────────────────────────
-
-function Th({
-  children,
-  align = "left",
-  srOnly,
-}: {
-  children: React.ReactNode;
-  align?: "left" | "right";
-  srOnly?: boolean;
-}) {
-  return (
-    <th
-      scope="col"
-      className={`px-16 py-10 label-text text-text-muted ${
-        align === "right" ? "text-right" : "text-left"
-      } ${srOnly ? "sr-only" : ""}`}
-    >
-      {children}
-    </th>
-  );
-}
-
-function Td({
-  children,
-  align = "left",
-}: {
-  children: React.ReactNode;
-  align?: "left" | "right";
-}) {
-  return (
-    <td
-      className={`px-16 py-12 ${
-        align === "right" ? "text-right" : "text-left"
-      }`}
-    >
-      {children}
-    </td>
-  );
-}

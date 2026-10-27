@@ -22,14 +22,12 @@ import {
 import { isTrialExemptPath } from "@/lib/entitlement";
 import { effectivePermissions } from "@/lib/permissions";
 import type { WorkspaceOption } from "@/components/nav/WorkspaceSwitcher";
-import type { NotificationItem } from "@/components/nav/NotificationsDropdown";
 import { ScannerProvider } from "@/components/scanner/ScannerProvider";
 import { PrinterProvider } from "@/components/print/PrinterProvider";
 import { recordDeviceSession } from "@/lib/deviceSession";
+import { SIDEBAR_COOKIE } from "@/lib/sidebarCookie";
 import { Suspense } from "react";
 import { KioskGate } from "@/components/kiosk/KioskGate";
-
-const SIDEBAR_COOKIE = "nimbus-sidebar-collapsed";
 
 export default async function AppLayout({
   children,
@@ -56,7 +54,6 @@ export default async function AppLayout({
     profile,
     memberships,
     activeMembership,
-    notifResult,
     unreadResult,
     facilityState,
     activeEntitlement,
@@ -65,12 +62,6 @@ export default async function AppLayout({
     getProfile(),
     getMemberships(),
     getActiveMembership(),
-    supabase
-      .from("notifications")
-      .select("id, kind, title, body, link, read_at, created_at")
-      .eq("user_id", user.id)
-      .order("created_at", { ascending: false })
-      .limit(10),
     supabase
       .from("notifications")
       .select("id", { count: "exact", head: true })
@@ -130,14 +121,21 @@ export default async function AppLayout({
     ? { email: profile.email, full_name: profile.full_name }
     : { email: user.email ?? "", full_name: null };
 
-  const notificationItems =
-    (notifResult.data as NotificationItem[] | null) ?? [];
   const unread = unreadResult.count ?? 0;
 
   return (
     <ScannerProvider>
       <PrinterProvider>
-        <div className="md:flex md:min-h-screen">
+        {/* id="app-shell": PaperDocument sets `inert` on it while a print
+            overlay is portaled to <body>, so the app chrome behind the
+            document leaves the Tab order. */}
+        <div id="app-shell" className="md:flex md:min-h-screen">
+          <a
+            href="#main"
+            className="sr-only focus:not-sr-only focus:fixed focus:top-8 focus:left-8 focus:z-[100] focus:px-12 focus:py-8 focus:bg-[var(--surface)] focus:text-text"
+          >
+            Skip to content
+          </a>
           <CommandPalette />
           <Suspense fallback={null}>
             <KioskGate />
@@ -154,7 +152,6 @@ export default async function AppLayout({
             user={userForNav}
             workspace={workspace}
             workspaces={workspaces}
-            notifications={notificationItems}
             unreadCount={unread}
             initialCollapsed={initialCollapsed}
             facilities={facilityState.facilities}
@@ -173,7 +170,7 @@ export default async function AppLayout({
               canManageBilling={canManageBilling}
             />
 
-            <main className="flex-1 relative flex flex-col min-h-0">
+            <main id="main" className="flex-1 relative flex flex-col min-h-0">
               <div
                 className="absolute inset-0 dot-grid opacity-40 pointer-events-none"
                 aria-hidden

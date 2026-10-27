@@ -8,6 +8,9 @@ import { draftReorderPOs } from "@/lib/data/reorderDraft";
 import { tags } from "@/lib/cache-tags";
 import { dispatchEvent } from "@/lib/integrations/dispatch";
 
+// Upper bound on a single PO line's quantity (whole units).
+const MAX_LINE_QTY = 1_000_000;
+
 /**
  * Draft a reorder PO from products at or below their reorder point.
  *
@@ -188,12 +191,26 @@ export async function createPurchaseOrder(
           typeof (i as PoLineInput).product_id === "string" &&
           typeof (i as PoLineInput).quantity === "number"
       )
-      .filter((i) => i.product_id.length > 0 && i.quantity > 0);
+      .filter((i) => i.product_id.length > 0);
   } catch {
     return { error: "Invalid line items" };
   }
 
   if (items.length === 0) return { error: "Add at least one line item" };
+  // Whole units only, bounded: a fractional or absurd quantity would land in
+  // quantity_expected and skew receiving, valuation and supplier scorecards.
+  if (
+    items.some(
+      (i) =>
+        !Number.isInteger(i.quantity) ||
+        i.quantity <= 0 ||
+        i.quantity > MAX_LINE_QTY
+    )
+  ) {
+    return {
+      error: `Each quantity must be a whole number between 1 and ${MAX_LINE_QTY.toLocaleString()}`,
+    };
+  }
 
   const productIds = items.map((i) => i.product_id);
   const { data: productsData } = await ctx.supabase
@@ -428,9 +445,87 @@ export async function receiveLineItem(
       .eq("org_id", ctx.orgId);
   }
 
+  // TODO: move to a receive_po_line RPC so the stock row, the audit row and
+  // the line update commit (or roll back) together. Until then the order of
+  // operations is FAIL-SAFE: land the stock and the audit trail FIRST, then
+  // mark the line received under the optimistic lock. If the lock loses (a
+  // concurrent receipt), the stock and audit rows written here are removed
+  // again; if that cleanup fails, the error says exactly what to fix. The old
+  // order (line first, stock after) could leave a line marked received with
+  // no stock behind it — invisible until the next count.
+  const parentWarehouseId =
+    (parentPo as { warehouse_id: string | null }).warehouse_id ?? null;
+
+  // QC hold → land the received units as QUARANTINED on-hand: real stock (counts
+  // in valuation) that's held out of availability (ATP / pick / assembly) until
+  // QC clears it. Linked to the PO line so review can release/remove exactly
+  // these units. Held goods are not put away normally — they sit in quarantine
+  // until passed, so this doesn't double-count with a later putaway.
+  let quarantineRowId: string | null = null;
+  if (qcHold && productId && parentWarehouseId) {
+    const { data: quarantineRow, error: quarantineErr } = await ctx.supabase
+      .from("locations")
+      .insert({
+        org_id: ctx.orgId,
+        warehouse_id: parentWarehouseId,
+        product_id: productId,
+        section_id: null,
+        // Holding pseudo-slot (no section). bay/level must be > 0 per the
+        // locations_{bay,level}_check constraints.
+        bay: 1,
+        level: 1,
+        quantity: qty,
+        is_active: true,
+        quarantined: true,
+        po_line_id: lineId,
+        placed_by: ctx.user.id,
+      })
+      .select("id")
+      .single();
+    if (quarantineErr || !quarantineRow) {
+      return {
+        error: `Couldn't land the received units in QC quarantine — nothing was recorded. ${
+          quarantineErr?.message ?? ""
+        }`.trim(),
+      };
+    }
+    quarantineRowId = (quarantineRow as { id: string }).id;
+  }
+
+  // Audit every receipt, not just QC-held ones. The insert used to sit inside
+  // the qcHold branch, so an ordinary PO receipt left no trace in activity —
+  // the ASN path always logged one, and the two disagreed about the same event.
+  let scanRowId: string | null = null;
+  if (productId) {
+    const { data: scanRow, error: scanErr } = await ctx.supabase
+      .from("scan_history")
+      .insert({
+        org_id: ctx.orgId,
+        product_id: productId,
+        warehouse_id: parentWarehouseId,
+        scanned_by: ctx.user.id,
+        action: "receive",
+        quantity: qty,
+        notes: qcHold ? "Received to QC quarantine" : "PO receipt",
+      })
+      .select("id")
+      .single();
+    if (scanErr || !scanRow) {
+      if (quarantineRowId) {
+        await ctx.supabase.from("locations").delete().eq("id", quarantineRowId);
+      }
+      return {
+        error: `Couldn't write the receipt to the activity log — nothing was recorded. ${
+          scanErr?.message ?? ""
+        }`.trim(),
+      };
+    }
+    scanRowId = (scanRow as { id: string }).id;
+  }
+
   // Optimistic-lock the receipt against the qty we read, so two concurrent
   // receipts on the same line can't lose an update (last-writer-wins on
-  // quantity_received). If it changed under us, bail before landing any stock.
+  // quantity_received). If it changed under us, undo the rows above.
   let lineUpd = ctx.supabase
     .from("po_line_items")
     .update(lineUpdate)
@@ -439,53 +534,34 @@ export async function receiveLineItem(
     line.quantity_received == null
       ? lineUpd.is("quantity_received", null)
       : lineUpd.eq("quantity_received", line.quantity_received);
-  const { data: updatedLine } = await lineUpd.select("id");
-  if (!updatedLine || updatedLine.length === 0) {
+  const { data: updatedLine, error: lineErr } = await lineUpd.select("id");
+  if (lineErr || !updatedLine || updatedLine.length === 0) {
+    const cleanup: string[] = [];
+    if (quarantineRowId) {
+      const { error: e } = await ctx.supabase
+        .from("locations")
+        .delete()
+        .eq("id", quarantineRowId);
+      if (e) cleanup.push(`quarantine stock row ${quarantineRowId}`);
+    }
+    if (scanRowId) {
+      const { error: e } = await ctx.supabase
+        .from("scan_history")
+        .delete()
+        .eq("id", scanRowId);
+      if (e) cleanup.push(`activity row ${scanRowId}`);
+    }
+    const base = lineErr
+      ? `Couldn't mark the line received: ${lineErr.message}`
+      : "This line was just received by someone else — refresh and retry so the counts don't collide.";
     return {
       error:
-        "This line was just received by someone else — refresh and retry so the counts don't collide.",
+        cleanup.length > 0
+          ? `${base} The receipt was NOT recorded, but these could not be removed and need a manual fix: ${cleanup.join(
+              ", "
+            )}.`
+          : base,
     };
-  }
-
-  // QC hold → land the received units as QUARANTINED on-hand: real stock (counts
-  // in valuation) that's held out of availability (ATP / pick / assembly) until
-  // QC clears it. Linked to the PO line so review can release/remove exactly
-  // these units. Held goods are not put away normally — they sit in quarantine
-  // until passed, so this doesn't double-count with a later putaway.
-  const parentWarehouseId =
-    (parentPo as { warehouse_id: string | null }).warehouse_id ?? null;
-
-  if (qcHold && productId && parentWarehouseId) {
-    await ctx.supabase.from("locations").insert({
-      org_id: ctx.orgId,
-      warehouse_id: parentWarehouseId,
-      product_id: productId,
-      section_id: null,
-      // Holding pseudo-slot (no section). bay/level must be > 0 per the
-      // locations_{bay,level}_check constraints.
-      bay: 1,
-      level: 1,
-      quantity: qty,
-      is_active: true,
-      quarantined: true,
-      po_line_id: lineId,
-      placed_by: ctx.user.id,
-    });
-  }
-
-  // Audit every receipt, not just QC-held ones. The insert used to sit inside
-  // the qcHold branch, so an ordinary PO receipt left no trace in activity —
-  // the ASN path always logged one, and the two disagreed about the same event.
-  if (productId) {
-    await ctx.supabase.from("scan_history").insert({
-      org_id: ctx.orgId,
-      product_id: productId,
-      warehouse_id: parentWarehouseId,
-      scanned_by: ctx.user.id,
-      action: "receive",
-      quantity: qty,
-      notes: qcHold ? "Received to QC quarantine" : "PO receipt",
-    });
   }
 
   // Re-evaluate parent PO status

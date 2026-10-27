@@ -12,6 +12,7 @@ import {
   Zap,
 } from "lucide-react";
 import { CornerButton } from "@/components/ui/CornerButton";
+import { LocalTime } from "@/components/ui/LocalTime";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { Badge } from "@/components/ui/Badge";
@@ -231,12 +232,7 @@ export function ShopifyConfigClient({
             <div>
               <dt className="label-text text-text-dim mb-4">Connected</dt>
               <dd className="text-text-secondary">
-                {integration.connected_at
-                  ? new Date(integration.connected_at).toLocaleDateString(
-                      "en-US",
-                      { dateStyle: "medium" }
-                    )
-                  : "—"}
+                <LocalTime iso={integration.connected_at} format="date" />
               </dd>
             </div>
             <div>
@@ -401,12 +397,7 @@ export function ShopifyConfigClient({
                     className="mono-sm text-text-dim shrink-0"
                     style={{ fontSize: 10 }}
                   >
-                    {o.placed_at
-                      ? new Date(o.placed_at).toLocaleDateString("en-US", {
-                          month: "short",
-                          day: "numeric",
-                        })
-                      : "—"}
+                    <LocalTime iso={o.placed_at} format="date" />
                   </span>
                 </li>
               ))}
@@ -466,10 +457,7 @@ export function ShopifyConfigClient({
                     className="mono-sm text-text-dim ml-auto shrink-0"
                     style={{ fontSize: 10 }}
                   >
-                    {new Date(e.received_at).toLocaleString("en-US", {
-                      dateStyle: "short",
-                      timeStyle: "short",
-                    })}
+                    <LocalTime iso={e.received_at} />
                   </span>
                 </li>
               ))}
@@ -499,12 +487,7 @@ export function ShopifyConfigClient({
             <div className="flex justify-between">
               <dt className="text-text-dim">Last sync</dt>
               <dd className="text-text-secondary" style={{ fontSize: 10 }}>
-                {integration.last_synced_at
-                  ? new Date(integration.last_synced_at).toLocaleString(
-                      "en-US",
-                      { dateStyle: "short", timeStyle: "short" }
-                    )
-                  : "Never"}
+                <LocalTime iso={integration.last_synced_at} fallback="Never" />
               </dd>
             </div>
           </dl>

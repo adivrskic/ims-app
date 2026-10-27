@@ -28,6 +28,8 @@ interface Props {
   onGuidesChange: (guides: Guide[]) => void;
   panLock: boolean;
   isMobile?: boolean;
+  /** Keyboard selection (Enter / Space; Shift adds to the selection). */
+  onSelectKey?: (ref: SelectionRef, additive: boolean) => void;
 }
 
 // Show interior dividers only when each cell is at least this many screen px.
@@ -52,6 +54,7 @@ export function SectionRect({
   onGuidesChange,
   panLock,
   isMobile = false,
+  onSelectKey,
 }: Props) {
   const ref: SelectionRef = { kind: "section", id: section.id };
 
@@ -127,7 +130,20 @@ export function SectionRect({
   const grabCursor = panLock ? "inherit" : isMoving ? "grabbing" : "grab";
 
   return (
-    <g transform={`rotate(${rotation} ${x + w / 2} ${y + h / 2})`}>
+    <g
+      transform={`rotate(${rotation} ${x + w / 2} ${y + h / 2})`}
+      tabIndex={0}
+      role="button"
+      aria-label={`Section ${section.code}${
+        section.name ? ` · ${section.name}` : ""
+      }`}
+      aria-pressed={selected}
+      onKeyDown={(e) => {
+        if (e.key !== "Enter" && e.key !== " ") return;
+        e.preventDefault();
+        onSelectKey?.(ref, e.shiftKey);
+      }}
+    >
       <rect
         x={x}
         y={y}

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useTransition } from "react";
+import { useId, useRef, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { ChevronDown, Check, Plus, Loader2 } from "lucide-react";
 import { useDropdown } from "@/lib/useDropdown";
@@ -23,6 +23,33 @@ export function WorkspaceSwitcher({ current, workspaces }: Props) {
   const { open, setOpen, ref } = useDropdown<HTMLDivElement>();
   const router = useRouter();
   const [pending, startTransition] = useTransition();
+  const menuId = useId();
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  const menuItems = () =>
+    Array.from(
+      menuRef.current?.querySelectorAll<HTMLElement>(
+        '[role="menuitemradio"], [role="menuitem"]'
+      ) ?? []
+    );
+
+  // ArrowUp/Down rove through the items; Home/End jump.
+  const onMenuKey = (e: React.KeyboardEvent) => {
+    if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(e.key)) return;
+    const items = menuItems();
+    if (items.length === 0) return;
+    e.preventDefault();
+    const i = items.indexOf(document.activeElement as HTMLElement);
+    const next =
+      e.key === "Home"
+        ? 0
+        : e.key === "End"
+        ? items.length - 1
+        : e.key === "ArrowDown"
+        ? (i + 1) % items.length
+        : (i - 1 + items.length) % items.length;
+    items[next]?.focus();
+  };
 
   const handlePick = (orgId: string) => {
     if (orgId === current.id) {
@@ -52,7 +79,16 @@ export function WorkspaceSwitcher({ current, workspaces }: Props) {
         disabled={pending}
         className="flex items-center gap-8 w-full h-32 px-10 hairline-subtle hover:border-[var(--border-hover)] transition-colors disabled:opacity-60"
         aria-label="Switch workspace"
+        aria-haspopup="menu"
         aria-expanded={open}
+        aria-controls={open ? menuId : undefined}
+        onKeyDown={(e) => {
+          if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+            e.preventDefault();
+            if (!open) setOpen(true);
+            requestAnimationFrame(() => menuItems()[0]?.focus());
+          }
+        }}
       >
         <span className="w-16 h-16 bg-[var(--accent-dim)] flex items-center justify-center shrink-0">
           <span
@@ -82,24 +118,33 @@ export function WorkspaceSwitcher({ current, workspaces }: Props) {
 
       {open && (
         <div
+          ref={menuRef}
+          id={menuId}
+          role="menu"
+          aria-label="Workspaces"
+          onKeyDown={onMenuKey}
           className="absolute top-full left-0 mt-8 w-[240px] hairline bg-[var(--surface)] flex flex-col"
           style={{ zIndex: 50 }}
         >
-          <p className="px-14 py-10 hairline-b label-text text-text-muted">
+          <p
+            className="px-14 py-10 hairline-b label-text text-text-muted"
+            role="presentation"
+          >
             Workspaces
           </p>
 
-          <ul className="py-4">
+          <ul className="py-4" role="presentation">
             {workspaces.map((ws) => {
               const isCurrent = ws.id === current.id;
               return (
-                <li key={ws.id}>
+                <li key={ws.id} role="presentation">
                   <button
                     type="button"
+                    role="menuitemradio"
+                    aria-checked={isCurrent}
                     onClick={() => handlePick(ws.id)}
                     disabled={pending}
                     className="w-full flex items-center gap-10 px-14 py-8 hover:bg-[var(--surface-2)] disabled:opacity-60 transition-colors text-left"
-                    aria-current={isCurrent ? "true" : undefined}
                   >
                     <span className="w-16 h-16 bg-[var(--accent-dim)] flex items-center justify-center shrink-0">
                       <span
@@ -147,6 +192,7 @@ export function WorkspaceSwitcher({ current, workspaces }: Props) {
           <div className="hairline-t">
             <Link
               href="/workspaces/new"
+              role="menuitem"
               onClick={() => setOpen(false)}
               className="w-full flex items-center gap-10 px-14 py-10 text-text-muted hover:text-[var(--accent)] hover:bg-[var(--surface-2)] transition-colors"
             >

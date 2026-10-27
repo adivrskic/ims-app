@@ -14,6 +14,14 @@ export function InviteForm() {
   const [state, formAction, pending] = useActionState(inviteMember, undefined);
   const formRef = useRef<HTMLFormElement>(null);
   const [copied, setCopied] = useState(false);
+  // Timer id kept in a ref so an unmount mid-countdown cannot set
+  // state on a gone component.
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    return () => {
+      if (timer.current) clearTimeout(timer.current);
+    };
+  }, []);
 
   /* Present only when the invite row was created but the email failed to
      send. The link is the admin's only way to complete the invite, so it
@@ -26,7 +34,7 @@ export function InviteForm() {
     try {
       await navigator.clipboard.writeText(fallbackUrl);
       setCopied(true);
-      setTimeout(() => setCopied(false), 1800);
+      timer.current = setTimeout(() => setCopied(false), 1800);
     } catch {
       // Clipboard blocked — the input below is still selectable.
     }

@@ -1,6 +1,7 @@
 import { FileDown } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { CornerLink } from "@/components/ui/CornerButton";
+import { Th } from "@/components/ui/Table";
 import { IMPORT_SPECS } from "@/lib/import/specs";
 import type { ImportEntity } from "@/lib/import/spec";
 import type { ImportOutcome } from "@/lib/import/prepare";
@@ -72,15 +73,9 @@ export function ImportPage({
           <table className="w-full" style={{ borderCollapse: "collapse" }}>
             <thead>
               <tr className="hairline-b bg-[var(--surface-2)]">
-                <th className="label-text text-left px-14 py-10 font-normal">
-                  Column
-                </th>
-                <th className="label-text text-left px-14 py-10 font-normal">
-                  Also accepted
-                </th>
-                <th className="label-text text-left px-14 py-10 font-normal">
-                  Notes
-                </th>
+                <Th className="font-normal">Column</Th>
+                <Th className="font-normal">Also accepted</Th>
+                <Th className="font-normal">Notes</Th>
               </tr>
             </thead>
             <tbody>

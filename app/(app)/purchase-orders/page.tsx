@@ -2,7 +2,11 @@ import Link from "next/link";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Badge } from "@/components/ui/Badge";
 import { EmptyState } from "@/components/ui/EmptyState";
-import { CornerButton, CornerLink } from "@/components/ui/CornerButton";
+import { CornerLink } from "@/components/ui/CornerButton";
+import { SubmitButton } from "@/components/ui/SubmitButton";
+import { LocalTime } from "@/components/ui/LocalTime";
+import { Th, Td } from "@/components/ui/Table";
+import { RelativeDate } from "@/app/(app)/_components/RelativeDate";
 import { ChevronRight, Truck, Sparkles, Plus, Clock } from "lucide-react";
 import { draftReorderPO, setAutoDraftEnabled } from "./actions";
 import { PurchaseOrdersRealtime } from "@/components/realtime/PageRealtime";
@@ -61,32 +65,6 @@ const FILTERS: Array<{
   { key: "cancelled", label: "Cancelled", statuses: ["cancelled"] },
 ];
 
-function relTime(iso: string | null): string {
-  if (!iso) return "—";
-  const ms = Date.now() - new Date(iso).getTime();
-  const d = Math.floor(ms / 86400000);
-  if (d < 1) return "Today";
-  if (d < 7) return `${d}d ago`;
-  return new Date(iso).toLocaleDateString(undefined, {
-    month: "short",
-    day: "numeric",
-  });
-}
-
-function expectedLabel(date: string | null): string {
-  if (!date) return "TBD";
-  const d = new Date(date + "T00:00:00");
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const diff = Math.round((d.getTime() - today.getTime()) / 86400000);
-  if (diff === 0) return "Today";
-  if (diff === 1) return "Tomorrow";
-  if (diff === -1) return "Yesterday";
-  if (diff > 0 && diff < 7) return `In ${diff}d`;
-  if (diff < 0) return `${-diff}d overdue`;
-  return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
-}
-
 export default async function PurchaseOrdersPage({
   searchParams,
 }: {
@@ -112,28 +90,33 @@ export default async function PurchaseOrdersPage({
   // facility + status filter and tagged tags.purchaseOrders(orgId), so
   // navigations serve instantly and PO mutations / PurchaseOrdersRealtime
   // invalidate exactly this data.
-  const scope = await getActiveScope();
-  const ctx = await getCurrentOrgContext();
+  const [scope, ctx] = await Promise.all([
+    getActiveScope(),
+    getCurrentOrgContext(),
+  ]);
   const facilityId = scope.mode === "single" ? scope.id : null;
 
-  const data = ctx
-    ? await getPurchaseOrdersList(ctx.orgId, facilityId, activeFilter.statuses, {
-        page,
-        pageSize,
-      })
-    : null;
-
-  // Workspace opt-in for the scheduled auto-draft-PO cron.
-  let autoDraftEnabled = false;
-  if (ctx) {
-    const supabase = await createClient();
-    const { data: org } = await supabase
-      .from("orgs")
-      .select("auto_draft_pos_enabled")
-      .eq("id", ctx.orgId)
-      .maybeSingle();
-    autoDraftEnabled = org?.auto_draft_pos_enabled ?? false;
-  }
+  // The listing and the workspace's auto-draft opt-in (for the scheduled
+  // auto-draft-PO cron) are independent, so they load together.
+  const [data, autoDraftEnabled] = await Promise.all([
+    ctx
+      ? getPurchaseOrdersList(ctx.orgId, facilityId, activeFilter.statuses, {
+          page,
+          pageSize,
+        })
+      : null,
+    ctx
+      ? createClient()
+          .then((supabase) =>
+            supabase
+              .from("orgs")
+              .select("auto_draft_pos_enabled")
+              .eq("id", ctx.orgId)
+              .maybeSingle()
+          )
+          .then(({ data: org }) => org?.auto_draft_pos_enabled ?? false)
+      : false,
+  ]);
 
   const pos = (data?.pos ?? []) as PoRow[];
   const total = data?.total ?? 0;
@@ -193,8 +176,7 @@ export default async function PurchaseOrdersPage({
                 name="enabled"
                 value={(!autoDraftEnabled).toString()}
               />
-              <CornerButton
-                type="submit"
+              <SubmitButton
                 variant="ghost"
                 size="sm"
                 aria-pressed={autoDraftEnabled}
@@ -210,13 +192,13 @@ export default async function PurchaseOrdersPage({
                 />
                 <Clock size={11} strokeWidth={1.5} />
                 Auto-draft · {autoDraftEnabled ? "On" : "Off"}
-              </CornerButton>
+              </SubmitButton>
             </form>
             <form action={draftReorderPO}>
-              <CornerButton type="submit" variant="ghost" size="sm">
+              <SubmitButton variant="ghost" size="sm">
                 <Sparkles size={11} strokeWidth={1.5} />
                 Draft from low-stock
-              </CornerButton>
+              </SubmitButton>
             </form>
             <CornerLink href="/purchase-orders/new" variant="primary" size="sm">
               <Plus size={11} strokeWidth={1.5} />
@@ -291,12 +273,16 @@ export default async function PurchaseOrdersPage({
       ) : (
         <div className="hairline bg-[var(--surface)] overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full" style={{ borderCollapse: "collapse" }}>
+            <table
+              className="w-full"
+              style={{ borderCollapse: "collapse" }}
+              aria-label="Purchase orders"
+            >
               <thead>
                 <tr className="hairline-b bg-[var(--surface-2)]">
                   <Th>PO</Th>
                   <Th>Supplier</Th>
-                  <Th className="text-right">Items</Th>
+                  <Th align="right">Items</Th>
                   <Th>Expected</Th>
                   <Th>Status</Th>
                   <Th>Created</Th>
@@ -336,7 +322,7 @@ export default async function PurchaseOrdersPage({
                           {po.supplier_name}
                         </span>
                       </Td>
-                      <Td className="text-right">
+                      <Td align="right">
                         <span
                           className="tnum text-text-secondary"
                           style={{ fontFamily: "var(--mono)", fontSize: 12 }}
@@ -345,9 +331,12 @@ export default async function PurchaseOrdersPage({
                         </span>
                       </Td>
                       <Td>
-                        <span className="mono-sm text-text-secondary">
-                          {expectedLabel(po.expected_date)}
-                        </span>
+                        <RelativeDate
+                          date={po.expected_date}
+                          fallback="TBD"
+                          overdue
+                          className="mono-sm text-text-secondary"
+                        />
                       </Td>
                       <Td>
                         <Badge tone={cfg.tone} variant="filled">
@@ -355,9 +344,11 @@ export default async function PurchaseOrdersPage({
                         </Badge>
                       </Td>
                       <Td>
-                        <span className="mono-sm text-text-dim">
-                          {relTime(po.created_at)}
-                        </span>
+                        <LocalTime
+                          iso={po.created_at}
+                          format="relative"
+                          className="mono-sm text-text-dim"
+                        />
                       </Td>
                       <Td>
                         <ChevronRight
@@ -389,26 +380,3 @@ export default async function PurchaseOrdersPage({
   );
 }
 
-function Th({
-  children,
-  className = "",
-}: {
-  children?: React.ReactNode;
-  className?: string;
-}) {
-  return (
-    <th className={`label-text text-left px-14 py-12 font-normal ${className}`}>
-      {children}
-    </th>
-  );
-}
-
-function Td({
-  children,
-  className = "",
-}: {
-  children?: React.ReactNode;
-  className?: string;
-}) {
-  return <td className={`px-14 py-12 ${className}`}>{children}</td>;
-}

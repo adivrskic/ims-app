@@ -15,7 +15,10 @@ export async function GET(req: NextRequest) {
   if (!ctx) {
     return NextResponse.redirect(new URL("/login", req.url));
   }
-  if (!["owner", "admin"].includes(ctx.role)) {
+  // Same gate as the Shopify server actions: the permission, not the role
+  // list, so a trimmed admin can't connect and a member granted the
+  // permission can.
+  if (!ctx.can("integrations.manage")) {
     return NextResponse.json(
       { error: "Only admins can connect integrations" },
       { status: 403 }

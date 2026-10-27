@@ -1,13 +1,6 @@
 "use client";
 
-import Link from "next/link";
-import {
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-  useTransition,
-} from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ScanLine,
   Check,
@@ -23,7 +16,6 @@ import {
 } from "@/components/scanner/ScannerProvider";
 import { lookupBarcode, type ScanLookupResult } from "./actions";
 import { CornerButton, CornerLink } from "@/components/ui/CornerButton";
-import { EmptyState } from "@/components/ui/EmptyState";
 
 interface HistoryEntry {
   result: ScanLookupResult;
@@ -37,7 +29,6 @@ export function ScanWorkspace() {
   const [enabled, setEnabled] = useScannerEnabled();
   const [current, setCurrent] = useState<ScanLookupResult | null>(null);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
-  const [, startTransition] = useTransition();
   const [pending, setPending] = useState(false);
   const [manual, setManual] = useState("");
 
@@ -51,18 +42,24 @@ export function ScanWorkspace() {
       if (!trimmed) return;
       const myId = ++reqId.current;
       setPending(true);
-      startTransition(() => {
-        lookupBarcode(trimmed).then((result) => {
+      lookupBarcode(trimmed)
+        .then((result) => {
           if (myId !== reqId.current) return; // superseded by a newer lookup
           setCurrent(result);
           setPending(false);
           setHistory((prev) =>
             [{ result, at }, ...prev].slice(0, MAX_HISTORY)
           );
+        })
+        .catch(() => {
+          // A failed server action (network drop, expired session) used to
+          // leave the surface stuck on "Looking up…" forever.
+          if (myId !== reqId.current) return;
+          setCurrent(null);
+          setPending(false);
         });
-      });
     },
-    [startTransition]
+    []
   );
 
   // Hardware scans flow through the global ScannerProvider → useLastScan.
@@ -87,6 +84,9 @@ export function ScanWorkspace() {
     <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-24">
       {/* Main scan surface */}
       <section aria-labelledby="scan-surface" className="flex flex-col gap-16">
+        <h2 id="scan-surface" className="sr-only">
+          Scan surface
+        </h2>
         {/* Paused-capture notice — the manual field below still works */}
         {!enabled && (
           <div className="hairline-subtle bg-[var(--surface-2)] px-14 py-10 flex items-center gap-12">
@@ -238,7 +238,7 @@ function ReadyPanel() {
           className="mono-sm text-text-muted"
           style={{ lineHeight: 1.7, maxWidth: 420 }}
         >
-          Plug in a USB or Bluetooth barcode scanner and pull the trigger. We'll
+          Plug in a USB or Bluetooth barcode scanner and pull the trigger. We’ll
           resolve the barcode and offer next steps. No clicks required.
         </p>
       </div>
@@ -282,7 +282,7 @@ function ResultPanel({
               {result.barcode}
             </h2>
             <p className="mono-sm text-text-muted">
-              This barcode isn't registered yet. Register it now to start
+              This barcode isn’t registered yet. Register it now to start
               tracking.
             </p>
           </div>

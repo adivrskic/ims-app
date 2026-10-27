@@ -18,6 +18,17 @@ import { paymentTermsLabel } from "../../customers/types";
 import { getSupplier } from "../actions";
 import { SupplierActiveToggle } from "./SupplierActiveToggle";
 
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
+  const { id } = await params;
+  const r = await getSupplier(id);
+  const name = r.supplier?.name;
+  return { title: name ? name : "Supplier" };
+}
+
 export default async function SupplierDetailPage({
   params,
 }: {

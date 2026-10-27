@@ -92,12 +92,22 @@ export async function createAsn(
         (i: unknown): i is AsnLineInput =>
           typeof i === "object" && i !== null &&
           typeof (i as AsnLineInput).quantity === "number"
-      )
-      .filter((i) => i.quantity > 0);
+      );
   } catch {
     return { error: "Invalid line items" };
   }
   if (items.length === 0) return { error: "Add at least one line item" };
+  // Whole units only, bounded — same rule as PO and order lines.
+  if (
+    items.some(
+      (i) =>
+        !Number.isInteger(i.quantity) || i.quantity <= 0 || i.quantity > 1_000_000
+    )
+  ) {
+    return {
+      error: "Each quantity must be a whole number between 1 and 1,000,000",
+    };
+  }
 
   // Validate the optional supplier/facility belong to this org — don't trust
   // the form to attach an ASN to an arbitrary (possibly cross-org) id.

@@ -2,10 +2,11 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { X, HelpCircle, ChevronDown } from "lucide-react";
 import { Logo } from "@/components/ui/Logo";
 import { resolveUserNav, type NavPrefs } from "@/lib/navData";
+import { useDialog } from "@/lib/useDialog";
 
 interface Props {
   /** Workspace industry slug — drives which items show by default. */
@@ -30,15 +31,8 @@ export function MobileNav({ industry, navPrefs, orgModules }: Props) {
   // Listen for hamburger event
   useEffect(() => {
     const onOpen = () => setOpen(true);
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
-    };
     window.addEventListener("open-mobile-nav", onOpen);
-    window.addEventListener("keydown", onKey);
-    return () => {
-      window.removeEventListener("open-mobile-nav", onOpen);
-      window.removeEventListener("keydown", onKey);
-    };
+    return () => window.removeEventListener("open-mobile-nav", onOpen);
   }, []);
 
   // Close when navigation occurs (path changes)
@@ -46,16 +40,16 @@ export function MobileNav({ industry, navPrefs, orgModules }: Props) {
     setOpen(false);
   }, [pathname]);
 
-  // Lock body scroll while open
-  useEffect(() => {
-    if (open) {
-      const prev = document.body.style.overflow;
-      document.body.style.overflow = "hidden";
-      return () => {
-        document.body.style.overflow = prev;
-      };
-    }
-  }, [open]);
+  // Focus the close button on open, trap Tab inside, close on Escape, lock
+  // the page scroll, and hand focus back to the hamburger on close.
+  const closeRef = useRef<HTMLButtonElement>(null);
+  const onClose = useCallback(() => setOpen(false), []);
+  const drawerRef = useDialog({
+    open,
+    onClose,
+    initialFocus: closeRef,
+    lockScroll: true,
+  });
 
   return (
     <>
@@ -78,12 +72,17 @@ export function MobileNav({ industry, navPrefs, orgModules }: Props) {
 
       {/* Drawer */}
       <aside
+        ref={drawerRef}
+        role="dialog"
+        aria-modal="true"
         className={`md:hidden fixed top-0 bottom-0 left-0 w-[280px] bg-[var(--bg)] hairline-r flex flex-col transition-transform duration-200 ${
           open ? "translate-x-0" : "-translate-x-full"
         }`}
         style={{ zIndex: 100 }}
-        aria-label="Primary navigation"
-        aria-hidden={!open}
+        aria-label="Navigation menu"
+        // `inert` (not aria-hidden) so the off-screen links also leave the
+        // Tab order and cannot be clicked through the transform.
+        inert={!open}
         data-mobile-nav
       >
         <header className="h-56 hairline-b flex items-center justify-between px-16 shrink-0">
@@ -106,6 +105,7 @@ export function MobileNav({ industry, navPrefs, orgModules }: Props) {
             </span>
           </Link>
           <button
+            ref={closeRef}
             type="button"
             onClick={() => setOpen(false)}
             className="hairline-subtle p-6 hover:border-[var(--border-hover)] text-text-secondary"
@@ -115,7 +115,10 @@ export function MobileNav({ industry, navPrefs, orgModules }: Props) {
           </button>
         </header>
 
-        <nav className="flex-1 flex flex-col gap-20 px-10 py-16 overflow-y-auto">
+        <nav
+          aria-label="Primary"
+          className="flex-1 flex flex-col gap-20 px-10 py-16 overflow-y-auto"
+        >
           {navGroups.map((group, gi) => (
             <div key={group.label ?? `g${gi}`}>
               {group.label && (

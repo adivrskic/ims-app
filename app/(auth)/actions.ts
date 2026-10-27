@@ -116,6 +116,14 @@ export async function signInWithPassword(
   if (await authRateLimited("signin", null, 10, 300)) {
     return { error: RATE_LIMITED_MSG };
   }
+  // Per-account throttle alongside the per-IP one: a distributed guess at a
+  // single mailbox's passcode rotates IPs but not the target.
+  const perEmail = await rateLimit(
+    `login:email:${email.toLowerCase()}`,
+    10,
+    300
+  );
+  if (!perEmail.allowed) return { error: RATE_LIMITED_MSG };
 
   const supabase = await createClient();
   const { error } = await supabase.auth.signInWithPassword({ email, password });
@@ -203,10 +211,12 @@ export async function sendPasswordReset(
 
   const supabase = await createClient();
   const h = await headers();
-  const origin = h.get("origin") ?? "";
 
+  // appUrl(): with no Origin header (some proxies strip it) the old
+  // `${origin}` yielded a RELATIVE redirectTo, which Supabase rejects or
+  // resolves against its own host — either way the emailed link was dead.
   const { error } = await supabase.auth.resetPasswordForEmail(email, {
-    redirectTo: `${origin}/auth/callback?next=/settings/security`,
+    redirectTo: `${appUrl(h.get("origin"))}/auth/callback?next=/settings/security`,
   });
 
   // For privacy, always return the same success message regardless of
@@ -235,14 +245,13 @@ export async function sendMagicLink(
 
   const supabase = await createClient();
   const h = await headers();
-  const origin = h.get("origin") ?? "";
 
   const { error } = await supabase.auth.signInWithOtp({
     email,
     options: {
-      emailRedirectTo: `${origin}/auth/callback?next=${encodeURIComponent(
-        next
-      )}`,
+      emailRedirectTo: `${appUrl(
+        h.get("origin")
+      )}/auth/callback?next=${encodeURIComponent(next)}`,
     },
   });
 
@@ -264,12 +273,13 @@ export async function signInWithGoogle(formData: FormData): Promise<void> {
   const next = safeNext(String(formData.get("next") ?? "/"));
   const supabase = await createClient();
   const h = await headers();
-  const origin = h.get("origin") ?? "";
 
   const { data, error } = await supabase.auth.signInWithOAuth({
     provider: "google",
     options: {
-      redirectTo: `${origin}/auth/callback?next=${encodeURIComponent(next)}`,
+      redirectTo: `${appUrl(
+        h.get("origin")
+      )}/auth/callback?next=${encodeURIComponent(next)}`,
     },
   });
 

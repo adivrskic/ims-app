@@ -89,6 +89,7 @@ export default async function IntegrationsPage() {
       {connectedProviders.length > 0 && (
         <section aria-labelledby="connected">
           <SectionTitle
+            id="connected"
             eyebrow="Live"
             title="Connected"
             action={
@@ -105,7 +106,7 @@ export default async function IntegrationsPage() {
       )}
 
       <section aria-labelledby="available">
-        <SectionTitle eyebrow="Catalog" title="Available" />
+        <SectionTitle id="available" eyebrow="Catalog" title="Available" />
         <div className="flex flex-col gap-32">
           {CATEGORY_ORDER.map((category) => {
             const items = grouped.get(category);

@@ -2,10 +2,11 @@
 
 import Link from "next/link";
 import type { ComponentType } from "react";
-import { useEffect, useRef, useState, useTransition } from "react";
+import { useId, useRef, useTransition } from "react";
 import { Building2, Check, ChevronRight, Layers, Settings } from "lucide-react";
 import { setCurrentFacility } from "@/app/(app)/actions";
 import type { FacilityOption } from "@/lib/currentFacility";
+import { useDropdown } from "@/lib/useDropdown";
 
 interface Props {
   label: string;
@@ -27,27 +28,36 @@ export function FacilitiesNavItem({
   facilities,
   currentFacilityId,
 }: Props) {
-  const [open, setOpen] = useState(false);
+  // Outside click + Escape (Escape also returns focus to the trigger).
+  const { open, setOpen, ref: rootRef } = useDropdown<HTMLLIElement>();
   const [, startTransition] = useTransition();
-  const rootRef = useRef<HTMLLIElement>(null);
+  const menuId = useId();
+  const menuRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    if (!open) return;
-    const onPointer = (e: MouseEvent) => {
-      if (rootRef.current && !rootRef.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
-    };
-    document.addEventListener("mousedown", onPointer);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onPointer);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [open]);
+  const menuItems = () =>
+    Array.from(
+      menuRef.current?.querySelectorAll<HTMLElement>(
+        '[role="menuitemradio"], [role="menuitem"]'
+      ) ?? []
+    );
+
+  // ArrowUp/Down rove through the radio items (+ the manage link); Home/End jump.
+  const onMenuKey = (e: React.KeyboardEvent) => {
+    if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(e.key)) return;
+    const items = menuItems();
+    if (items.length === 0) return;
+    e.preventDefault();
+    const i = items.indexOf(document.activeElement as HTMLElement);
+    const next =
+      e.key === "Home"
+        ? 0
+        : e.key === "End"
+        ? items.length - 1
+        : e.key === "ArrowDown"
+        ? (i + 1) % items.length
+        : (i - 1 + items.length) % items.length;
+    items[next]?.focus();
+  };
 
   const current = facilities.find((f) => f.id === currentFacilityId) ?? null;
   const isAllMode = currentFacilityId === null;
@@ -73,6 +83,14 @@ export function FacilitiesNavItem({
         }
         aria-haspopup="menu"
         aria-expanded={open}
+        aria-controls={open ? menuId : undefined}
+        onKeyDown={(e) => {
+          if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+            e.preventDefault();
+            if (!open) setOpen(true);
+            requestAnimationFrame(() => menuItems()[0]?.focus());
+          }
+        }}
         className={`relative flex items-center w-full transition-all duration-200 ${
           collapsed ? "justify-center h-32" : "gap-10 px-10 py-7"
         } ${
@@ -148,16 +166,23 @@ export function FacilitiesNavItem({
 
       {open && (
         <div
+          ref={menuRef}
+          id={menuId}
           role="menu"
+          aria-label="Switch facility"
+          onKeyDown={onMenuKey}
           className="absolute left-full top-0 ml-2 w-[240px] hairline bg-[var(--surface)] flex flex-col"
           style={{ zIndex: 50 }}
         >
-          <p className="px-14 py-8 hairline-b label-text text-text-muted">
+          <p
+            className="px-14 py-8 hairline-b label-text text-text-muted"
+            role="presentation"
+          >
             Switch facility
           </p>
 
-          <ul className="py-4 max-h-[280px] overflow-y-auto">
-            <li>
+          <ul className="py-4 max-h-[280px] overflow-y-auto" role="presentation">
+            <li role="presentation">
               <button
                 type="button"
                 role="menuitemradio"
@@ -187,7 +212,7 @@ export function FacilitiesNavItem({
             </li>
 
             {facilities.length > 0 && (
-              <li aria-hidden>
+              <li role="separator" aria-hidden>
                 <div className="hairline-t mx-14 my-4" />
               </li>
             )}
@@ -195,7 +220,7 @@ export function FacilitiesNavItem({
             {facilities.map((f) => {
               const isCurrent = f.id === currentFacilityId;
               return (
-                <li key={f.id}>
+                <li key={f.id} role="presentation">
                   <button
                     type="button"
                     role="menuitemradio"
@@ -243,7 +268,10 @@ export function FacilitiesNavItem({
             })}
 
             {facilities.length === 0 && (
-              <li aria-hidden className="px-14 py-10 text-text-dim mono-sm">
+              <li
+                role="presentation"
+                className="px-14 py-10 text-text-dim mono-sm"
+              >
                 No facilities yet
               </li>
             )}
@@ -252,6 +280,7 @@ export function FacilitiesNavItem({
           <div className="hairline-t">
             <Link
               href={manageHref}
+              role="menuitem"
               onClick={() => setOpen(false)}
               className="flex items-center gap-10 px-14 py-10 text-text-muted hover:text-text hover:bg-[var(--surface-2)] transition-colors"
             >

@@ -6,6 +6,14 @@ import { Badge } from "@/components/ui/Badge";
 import { Select } from "@/components/ui/Select";
 import { CornerButton } from "@/components/ui/CornerButton";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { ListPagination } from "@/components/ui/ListPagination";
+import { Th, Td } from "@/components/ui/Table";
+import { PendingButton } from "@/app/(app)/_components/PendingButton";
+import {
+  parsePage,
+  parsePageSize,
+  PAGE_SIZE_OPTIONS,
+} from "@/lib/listParams";
 import { ScanBarcode, Trash2 } from "lucide-react";
 import type { SerialStatus } from "@/types/db";
 import { RegisterSerialsForm } from "./RegisterSerialsForm";
@@ -26,11 +34,22 @@ const STATUS_LABEL: Record<SerialStatus, string> = {
   scrapped: "Scrapped",
 };
 
+/** PostgREST's default max rows — anything at the cap is probably truncated. */
+const PICKER_CAP = 1000;
+
 function firstOf<T>(v: T | T[] | null | undefined): T | null {
   return Array.isArray(v) ? v[0] ?? null : v ?? null;
 }
 
-export default async function SerialsPage() {
+export default async function SerialsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ page?: string; pageSize?: string }>;
+}) {
+  const { page: rawPage, pageSize: rawPageSize } = await searchParams;
+  const page = parsePage(rawPage);
+  const pageSize = parsePageSize(rawPageSize);
+
   const ctx = await getCurrentOrgContext();
   if (!ctx) {
     return <PageHeader eyebrow="Operate" title="Serials" description="No workspace." />;
@@ -38,32 +57,33 @@ export default async function SerialsPage() {
   const supabase = await createClient();
   const orgId = ctx.orgId;
 
+  // One page window of the registry with an exact total (replaces the old
+  // "500 most recent" cap that hid everything older).
+  const serialsCall = (offset: number) =>
+    supabase
+      .from("serial_units")
+      .select(
+        `id, serial_number, status, received_at,
+         product:products ( name, barcode ),
+         warehouse:warehouses ( name )`,
+        { count: "exact" }
+      )
+      .eq("org_id", orgId)
+      .order("created_at", { ascending: false })
+      .order("id", { ascending: true }) // stable tiebreak across pages
+      .range(offset, offset + pageSize - 1);
+
   const [
-    { data: serialsData },
-    { count: totalSerials },
+    { data: serialsData, count: totalSerials },
     { count: inStock },
     { count: shipped },
     { data: productsData },
     { data: whData },
   ] = await Promise.all([
-      supabase
-        .from("serial_units")
-        .select(
-          `id, serial_number, status, received_at,
-           product:products ( name, barcode ),
-           warehouse:warehouses ( name )`
-        )
-        .eq("org_id", orgId)
-        .order("created_at", { ascending: false })
-        // One past the cap so we can tell the user the registry is truncated.
-        .limit(501),
-      // Header counts come from exact head counts, not from the 500 visible
+      serialsCall((page - 1) * pageSize),
+      // Header counts come from exact head counts, not from the visible
       // rows — counting the page made every headline number wrong for any
-      // workspace with more than 500 serials. Head counts fetch no rows.
-      supabase
-        .from("serial_units")
-        .select("id", { count: "exact", head: true })
-        .eq("org_id", orgId),
+      // workspace with more than a page of serials. Head counts fetch no rows.
       supabase
         .from("serial_units")
         .select("id", { count: "exact", head: true })
@@ -74,11 +94,14 @@ export default async function SerialsPage() {
         .select("id", { count: "exact", head: true })
         .eq("org_id", orgId)
         .eq("status", "shipped"),
+      // PostgREST caps a select at 1,000 rows silently; make the cap explicit
+      // and tell the user when it is hit. TODO: async search picker.
       supabase
         .from("products")
         .select("id, name, barcode, track_serials")
         .eq("org_id", orgId)
-        .order("name", { ascending: true }),
+        .order("name", { ascending: true })
+        .limit(PICKER_CAP),
       supabase
         .from("warehouses")
         .select("id, name")
@@ -97,13 +120,20 @@ export default async function SerialsPage() {
   };
   type ProductRow = { id: string; name: string; barcode: string; track_serials: boolean };
 
-  const allSerials = (serialsData ?? []) as SerialRow[];
-  const serialsTruncated = allSerials.length > 500;
-  const serials = allSerials.slice(0, 500);
+  const serialCount = totalSerials ?? 0;
+  const totalPages = Math.max(1, Math.ceil(serialCount / pageSize));
+
+  // If a stale ?page= overshot, re-fetch the last valid page.
+  let serials = (serialsData ?? []) as SerialRow[];
+  let servedPage = page;
+  if (serials.length === 0 && serialCount > 0 && page > totalPages) {
+    servedPage = totalPages;
+    const retry = await serialsCall((servedPage - 1) * pageSize);
+    serials = (retry.data ?? []) as SerialRow[];
+  }
   const products = (productsData ?? []) as ProductRow[];
   const warehouses = (whData ?? []) as Array<{ id: string; name: string }>;
 
-  const serialCount = totalSerials ?? 0;
   const inStockCount = inStock ?? 0;
   const shippedCount = shipped ?? 0;
   const serialized = products.filter((p) => p.track_serials);
@@ -127,26 +157,31 @@ export default async function SerialsPage() {
 
       {/* Register */}
       <section aria-labelledby="register">
-        <SectionTitle numeral="01" eyebrow="Record" title="Register serials" />
+        <SectionTitle
+          id="register"
+          numeral="01"
+          eyebrow="Record"
+          title="Register serials"
+        />
         <RegisterSerialsForm
           products={serialized.map((p) => ({ id: p.id, name: p.name, barcode: p.barcode }))}
           warehouses={warehouses}
         />
+        {products.length >= PICKER_CAP && (
+          <p className="mono-sm text-text-muted mt-8" role="status">
+            Showing the first {PICKER_CAP.toLocaleString()} products by name —
+            search in Inventory to find the rest.
+          </p>
+        )}
       </section>
 
       {/* Registry */}
       <section aria-labelledby="list">
         <SectionTitle
+          id="list"
           numeral="02"
           eyebrow="Registry"
           title={`Serials (${serialCount.toLocaleString()})`}
-          action={
-            serialsTruncated ? (
-              <span className="label-text text-text-muted">
-                Showing the {serials.length.toLocaleString()} most recent
-              </span>
-            ) : undefined
-          }
         />
         {serials.length === 0 ? (
           <EmptyState
@@ -157,7 +192,11 @@ export default async function SerialsPage() {
         ) : (
           <div className="hairline bg-[var(--surface)] overflow-hidden">
             <div className="overflow-x-auto">
-              <table className="w-full" style={{ borderCollapse: "collapse" }}>
+              <table
+                className="w-full"
+                style={{ borderCollapse: "collapse" }}
+                aria-label="Serial registry"
+              >
                 <thead>
                   <tr className="hairline-b bg-[var(--surface-2)]">
                     <Th>Product</Th>
@@ -206,17 +245,19 @@ export default async function SerialsPage() {
                             </Badge>
                           </form>
                         </Td>
-                        <Td className="text-right">
+                        <Td align="right">
                           <form action={deleteSerial} style={{ display: "inline" }}>
                             <input type="hidden" name="id" value={s.id} />
-                            <button
-                              type="submit"
-                              className="hairline-subtle p-6 text-text-muted hover:text-[var(--danger)] hover:border-[var(--danger)] transition-colors"
+                            <PendingButton
+                              confirm={`Delete serial ${s.serial_number}${
+                                product?.name ? ` (${product.name})` : ""
+                              }? This cannot be undone.`}
+                              className="hairline-subtle p-6 text-text-muted hover:text-[var(--danger)] hover:border-[var(--danger)] transition-colors disabled:opacity-50"
                               aria-label={`Delete serial ${s.serial_number}`}
                               title="Delete serial"
                             >
                               <Trash2 size={11} strokeWidth={1.5} />
-                            </button>
+                            </PendingButton>
                           </form>
                         </Td>
                       </tr>
@@ -225,13 +266,29 @@ export default async function SerialsPage() {
                 </tbody>
               </table>
             </div>
+            <ListPagination
+              basePath="/serials"
+              label="Serials pagination"
+              page={servedPage}
+              totalPages={totalPages}
+              pageSize={pageSize}
+              totalCount={serialCount}
+              shown={serials.length}
+              pageSizeOptions={PAGE_SIZE_OPTIONS}
+              baseParams={{ pageSize: String(pageSize) }}
+            />
           </div>
         )}
       </section>
 
       {/* Opt-in */}
       <section aria-labelledby="setup">
-        <SectionTitle numeral="03" eyebrow="Setup" title="Serialized products" />
+        <SectionTitle
+          id="setup"
+          numeral="03"
+          eyebrow="Setup"
+          title="Serialized products"
+        />
         <p className="mono-sm text-text-muted mb-12" style={{ lineHeight: 1.6 }}>
           Turn on serial tracking for products that need unit-level traceability
           (high-value goods, warranty, RMA). Only these appear in the register form.
@@ -281,9 +338,3 @@ export default async function SerialsPage() {
   );
 }
 
-function Th({ children, className = "" }: { children?: React.ReactNode; className?: string }) {
-  return <th className={`label-text text-left px-14 py-10 font-normal ${className}`}>{children}</th>;
-}
-function Td({ children, className = "" }: { children?: React.ReactNode; className?: string }) {
-  return <td className={`px-14 py-10 ${className}`}>{children}</td>;
-}

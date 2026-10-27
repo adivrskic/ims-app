@@ -58,6 +58,9 @@ export default async function ReceivingPage({
       />
 
       <section aria-labelledby="kpis">
+        <h2 id="kpis" className="sr-only">
+          Receiving summary
+        </h2>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-16">
           <KpiCard label="Lines on hold" value={hold.length.toLocaleString()} />
           <KpiCard label="Units quarantined" value={heldUnits.toLocaleString()} />
@@ -66,7 +69,7 @@ export default async function ReceivingPage({
       </section>
 
       <section aria-labelledby="queue">
-        <SectionTitle numeral="01" eyebrow="Inspect" title="On hold" />
+        <SectionTitle id="queue" numeral="01" eyebrow="Inspect" title="On hold" />
         {hold.length === 0 ? (
           <EmptyState
             title="Nothing in QC"
@@ -85,6 +88,7 @@ export default async function ReceivingPage({
       {recentFailed.length > 0 && (
         <section aria-labelledby="failed">
           <SectionTitle
+            id="failed"
             numeral="02"
             eyebrow="Rejected"
             title="Recent failures"
@@ -150,7 +154,7 @@ function QcCard({ line }: { line: QcLine }) {
           name="notes"
           type="text"
           placeholder="Inspection notes (optional)…"
-          className="hairline-subtle bg-[var(--surface-2)] mono-sm text-text px-10 py-6 flex-1 min-w-[180px] focus:border-[var(--accent)] outline-none"
+          className="hairline-subtle bg-[var(--surface-2)] mono-sm text-text px-10 py-6 flex-1 min-w-[180px] focus:border-[var(--accent)] outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
           aria-label="QC notes"
         />
         <button

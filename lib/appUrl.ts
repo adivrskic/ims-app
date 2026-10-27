@@ -3,10 +3,12 @@ import "server-only";
 /**
  * The canonical public origin for this deployment.
  *
- * WHY THIS EXISTS: three call sites each invented their own fallback origin —
- * `https://app.nimbus.io` (admin onboarding magic links), `https://app.nautilus.io`
- * (transactional email links, webhook test payloads). Neither is a domain we
- * own. When NEXT_PUBLIC_APP_URL is unset in an environment, those fallbacks
+ * WHY THIS EXISTS: three call sites each invented their own hard-coded
+ * fallback origin (admin onboarding magic links; transactional email links;
+ * webhook test payloads) under hostnames this product never owned — the real
+ * origin is only ever NEXT_PUBLIC_APP_URL (the deployed app host), the
+ * request's own Origin, or localhost in development; see `appUrl()` below.
+ * When NEXT_PUBLIC_APP_URL is unset in an environment, those fallbacks
  * silently minted invite links and password-reset links pointing at a stranger's
  * domain — a phishing gift, and impossible to notice because nothing errors.
  *

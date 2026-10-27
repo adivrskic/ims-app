@@ -6,6 +6,8 @@ import { SectionTitle } from "@/components/ui/SectionTitle";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Blocks, Trash2, Hammer } from "lucide-react";
 import { CornerLink } from "@/components/ui/CornerButton";
+import { Th, Td } from "@/components/ui/Table";
+import { PendingButton } from "@/app/(app)/_components/PendingButton";
 import { AddKitComponentForm } from "./AddKitComponentForm";
 import { BuildKitForm } from "./BuildKitForm";
 import { setKitFlag, removeKitComponent } from "./actions";
@@ -119,7 +121,12 @@ export default async function KitsPage() {
 
       {/* Kit BOMs */}
       <section aria-labelledby="kits">
-        <SectionTitle numeral="01" eyebrow="Bill of materials" title="Kits" />
+        <SectionTitle
+          id="kits"
+          numeral="01"
+          eyebrow="Bill of materials"
+          title="Kits"
+        />
         {kits.length === 0 ? (
           <EmptyState
             title="No kits yet"
@@ -166,13 +173,17 @@ export default async function KitsPage() {
                   </header>
 
                   {comps.length > 0 ? (
-                    <table className="w-full" style={{ borderCollapse: "collapse" }}>
+                    <table
+                      className="w-full"
+                      style={{ borderCollapse: "collapse" }}
+                      aria-label={`Components of ${kit.name}`}
+                    >
                       <thead>
                         <tr className="hairline-b bg-[var(--surface-2)]">
                           <Th>Component</Th>
-                          <Th className="text-right">Qty / kit</Th>
-                          <Th className="text-right">On hand</Th>
-                          <Th className="text-right">Supports</Th>
+                          <Th align="right">Qty / kit</Th>
+                          <Th align="right">On hand</Th>
+                          <Th align="right">Supports</Th>
                           <th aria-hidden style={{ width: 44 }} />
                         </tr>
                       </thead>
@@ -193,17 +204,17 @@ export default async function KitsPage() {
                                   {p?.name ?? "Unknown"}
                                 </Link>
                               </Td>
-                              <Td className="text-right">
+                              <Td align="right">
                                 <span className="mono-sm tnum text-text-secondary">
                                   {c.quantity}
                                 </span>
                               </Td>
-                              <Td className="text-right">
+                              <Td align="right">
                                 <span className="mono-sm tnum text-text-secondary">
                                   {have.toLocaleString()}
                                 </span>
                               </Td>
-                              <Td className="text-right">
+                              <Td align="right">
                                 <span
                                   className="mono-sm tnum"
                                   style={{ color: limiting ? "var(--warning)" : "var(--text-secondary)" }}
@@ -212,17 +223,17 @@ export default async function KitsPage() {
                                   {supports.toLocaleString()}
                                 </span>
                               </Td>
-                              <Td className="text-right">
+                              <Td align="right">
                                 <form action={removeKitComponent} style={{ display: "inline" }}>
                                   <input type="hidden" name="id" value={c.id} />
-                                  <button
-                                    type="submit"
-                                    className="hairline-subtle p-6 text-text-muted hover:text-[var(--danger)] hover:border-[var(--danger)] transition-colors"
-                                    aria-label="Remove component"
+                                  <PendingButton
+                                    confirm={`Remove ${p?.name ?? "this component"} from the ${kit.name} recipe?`}
+                                    className="hairline-subtle p-6 text-text-muted hover:text-[var(--danger)] hover:border-[var(--danger)] transition-colors disabled:opacity-50"
+                                    aria-label={`Remove ${p?.name ?? "component"} from ${kit.name}`}
                                     title="Remove component"
                                   >
                                     <Trash2 size={11} strokeWidth={1.5} />
-                                  </button>
+                                  </PendingButton>
                                 </form>
                               </Td>
                             </tr>
@@ -249,7 +260,7 @@ export default async function KitsPage() {
 
       {/* Opt-in: which products are kits */}
       <section aria-labelledby="setup">
-        <SectionTitle numeral="02" eyebrow="Setup" title="Kit products" />
+        <SectionTitle id="setup" numeral="02" eyebrow="Setup" title="Kit products" />
         <p className="mono-sm text-text-muted mb-12" style={{ lineHeight: 1.6 }}>
           Mark products that are kits / assemblies. Only these get a bill of
           materials above.
@@ -299,25 +310,3 @@ export default async function KitsPage() {
   );
 }
 
-function Th({
-  children,
-  className = "",
-}: {
-  children?: React.ReactNode;
-  className?: string;
-}) {
-  return (
-    <th className={`label-text text-left px-14 py-10 font-normal ${className}`}>
-      {children}
-    </th>
-  );
-}
-function Td({
-  children,
-  className = "",
-}: {
-  children?: React.ReactNode;
-  className?: string;
-}) {
-  return <td className={`px-14 py-10 ${className}`}>{children}</td>;
-}

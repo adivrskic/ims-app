@@ -76,7 +76,7 @@ export function ReceiveLineForm({
           min={1}
           max={remaining}
           defaultValue={remaining}
-          className="hairline-subtle bg-[var(--surface-2)] mono-sm tnum text-text px-8 py-4 text-right w-[60px] focus:border-[var(--accent)] outline-none"
+          className="hairline-subtle bg-[var(--surface-2)] mono-sm tnum text-text px-8 py-4 text-right w-[60px] focus:border-[var(--accent)] outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
           aria-label="Quantity received"
           autoFocus
         />
@@ -92,7 +92,7 @@ export function ReceiveLineForm({
           type="text"
           inputMode="decimal"
           placeholder={unitCost ?? "$"}
-          className="hairline-subtle bg-[var(--surface-2)] mono-sm tnum text-text px-8 py-4 text-right w-[72px] focus:border-[var(--accent)] outline-none"
+          className="hairline-subtle bg-[var(--surface-2)] mono-sm tnum text-text px-8 py-4 text-right w-[72px] focus:border-[var(--accent)] outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
           aria-label="Actual landed unit cost (optional)"
         />
         <span className="label-text text-text-dim mt-1" style={{ fontSize: 9 }}>
@@ -107,7 +107,7 @@ export function ReceiveLineForm({
           type="text"
           autoComplete="off"
           placeholder="—"
-          className="hairline-subtle bg-[var(--surface-2)] mono-sm text-text px-8 py-4 text-right w-[88px] focus:border-[var(--accent)] outline-none"
+          className="hairline-subtle bg-[var(--surface-2)] mono-sm text-text px-8 py-4 text-right w-[88px] focus:border-[var(--accent)] outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
           aria-label="Lot or dye-lot number (optional)"
         />
         <span className="label-text text-text-dim mt-1" style={{ fontSize: 9 }}>
@@ -120,7 +120,7 @@ export function ReceiveLineForm({
         <input
           name="lot_expiry"
           type="date"
-          className="hairline-subtle bg-[var(--surface-2)] mono-sm text-text px-8 py-4 text-right w-[126px] focus:border-[var(--accent)] outline-none"
+          className="hairline-subtle bg-[var(--surface-2)] mono-sm text-text px-8 py-4 text-right w-[126px] focus:border-[var(--accent)] outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
           aria-label="Lot expiry date (optional)"
         />
         <span className="label-text text-text-dim mt-1" style={{ fontSize: 9 }}>

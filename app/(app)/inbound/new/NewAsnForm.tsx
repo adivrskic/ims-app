@@ -17,6 +17,8 @@ interface Opt {
   name: string;
 }
 interface Line {
+  /** Stable React key — index keys re-bound inputs when a line was removed. */
+  uid: string;
   product_id: string;
   product_name: string;
   quantity: string;
@@ -25,6 +27,7 @@ interface Line {
 }
 
 const blankLine = (): Line => ({
+  uid: crypto.randomUUID(),
   product_id: "",
   product_name: "",
   quantity: "1",
@@ -126,7 +129,7 @@ export function NewAsnForm({
       >
         <ul className="flex flex-col gap-12">
           {lines.map((l, i) => (
-            <li key={i} className="flex items-end gap-8 flex-wrap">
+            <li key={l.uid} className="flex items-end gap-8 flex-wrap">
               <Select
                 className="flex-1 min-w-[160px]"
                 label="Link product (optional)"

@@ -41,15 +41,16 @@ function MagicLinkInner() {
           margin: "0 0 28px",
         }}
       >
-        We'll send a one-time link to your inbox. Clicking it signs you in
+        We’ll send a one-time link to your inbox. Clicking it signs you in
         without a password.
       </p>
 
       <form action={formAction}>
         <input type="hidden" name="next" value={next} />
 
-        <ManifestRow number="01" label="Email address">
+        <ManifestRow number="01" label="Email address" inputId="magic-email">
           <ManifestInput
+            id="magic-email"
             type="email"
             name="email"
             autoComplete="email"

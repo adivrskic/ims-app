@@ -272,7 +272,7 @@ export default async function AnalyticsPage() {
       )}
 
       <section aria-labelledby="kpi-heading">
-        <SectionTitle numeral="01" eyebrow="Signals" title="Headline" />
+        <SectionTitle id="kpi-heading" numeral="01" eyebrow="Signals" title="Headline" />
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-16">
           <KpiCard
             label="Products"
@@ -318,6 +318,7 @@ export default async function AnalyticsPage() {
         <>
           <section aria-labelledby="action-mix">
             <SectionTitle
+              id="action-mix"
               numeral="02"
               eyebrow="Action mix"
               title="Scan distribution"
@@ -370,6 +371,7 @@ export default async function AnalyticsPage() {
 
           <section aria-labelledby="section-util">
             <SectionTitle
+              id="section-util"
               numeral="03"
               eyebrow="Distribution"
               title={

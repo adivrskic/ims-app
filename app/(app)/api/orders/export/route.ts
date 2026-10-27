@@ -6,6 +6,8 @@ import {
 } from "@/lib/data/entitlement";
 import { type NextRequest } from "next/server";
 import { csvCell } from "@/lib/print/csv";
+import { fetchAllPaged } from "@/lib/data/paginate";
+import { isIsoDate, isUuid } from "@/lib/net/validate";
 
 /*
  * Orders CSV export. Mirrors the inventory export pattern.
@@ -26,7 +28,8 @@ const ORDER_TYPE_LABEL: Record<string, string> = {
 };
 
 // Matches the inventory export. The old 5,000 cap silently truncated a busy
-// workspace's export with nothing in the file to say so.
+// workspace's export with nothing in the file to say so. Rows are pulled in
+// 1000-row pages (PostgREST's per-response cap) up to this many.
 const EXPORT_LIMIT = 100_000;
 
 const STATUS_GROUPS: Record<string, string[]> = {
@@ -72,32 +75,18 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  let query = supabase
-    .from("orders")
-    .select(
-      `
-      order_number, order_type, status, customer_name, customer_phone,
-      delivery_date, delivery_window, notes, created_at, updated_at,
-      warehouse:warehouses ( name ),
-      items:order_items ( count )
-    `
-    )
-    // Explicit scope: a user who belongs to two workspaces would otherwise get
-    // both orgs' orders merged into one file, since nothing here narrowed it.
-    .eq("org_id", ctx.orgId)
-    .order("created_at", { ascending: false })
-    .limit(EXPORT_LIMIT);
-
-  if (facilityId && facilityId !== "all") {
-    query = query.eq("warehouse_id", facilityId);
+  // Filters are interpolated into the query: a non-UUID facility or a
+  // free-text date used to fail inside PostgREST and come back as an empty
+  // 200 CSV. Refuse them up front instead.
+  if (facilityId && facilityId !== "all" && !isUuid(facilityId)) {
+    return new Response("facility must be a UUID", { status: 400 });
   }
-  if (statusKey) {
-    query = query.in("status", STATUS_GROUPS[statusKey]);
+  if (from && !isIsoDate(from)) {
+    return new Response("from must be an ISO date", { status: 400 });
   }
-  if (from) query = query.gte("created_at", from);
-  if (to) query = query.lte("created_at", to);
-
-  const { data } = await query;
+  if (to && !isIsoDate(to)) {
+    return new Response("to must be an ISO date", { status: 400 });
+  }
 
   type Row = {
     order_number: string | null;
@@ -113,7 +102,49 @@ export async function GET(req: NextRequest) {
     warehouse: { name: string } | { name: string }[] | null;
     items: Array<{ count: number }> | { count: number } | null;
   };
-  const rows = (data ?? []) as Row[];
+
+  // Page the read: a single .limit() stops at PostgREST's ~1000-row cap, so a
+  // busy workspace's export was quietly short. Ordered by created_at then id
+  // so pages can't overlap or skip. A query error is a 500, not an empty file.
+  let rows: Row[];
+  try {
+    rows = await fetchAllPaged<Row>((pageFrom, pageTo) => {
+      let query = supabase
+        .from("orders")
+        .select(
+          `
+          order_number, order_type, status, customer_name, customer_phone,
+          delivery_date, delivery_window, notes, created_at, updated_at,
+          warehouse:warehouses ( name ),
+          items:order_items ( count )
+        `
+        )
+        // Explicit scope: a user who belongs to two workspaces would otherwise
+        // get both orgs' orders merged into one file.
+        .eq("org_id", ctx.orgId)
+        .order("created_at", { ascending: false })
+        .order("id", { ascending: true });
+
+      if (facilityId && facilityId !== "all") {
+        query = query.eq("warehouse_id", facilityId);
+      }
+      if (statusKey) {
+        query = query.in("status", STATUS_GROUPS[statusKey]);
+      }
+      if (from) query = query.gte("created_at", from);
+      if (to) query = query.lte("created_at", to);
+
+      return query.range(pageFrom, pageTo).throwOnError() as unknown as PromiseLike<{
+        data: Row[] | null;
+      }>;
+    }, EXPORT_LIMIT);
+  } catch (e) {
+    console.error(
+      "orders export query failed:",
+      e instanceof Error ? e.message : e
+    );
+    return new Response("Export failed", { status: 500 });
+  }
 
   const lines: string[] = [];
   lines.push(

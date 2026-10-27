@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { getActionContext } from "@/lib/data/actionContext";
+import { assertOrgOwns } from "@/lib/data/assertOrgOwns";
 
 /**
  * Register a lot/batch for a lot-tracked product. RLS (lots_write =
@@ -34,6 +35,14 @@ export async function createLot(
     .eq("org_id", ctx.orgId)
     .maybeSingle();
   if (!product) return { error: "Product not found in this workspace" };
+
+  // Optional supplier — when given, it must be one of this workspace's.
+  if (
+    supplierId &&
+    !(await assertOrgOwns(ctx.supabase, "suppliers", supplierId, ctx.orgId))
+  ) {
+    return { error: "That supplier is not in this workspace" };
+  }
 
   const { error } = await ctx.supabase.from("lots").insert({
     org_id: ctx.orgId,

@@ -41,7 +41,7 @@
   --auth-text: rgba(255, 255, 255, 0.92);
   --auth-text-secondary: rgba(255, 255, 255, 0.75);
   --auth-text-muted: rgba(255, 255, 255, 0.55);
-  --auth-text-dim: rgba(255, 255, 255, 0.4);
+  --auth-text-dim: rgba(255, 255, 255, 0.55); /* ≥4.5:1 on the deep-water bg */
   --auth-border: rgba(255, 255, 255, 0.25);
   --auth-border-subtle: rgba(255, 255, 255, 0.18);
   --auth-border-hover: rgba(255, 255, 255, 0.32);
@@ -52,7 +52,7 @@
   --field-bg-focus: rgba(255, 255, 255, 0.1);
   --field-border: rgba(255, 255, 255, 0.18);
   --field-border-hover: rgba(255, 255, 255, 0.3);
-  --field-placeholder: rgba(255, 255, 255, 0.32);
+  --field-placeholder: rgba(255, 255, 255, 0.5);
 }
 
 /* Body background — muted underwater gradient, no rays.
@@ -90,7 +90,7 @@
   --auth-text: #111110;
   --auth-text-secondary: #3d3d3a;
   --auth-text-muted: #63635e;
-  --auth-text-dim: #92928c;
+  --auth-text-dim: #63635e; /* was #92928c — failed AA on paper */
   --auth-border: rgba(17, 17, 16, 0.18);
   --auth-border-subtle: rgba(17, 17, 16, 0.11);
   --auth-border-hover: rgba(17, 17, 16, 0.32);
@@ -101,7 +101,7 @@
   --field-bg-focus: #ffffff;
   --field-border: rgba(17, 17, 16, 0.14);
   --field-border-hover: rgba(17, 17, 16, 0.28);
-  --field-placeholder: rgba(17, 17, 16, 0.42);
+  --field-placeholder: rgba(17, 17, 16, 0.55);
 }
 
 /* The god rays are a deep-water effect; on paper they read as a blue wash

@@ -11,6 +11,12 @@ import {
   OPEN_ORDER_STATUSES,
 } from "@/lib/data/allocation";
 import { RETURN_REASONS } from "./returnReasons";
+import { assertOrgOwns } from "@/lib/data/assertOrgOwns";
+import { isUuid } from "@/lib/net/validate";
+
+// Upper bound on a single line's quantity. Anything larger is a typo or an
+// attempt to inflate allocation/velocity math, not a real order.
+const MAX_LINE_QTY = 1_000_000;
 
 type OrderStatus =
   | "created"
@@ -73,12 +79,24 @@ export async function createOrder(
           typeof (i as LineItemInput).product_id === "string" &&
           typeof (i as LineItemInput).quantity === "number"
       )
-      .filter((i) => i.product_id.length > 0 && i.quantity > 0);
+      .filter((i) => i.product_id.length > 0);
   } catch {
     return { error: "Invalid line items" };
   }
 
   if (items.length === 0) return { error: "Add at least one line item" };
+  if (
+    items.some(
+      (i) =>
+        !Number.isInteger(i.quantity) ||
+        i.quantity <= 0 ||
+        i.quantity > MAX_LINE_QTY
+    )
+  ) {
+    return {
+      error: `Each quantity must be a whole number between 1 and ${MAX_LINE_QTY.toLocaleString()}`,
+    };
+  }
 
   // Validate order_type
   const VALID_TYPES = [
@@ -107,6 +125,45 @@ export async function createOrder(
     if (destinationWarehouseId === warehouseId) {
       return { error: "Source and destination facilities must be different" };
     }
+  }
+
+  // The facility ids come from the form; make sure they are THIS workspace's
+  // before they're stamped onto the order.
+  if (
+    !isUuid(warehouseId) ||
+    !(await assertOrgOwns(ctx.supabase, "warehouses", warehouseId, ctx.orgId))
+  ) {
+    return { error: "That facility is not in this workspace" };
+  }
+  if (
+    orderType === "internal_transfer" &&
+    (!isUuid(destinationWarehouseId) ||
+      !(await assertOrgOwns(
+        ctx.supabase,
+        "warehouses",
+        destinationWarehouseId,
+        ctx.orgId
+      )))
+  ) {
+    return { error: "That destination facility is not in this workspace" };
+  }
+
+  // Every ordered product must be in this workspace too. The kit lookup
+  // further down only fetches kits, so check the full set here — a stray id
+  // would otherwise be written straight into order_items.
+  const requestedIds = [...new Set(items.map((i) => i.product_id))];
+  const { data: ownedProducts } = await ctx.supabase
+    .from("products")
+    .select("id")
+    .eq("org_id", ctx.orgId)
+    .in("id", requestedIds);
+  const ownedIds = new Set(
+    ((ownedProducts ?? []) as Array<{ id: string }>).map((p) => p.id)
+  );
+  if (requestedIds.some((id) => !ownedIds.has(id))) {
+    return {
+      error: "One or more line items reference a product not in this workspace",
+    };
   }
 
   // Next order number — atomic per-org counter (no read-max race).

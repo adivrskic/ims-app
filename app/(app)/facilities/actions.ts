@@ -3,6 +3,7 @@
 import { revalidatePath, revalidateTag } from "next/cache";
 import { getActionContext } from "@/lib/data/actionContext";
 import { tags } from "@/lib/cache-tags";
+import { assertOrgOwns } from "@/lib/data/assertOrgOwns";
 
 export async function createWarehouse(
   _prev: unknown,
@@ -130,6 +131,12 @@ export async function createSection(
     return { error: "Bays must be at least 1" };
   if (Number.isNaN(levels) || levels < 1)
     return { error: "Levels must be at least 1" };
+
+  // The facility id is client-supplied; it must be one of ours before a
+  // section is attached to it.
+  if (!(await assertOrgOwns(ctx.supabase, "warehouses", warehouseId, ctx.orgId))) {
+    return { error: "That facility is not in this workspace" };
+  }
 
   // Find existing sort_order max for this warehouse
   const { data: existing } = await ctx.supabase

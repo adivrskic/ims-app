@@ -40,12 +40,13 @@ export default function ForgotPage() {
           margin: "0 0 28px",
         }}
       >
-        Enter the email on file. We'll send a reset link if the account exists.
+        Enter the email on file. We’ll send a reset link if the account exists.
       </p>
 
       <form action={formAction}>
-        <ManifestRow number="01" label="Email address">
+        <ManifestRow number="01" label="Email address" inputId="forgot-email">
           <ManifestInput
+            id="forgot-email"
             type="email"
             name="email"
             autoComplete="email"

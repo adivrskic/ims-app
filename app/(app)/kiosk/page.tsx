@@ -25,8 +25,10 @@ const EMPTY: KioskData = {
 };
 
 export default async function KioskPage() {
-  const scope = await getActiveScope();
-  const ctx = await getCurrentOrgContext();
+  const [scope, ctx] = await Promise.all([
+    getActiveScope(),
+    getCurrentOrgContext(),
+  ]);
   const facilityId = scope.mode === "single" ? scope.id : null;
   const facilityName = scope.mode === "single" ? scope.name : "All facilities";
 

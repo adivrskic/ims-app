@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import {
   Check,
   Printer,
@@ -17,6 +17,7 @@ import {
 } from "@/components/scanner/ScannerProvider";
 import { usePrinter } from "@/components/print/PrinterProvider";
 import { productLabel } from "@/lib/print/zplTemplates";
+import { useWebUsbSupported } from "@/lib/print/useWebUsbSupported";
 
 export function DevicesClient() {
   return (
@@ -43,6 +44,7 @@ function ScannerSection() {
   return (
     <section aria-labelledby="scanner">
       <SectionTitle
+        id="scanner"
         eyebrow="Input"
         title="Barcode scanner"
         action={
@@ -164,21 +166,23 @@ function ScannerSection() {
 // ─── Printer ───────────────────────────────────────────────────────────
 
 function PrinterSection() {
-  const {
-    supported,
-    device,
-    printing,
-    label,
-    error,
-    connect,
-    disconnect,
-    print,
-  } = usePrinter();
+  const { device, printing, label, error, connect, disconnect, print } =
+    usePrinter();
+  // Hydration-safe: false on the server and first client paint, then real.
+  const supported = useWebUsbSupported();
 
   const [testStatus, setTestStatus] = useState<
     "idle" | "printing" | "ok" | "err"
   >("idle");
   const [testErr, setTestErr] = useState<string | null>(null);
+  // Timer id kept in a ref so an unmount mid-countdown cannot set
+  // state on a gone component.
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    return () => {
+      if (timer.current) clearTimeout(timer.current);
+    };
+  }, []);
 
   const handleTestPrint = async () => {
     setTestStatus("printing");
@@ -194,7 +198,7 @@ function PrinterSection() {
         })
       );
       setTestStatus("ok");
-      setTimeout(() => setTestStatus("idle"), 2400);
+      timer.current = setTimeout(() => setTestStatus("idle"), 2400);
     } catch (err) {
       setTestStatus("err");
       setTestErr(err instanceof Error ? err.message : "Print failed");
@@ -208,6 +212,7 @@ function PrinterSection() {
   return (
     <section aria-labelledby="printer">
       <SectionTitle
+        id="printer"
         eyebrow="Output"
         title="Label printer"
         action={

@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { NautilusLoader } from "@/components/ui/NautilusLoader";
 import { CornerButton } from "@/components/ui/CornerButton";
+import { useDialog } from "@/lib/useDialog";
 import {
   previewBulkInvite,
   executeBulkInvite,
@@ -58,24 +59,19 @@ export function BulkInviteButton({ orgId }: Props) {
   const [pending, startTransition] = useTransition();
 
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  // Esc to close, only when not mid-execute
+  // Reset-after-close timer, cleared on unmount so it cannot set state on a
+  // gone component.
+  const resetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
-    if (!open) return;
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && step !== "executing") {
-        closeAndReset();
-      }
+    return () => {
+      if (resetTimer.current) clearTimeout(resetTimer.current);
     };
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, step]);
+  }, []);
 
   function closeAndReset() {
     setOpen(false);
     // Delay state reset so the modal animates out cleanly
-    setTimeout(() => {
+    resetTimer.current = setTimeout(() => {
       setStep("idle");
       setPreview(null);
       setExecuteResult(null);
@@ -83,6 +79,14 @@ export function BulkInviteButton({ orgId }: Props) {
       if (fileInputRef.current) fileInputRef.current.value = "";
     }, 200);
   }
+
+  // Focus in, Tab trap, Escape (not mid-execute), focus return, scroll lock.
+  const dialogRef = useDialog({
+    open,
+    onClose: () => {
+      if (step !== "executing") closeAndReset();
+    },
+  });
 
   async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0];
@@ -150,6 +154,7 @@ export function BulkInviteButton({ orgId }: Props) {
             role="dialog"
             aria-labelledby="bulk-invite-title"
             aria-modal="true"
+            ref={dialogRef}
           >
             {/* Header */}
             <header className="px-24 py-16 hairline-b flex items-center justify-between gap-14">
@@ -404,7 +409,7 @@ function IdlePanel({
             className="mono-sm text-text-secondary"
             style={{ lineHeight: 1.6 }}
           >
-            Supabase's built-in email service caps at ~4 invites per hour. For
+            Supabase’s built-in email service caps at ~4 invites per hour. For
             larger teams, configure a custom SMTP provider (Resend / SendGrid)
             in Supabase Auth → Email settings before bulk-importing.
           </p>

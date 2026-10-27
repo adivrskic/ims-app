@@ -97,7 +97,7 @@ export default async function ShopifyPage({ searchParams }: PageProps) {
                   product mapping
                 </p>
                 <p className="mono-sm text-text-secondary">
-                  Imported SKUs that didn't match your catalog are parked on
+                  Imported SKUs that didn’t match your catalog are parked on
                   placeholder products — resolve them so stock and reporting stay
                   accurate.
                 </p>

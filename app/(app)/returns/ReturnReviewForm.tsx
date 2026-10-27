@@ -69,7 +69,7 @@ export function ReturnReviewForm({
           type="text"
           maxLength={500}
           autoComplete="off"
-          className="hairline-subtle bg-[var(--surface-2)] mono-sm text-text px-8 py-6 focus:border-[var(--accent)] outline-none"
+          className="hairline-subtle bg-[var(--surface-2)] mono-sm text-text px-8 py-6 focus:border-[var(--accent)] outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
           aria-label="Review note"
         />
       </label>

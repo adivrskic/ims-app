@@ -4,6 +4,7 @@ import { getActiveScope, scopeDescription } from "@/lib/facilityScope";
 import { getValuation, type AbcClass } from "@/lib/data/valuation";
 import { formatCurrency } from "@/lib/dashboard";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { Th, Td } from "@/components/ui/Table";
 import { KpiCard } from "@/components/ui/KpiCard";
 import { SectionTitle } from "@/components/ui/SectionTitle";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -82,7 +83,7 @@ export default async function ValuationPage() {
       ) : (
         <>
           <section aria-labelledby="kpis">
-            <SectionTitle numeral="01" eyebrow="Headline" title="Value" />
+            <SectionTitle id="kpis" numeral="01" eyebrow="Headline" title="Value" />
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-16">
               <KpiCard label="Inventory value" value={formatCurrency(r.totalValue)} />
               <KpiCard
@@ -130,6 +131,7 @@ export default async function ValuationPage() {
           {/* ABC */}
           <section aria-labelledby="abc">
             <SectionTitle
+              id="abc"
               numeral="02"
               eyebrow="Pareto"
               title="ABC by value"
@@ -172,6 +174,7 @@ export default async function ValuationPage() {
           {r.byCategory.length > 0 && (
             <section aria-labelledby="by-cat">
               <SectionTitle
+                id="by-cat"
                 numeral="03"
                 eyebrow="Distribution"
                 title="Value by category"
@@ -210,6 +213,7 @@ export default async function ValuationPage() {
           {/* Aging by value */}
           <section aria-labelledby="aging">
             <SectionTitle
+              id="aging"
               numeral="04"
               eyebrow="Aging"
               title="Value by time since last movement"
@@ -253,6 +257,7 @@ export default async function ValuationPage() {
           {/* Top products */}
           <section aria-labelledby="top">
             <SectionTitle
+              id="top"
               numeral="05"
               eyebrow="Detail"
               title="Top products by value"
@@ -264,14 +269,18 @@ export default async function ValuationPage() {
             />
             <div className="hairline bg-[var(--surface)] overflow-hidden">
               <div className="overflow-x-auto">
-                <table className="w-full" style={{ borderCollapse: "collapse" }}>
+                <table
+                  className="w-full"
+                  style={{ borderCollapse: "collapse" }}
+                  aria-label="Top products by value"
+                >
                   <thead>
                     <tr className="hairline-b bg-[var(--surface-2)]">
                       <Th>Product</Th>
                       <Th>Class</Th>
-                      <Th className="text-right">On hand</Th>
-                      <Th className="text-right">Unit cost</Th>
-                      <Th className="text-right">Value</Th>
+                      <Th align="right">On hand</Th>
+                      <Th align="right">Unit cost</Th>
+                      <Th align="right">Value</Th>
                     </tr>
                   </thead>
                   <tbody>
@@ -304,17 +313,17 @@ export default async function ValuationPage() {
                             {p.abc}
                           </span>
                         </Td>
-                        <Td className="text-right">
+                        <Td align="right">
                           <span className="mono-sm tnum text-text-secondary">
                             {p.onHand.toLocaleString()}
                           </span>
                         </Td>
-                        <Td className="text-right">
+                        <Td align="right">
                           <span className="mono-sm tnum text-text-secondary">
                             {p.unitCost > 0 ? formatCurrency(p.unitCost) : "—"}
                           </span>
                         </Td>
-                        <Td className="text-right">
+                        <Td align="right">
                           <span className="mono-body tnum text-text" style={{ fontSize: 13 }}>
                             {formatCurrency(p.value)}
                           </span>
@@ -330,27 +339,4 @@ export default async function ValuationPage() {
       )}
     </div>
   );
-}
-
-function Th({
-  children,
-  className = "",
-}: {
-  children?: React.ReactNode;
-  className?: string;
-}) {
-  return (
-    <th className={`label-text text-left px-14 py-12 font-normal ${className}`}>
-      {children}
-    </th>
-  );
-}
-function Td({
-  children,
-  className = "",
-}: {
-  children?: React.ReactNode;
-  className?: string;
-}) {
-  return <td className={`px-14 py-12 ${className}`}>{children}</td>;
 }

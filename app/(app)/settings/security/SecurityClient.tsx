@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, useRef } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { CornerButton } from "@/components/ui/CornerButton";
 import { Input } from "@/components/ui/Input";
@@ -37,6 +37,14 @@ export function SecurityClient() {
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [copiedSecret, setCopiedSecret] = useState(false);
+  // Timer id kept in a ref so an unmount mid-countdown cannot set
+  // state on a gone component.
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    return () => {
+      if (timer.current) clearTimeout(timer.current);
+    };
+  }, []);
 
   const supabase = createClient();
 
@@ -153,7 +161,7 @@ export function SecurityClient() {
     try {
       await navigator.clipboard.writeText(stage.secret);
       setCopiedSecret(true);
-      setTimeout(() => setCopiedSecret(false), 1500);
+      timer.current = setTimeout(() => setCopiedSecret(false), 1500);
     } catch {
       // ignore
     }

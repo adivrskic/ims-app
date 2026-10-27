@@ -46,9 +46,13 @@ export default function AppError({
             >
               Something went wrong.
             </h1>
+            {/* Never echo error.message: in production it is already
+                scrubbed by Next, and in a server error it can carry query
+                text or ids the viewer should not see. The digest below is
+                what support correlates against the server log. */}
             <p className="mono-sm text-text-muted" style={{ lineHeight: 1.6 }}>
-              {error.message ||
-                "An unexpected error occurred loading this page. Try again — if the issue persists, contact support."}
+              An unexpected error occurred loading this page. Try again — if
+              the issue persists, contact support.
             </p>
             {error.digest && (
               <p className="mono-sm text-text-dim" style={{ marginTop: 14 }}>

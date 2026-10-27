@@ -61,19 +61,25 @@ export default function AuthLayout({
         style={chromeOverride}
       >
         <p className="label-text">© Nautilus</p>
-        <nav className="flex items-center gap-20">
-          <Link
+        {/* Off-site (the marketing domain), so plain anchors in a new tab —
+            next/link would try to client-route an external origin. */}
+        <nav className="flex items-center gap-20" aria-label="Legal">
+          <a
             href="https://nautilusinventory.com/legal/privacy"
+            target="_blank"
+            rel="noopener noreferrer"
             className="label-text hover:text-text transition-colors"
           >
             Privacy
-          </Link>
-          <Link
+          </a>
+          <a
             href="https://nautilusinventory.com/legal/terms"
+            target="_blank"
+            rel="noopener noreferrer"
             className="label-text hover:text-text transition-colors"
           >
             Terms
-          </Link>
+          </a>
         </nav>
       </footer>
     </main>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useRef, useState } from "react";
+import { useActionState, useId, useRef, useState } from "react";
 import {
   AlertCircle,
   ArrowRight,
@@ -15,6 +15,7 @@ import { Textarea } from "@/components/ui/Textarea";
 import { Checkbox } from "@/components/ui/Checkbox";
 import { FormActions } from "@/components/ui/FormActions";
 import { FormNotice } from "@/components/ui/FormNotice";
+import { Th } from "@/components/ui/Table";
 import { IMPORT_SPECS } from "@/lib/import/specs";
 import type { ImportEntity, ImportSpec } from "@/lib/import/spec";
 import type { ImportOutcome } from "@/lib/import/prepare";
@@ -45,6 +46,9 @@ export function ImportWorkbench({ entity, action, doneHref }: Props) {
   const [version, setVersion] = useState(0);
   const versionRef = useRef(0);
   const lastMode = useRef<Mode>("check");
+  const tabsId = useId();
+  const tabId = (s: Source) => `${tabsId}-tab-${s}`;
+  const panelId = (s: Source) => `${tabsId}-panel-${s}`;
 
   const [result, formAction, pending] = useActionState<
     { outcome: ImportOutcome; version: number } | null,
@@ -74,6 +78,23 @@ export function ImportWorkbench({ entity, action, doneHref }: Props) {
     touch();
   };
 
+  // Tabs: ArrowLeft/Right (and Home/End) move between the two sources and
+  // move focus with the selection, per the WAI-ARIA tabs pattern.
+  const onTablistKey = (e: React.KeyboardEvent) => {
+    if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(e.key)) return;
+    e.preventDefault();
+    const next: Source =
+      e.key === "Home"
+        ? "file"
+        : e.key === "End"
+        ? "paste"
+        : source === "file"
+        ? "paste"
+        : "file";
+    switchSource(next);
+    document.getElementById(tabId(next))?.focus();
+  };
+
   const pasteHint = spec.fields
     .slice(0, 3)
     .map((f) => f.key)
@@ -87,14 +108,23 @@ export function ImportWorkbench({ entity, action, doneHref }: Props) {
           className="hairline bg-[var(--surface)] p-20 flex flex-col gap-16"
           aria-label="Source"
         >
-          <div className="flex items-center gap-6" role="tablist" aria-label="Source">
+          <div
+            className="flex items-center gap-6"
+            role="tablist"
+            aria-label="Source"
+            onKeyDown={onTablistKey}
+          >
             <SourceTab
+              id={tabId("file")}
+              controls={panelId("file")}
               active={source === "file"}
               onClick={() => switchSource("file")}
               icon={<FileUp size={11} strokeWidth={1.5} />}
               label="Upload a file"
             />
             <SourceTab
+              id={tabId("paste")}
+              controls={panelId("paste")}
               active={source === "paste"}
               onClick={() => switchSource("paste")}
               icon={<ClipboardPaste size={11} strokeWidth={1.5} />}
@@ -102,30 +132,36 @@ export function ImportWorkbench({ entity, action, doneHref }: Props) {
             />
           </div>
 
-          {source === "file" ? (
-            <label className="flex flex-col gap-10">
-              <span className="label-text text-text-muted">
-                CSV, TSV or text file
-              </span>
-              <input
-                type="file"
-                name="file"
-                accept=".csv,.tsv,.txt,text/csv,text/tab-separated-values,text/plain"
+          <div
+            role="tabpanel"
+            id={panelId(source)}
+            aria-labelledby={tabId(source)}
+          >
+            {source === "file" ? (
+              <label className="flex flex-col gap-10">
+                <span className="label-text text-text-muted">
+                  CSV, TSV or text file
+                </span>
+                <input
+                  type="file"
+                  name="file"
+                  accept=".csv,.tsv,.txt,text/csv,text/tab-separated-values,text/plain"
+                  onChange={touch}
+                  className="mono-sm text-text file:hairline-subtle file:bg-[var(--surface-2)] file:px-12 file:py-8 file:mr-12 file:label-text file:cursor-pointer hover:file:border-[var(--border-hover)]"
+                />
+              </label>
+            ) : (
+              <Textarea
+                label="Rows from your spreadsheet"
+                name="text"
+                rows={9}
                 onChange={touch}
-                className="mono-sm text-text file:hairline-subtle file:bg-[var(--surface-2)] file:px-12 file:py-8 file:mr-12 file:label-text file:cursor-pointer hover:file:border-[var(--border-hover)]"
+                spellCheck={false}
+                placeholder={`Select the cells in Excel or Google Sheets — header row included — copy, and paste here.\n\n${pasteHint}\n…`}
+                hint="Tabs (what a copy from a spreadsheet gives you), commas or semicolons all work."
               />
-            </label>
-          ) : (
-            <Textarea
-              label="Rows from your spreadsheet"
-              name="text"
-              rows={9}
-              onChange={touch}
-              spellCheck={false}
-              placeholder={`Select the cells in Excel or Google Sheets — header row included — copy, and paste here.\n\n${pasteHint}\n…`}
-              hint="Tabs (what a copy from a spreadsheet gives you), commas or semicolons all work."
-            />
-          )}
+            )}
+          </div>
 
           <p className="mono-sm text-text-dim" style={{ lineHeight: 1.6 }}>
             Up to {MAX_IMPORT_ROWS.toLocaleString()} rows or 5MB per run. The
@@ -215,11 +251,15 @@ export function ImportWorkbench({ entity, action, doneHref }: Props) {
 }
 
 function SourceTab({
+  id,
+  controls,
   active,
   onClick,
   icon,
   label,
 }: {
+  id: string;
+  controls: string;
   active: boolean;
   onClick: () => void;
   icon: React.ReactNode;
@@ -228,8 +268,13 @@ function SourceTab({
   return (
     <button
       type="button"
+      id={id}
       role="tab"
       aria-selected={active}
+      aria-controls={controls}
+      // Roving tabindex: only the selected tab is in the Tab order; the
+      // arrow keys (handled on the tablist) reach the other one.
+      tabIndex={active ? 0 : -1}
       onClick={onClick}
       className={`inline-flex items-center gap-6 px-12 py-8 label-text transition-colors hairline-subtle ${
         active
@@ -391,21 +436,13 @@ function ResultPanel({
           <table className="w-full" style={{ borderCollapse: "collapse" }}>
             <thead>
               <tr className="hairline-b bg-[var(--surface-2)]">
-                <th
-                  className="label-text text-left px-14 py-10 font-normal"
-                  style={{ width: 72 }}
-                >
+                <Th className="font-normal" style={{ width: 72 }}>
                   Row
-                </th>
-                <th
-                  className="label-text text-left px-14 py-10 font-normal"
-                  style={{ width: 180 }}
-                >
+                </Th>
+                <Th className="font-normal" style={{ width: 180 }}>
                   {spec.keyLabel}
-                </th>
-                <th className="label-text text-left px-14 py-10 font-normal">
-                  Problem
-                </th>
+                </Th>
+                <Th className="font-normal">Problem</Th>
               </tr>
             </thead>
             <tbody>

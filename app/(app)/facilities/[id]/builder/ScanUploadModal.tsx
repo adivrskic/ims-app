@@ -7,6 +7,7 @@ import { FormActions } from "@/components/ui/FormActions";
 import { FormNotice } from "@/components/ui/FormNotice";
 import { createClient } from "@/lib/supabase/client";
 import type { DetectedSection } from "./types";
+import { useDialog } from "@/lib/useDialog";
 
 interface Props {
   onClose: () => void;
@@ -22,6 +23,8 @@ type Stage =
 export function ScanUploadModal({ onClose, onImport }: Props) {
   const [stage, setStage] = useState<Stage>({ kind: "idle" });
   const supabase = createClient();
+  // Focus in, Tab trap, Escape (previously missing), focus return.
+  const dialogRef = useDialog({ open: true, onClose });
 
   const handleFile = async (file: File) => {
     if (!file) return;
@@ -68,6 +71,7 @@ export function ScanUploadModal({ onClose, onImport }: Props) {
 
   return (
     <div
+      ref={dialogRef}
       role="dialog"
       aria-modal="true"
       aria-labelledby="scan-title"

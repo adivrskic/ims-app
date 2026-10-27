@@ -5,6 +5,8 @@ import { getCurrentOrgContext } from "@/lib/data/user";
 import { getAsnDetail, type AsnLine } from "@/lib/data/asn";
 import { receiveAsnLine, receiveLpn, setAsnStatus } from "../actions";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { FormNotice } from "@/components/ui/FormNotice";
+import { PendingButton } from "@/app/(app)/_components/PendingButton";
 
 export const metadata = { title: "ASN" };
 
@@ -38,16 +40,7 @@ export default async function AsnDetailPage({
 
   return (
     <div className="flex flex-col gap-24">
-      {actionError && (
-        <div className="hairline border-[var(--danger-border)] bg-[var(--danger-dim)] px-16 py-12 flex items-start gap-12">
-          <X
-            size={14}
-            strokeWidth={1.5}
-            className="text-[var(--danger)] shrink-0 mt-2"
-          />
-          <p className="mono-sm text-[var(--danger)]">{actionError}</p>
-        </div>
-      )}
+      {actionError && <FormNotice tone="error">{actionError}</FormNotice>}
       <PageHeader
         backHref="/inbound"
         backLabel="Inbound"
@@ -68,19 +61,22 @@ export default async function AsnDetailPage({
                 <form action={setAsnStatus}>
                   <input type="hidden" name="id" value={asn.id} />
                   <input type="hidden" name="status" value="in_transit" />
-                  <button type="submit" className="hairline-subtle px-12 py-6 inline-flex items-center gap-6 hover:border-[var(--accent)] hover:text-[var(--accent)] text-text-secondary transition-colors">
+                  <PendingButton className="hairline-subtle px-12 py-6 inline-flex items-center gap-6 hover:border-[var(--accent)] hover:text-[var(--accent)] text-text-secondary transition-colors disabled:opacity-50">
                     <Truck size={11} strokeWidth={1.5} />
                     <span className="label-text">Mark in transit</span>
-                  </button>
+                  </PendingButton>
                 </form>
               )}
               <form action={setAsnStatus}>
                 <input type="hidden" name="id" value={asn.id} />
                 <input type="hidden" name="status" value="cancelled" />
-                <button type="submit" className="hairline-subtle px-12 py-6 inline-flex items-center gap-6 border-[var(--danger)] text-[var(--danger)] hover:bg-[var(--danger-dim)] transition-colors">
+                <PendingButton
+                  confirm={`Cancel ASN ${asn.asnNumber}? Lines that have not been received will not arrive against it.`}
+                  className="hairline-subtle px-12 py-6 inline-flex items-center gap-6 border-[var(--danger)] text-[var(--danger)] hover:bg-[var(--danger-dim)] transition-colors disabled:opacity-50"
+                >
                   <X size={11} strokeWidth={1.5} />
                   <span className="label-text">Cancel</span>
-                </button>
+                </PendingButton>
               </form>
             </div>
           ) : undefined
@@ -102,10 +98,10 @@ export default async function AsnDetailPage({
                 <form action={receiveLpn} className="ml-auto">
                   <input type="hidden" name="asn_id" value={asn.id} />
                   <input type="hidden" name="lpn" value={lpn} />
-                  <button type="submit" className="hairline-subtle px-12 py-6 inline-flex items-center gap-6 border-[var(--success)] text-[var(--success)] hover:bg-[var(--success-dim)] transition-colors">
+                  <PendingButton className="hairline-subtle px-12 py-6 inline-flex items-center gap-6 border-[var(--success)] text-[var(--success)] hover:bg-[var(--success-dim)] transition-colors disabled:opacity-50">
                     <Check size={11} strokeWidth={1.5} />
                     <span className="label-text">Receive pallet</span>
-                  </button>
+                  </PendingButton>
                 </form>
               )}
             </div>
@@ -163,10 +159,10 @@ function LineRow({ line, asnId, open }: { line: AsnLine; asnId: string; open: bo
             style={{ fontFamily: "var(--mono)", fontSize: 11 }}
             aria-label="Receive quantity"
           />
-          <button type="submit" className="hairline-subtle px-10 py-5 inline-flex items-center gap-6 border-[var(--success)] text-[var(--success)] hover:bg-[var(--success-dim)] transition-colors">
+          <PendingButton className="hairline-subtle px-10 py-5 inline-flex items-center gap-6 border-[var(--success)] text-[var(--success)] hover:bg-[var(--success-dim)] transition-colors disabled:opacity-50">
             <Check size={10} strokeWidth={1.5} />
             <span className="label-text">Receive</span>
-          </button>
+          </PendingButton>
         </form>
       )}
       {done && <span className="label-text text-[var(--success)]">RECEIVED</span>}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Printer, Check, Loader2, AlertTriangle, X } from "lucide-react";
 import { CornerButton } from "@/components/ui/CornerButton";
 import { Select } from "@/components/ui/Select";
@@ -48,6 +48,14 @@ export function BulkProductLabelButton({
   const [format, setFormat] = useState<"standard" | "gs1">("standard");
   const [progress, setProgress] = useState<PrintProgress | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  // The "Done" readout timer — cleared on unmount.
+  const resetRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (resetRef.current) clearTimeout(resetRef.current);
+    },
+    []
+  );
 
   const total = products.length;
 
@@ -107,7 +115,8 @@ export function BulkProductLabelButton({
       }
     }
     setProgress({ total, done, current: null });
-    setTimeout(() => setProgress(null), 2400);
+    if (resetRef.current) clearTimeout(resetRef.current);
+    resetRef.current = setTimeout(() => setProgress(null), 2400);
   };
 
   if (progress) {

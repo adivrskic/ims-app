@@ -42,8 +42,9 @@ export function SignupForm({ next = "/" }: { next?: string }) {
             arrived from one, otherwise "/" which the action turns into
             /onboarding. Validated server-side by safeNext(). */}
         <input type="hidden" name="next" value={next} />
-        <ManifestRow number="01" label="Full name">
+        <ManifestRow number="01" label="Full name" inputId="signup-name">
           <ManifestInput
+            id="signup-name"
             type="text"
             name="full_name"
             autoComplete="name"
@@ -51,8 +52,9 @@ export function SignupForm({ next = "/" }: { next?: string }) {
           />
         </ManifestRow>
 
-        <ManifestRow number="02" label="Work email">
+        <ManifestRow number="02" label="Work email" inputId="signup-email">
           <ManifestInput
+            id="signup-email"
             type="email"
             name="email"
             autoComplete="email"
@@ -64,6 +66,7 @@ export function SignupForm({ next = "/" }: { next?: string }) {
         <ManifestRow
           number="03"
           label="Passcode"
+          inputId="signup-password"
           rightSlot={
             <span className="mono-sm" style={{ color: "var(--text-dim)" }}>
               8+ characters
@@ -71,6 +74,7 @@ export function SignupForm({ next = "/" }: { next?: string }) {
           }
         >
           <ManifestPasswordField
+            id="signup-password"
             name="password"
             autoComplete="new-password"
             required

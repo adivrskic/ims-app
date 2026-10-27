@@ -13,6 +13,9 @@ import styles from "./manifest.module.css";
  * libraries can read the value. No client-side state — controlled or
  * uncontrolled is up to the caller (the auth forms use uncontrolled
  * + FormData via server actions).
+ *
+ * Pass `id` and give the enclosing ManifestRow the same value as `inputId`
+ * so the row's label is a real <label htmlFor> for this field.
  */
 export const ManifestInput = forwardRef<
   HTMLInputElement,

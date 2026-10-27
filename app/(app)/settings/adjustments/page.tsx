@@ -44,18 +44,40 @@ export default async function AdjustmentsSettingsPage() {
 
   return (
     <div className="flex flex-col gap-32">
-      <PageHeader
-        backHref="/cycle-counts"
-        backLabel="Cycle counts"
-        eyebrow="Settings · Inventory control"
-        title="Adjustment governance"
-        description="Reason codes captured on every stock adjustment, plus an approval gate for large manual adjustments."
-        meta={[{ label: "Pending approvals", value: String(pending.length), status: pending.length ? ("live" as const) : undefined }]}
-      />
+      {/* The settings layout already renders the page's <h1>, so this
+          sub-page heads itself with an <h2> rather than a second h1. */}
+      <header className="flex flex-col gap-6">
+        <p className="label-text text-text-muted">
+          Settings · Inventory control
+        </p>
+        <h2
+          className="text-text"
+          style={{
+            fontFamily: "var(--display)",
+            fontSize: 22,
+            fontWeight: 600,
+            letterSpacing: "-0.3px",
+          }}
+        >
+          Adjustment governance
+        </h2>
+        <p
+          className="mono-sm text-text-muted max-w-[640px]"
+          style={{ lineHeight: 1.6 }}
+        >
+          Reason codes captured on every stock adjustment, plus an approval
+          gate for large manual adjustments.
+        </p>
+        <p className="label-text text-text-muted inline-flex items-center gap-6">
+          {pending.length > 0 && <span className="dot dot-live" aria-hidden />}
+          Pending approvals:{" "}
+          <span className="text-text tnum">{pending.length}</span>
+        </p>
+      </header>
 
       {/* Approval queue */}
       <section aria-labelledby="queue">
-        <SectionTitle numeral="01" eyebrow="Review" title="Pending approvals" />
+        <SectionTitle id="queue" numeral="01" eyebrow="Review" title="Pending approvals" />
         {pending.length === 0 ? (
           <EmptyState
             title="Nothing awaiting approval"
@@ -124,7 +146,7 @@ export default async function AdjustmentsSettingsPage() {
 
       {/* Threshold */}
       <section aria-labelledby="threshold">
-        <SectionTitle numeral="02" eyebrow="Policy" title="Approval threshold" />
+        <SectionTitle id="threshold" numeral="02" eyebrow="Policy" title="Approval threshold" />
         <div className="hairline bg-[var(--surface)] p-20">
           <p className="mono-sm text-text-secondary mb-12" style={{ lineHeight: 1.6 }}>
             Manual adjustments whose magnitude exceeds this many units require
@@ -142,7 +164,7 @@ export default async function AdjustmentsSettingsPage() {
                   min={0}
                   defaultValue={threshold ?? ""}
                   placeholder="off"
-                  className="hairline-subtle bg-[var(--surface-2)] px-10 py-6 text-text tnum w-[120px] focus:border-[var(--accent)] outline-none"
+                  className="hairline-subtle bg-[var(--surface-2)] px-10 py-6 text-text tnum w-[120px] focus:border-[var(--accent)] outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
                 />
               </label>
               <CornerButton type="submit" variant="ghost" size="sm">Save</CornerButton>
@@ -162,6 +184,7 @@ export default async function AdjustmentsSettingsPage() {
       {/* Reasons */}
       <section aria-labelledby="reasons">
         <SectionTitle
+          id="reasons"
           numeral="03"
           eyebrow="Vocabulary"
           title="Reason codes"

@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useDialog } from "@/lib/useDialog";
 import {
   Search,
   Activity,
@@ -494,6 +495,13 @@ export function CommandPalette() {
   const [nlInterpreted, setNlInterpreted] = useState("");
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
+  const listId = useId();
+  const optionId = (i: number) => `${listId}-opt-${i}`;
+
+  // Focus the input on open, trap Tab, close on Escape, restore focus to
+  // whatever opened the palette (search button / page) and lock scroll.
+  const onClose = useCallback(() => setOpen(false), []);
+  const dialogRef = useDialog({ open, onClose, initialFocus: inputRef });
 
   // ⌘K / Ctrl+K + custom event from search bar
   useEffect(() => {
@@ -520,9 +528,18 @@ export function CommandPalette() {
       setActive(0);
       setNlResults(null);
       setNlInterpreted("");
-      setTimeout(() => inputRef.current?.focus(), 20);
     }
   }, [open]);
+
+  // Keep the highlighted option in view as the user arrows through.
+  useEffect(() => {
+    if (!open) return;
+    document
+      .getElementById(optionId(active))
+      ?.scrollIntoView({ block: "nearest" });
+    // optionId is a plain closure over the stable listId.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active, open, listId]);
 
   const filtered = useMemo(() => {
     const q = query.toLowerCase().trim();
@@ -643,9 +660,11 @@ export function CommandPalette() {
 
   // Compute a flat index for highlighting per group
   let flatIndex = -1;
+  const hasOptions = navList.length > 0;
 
   return (
     <div
+      ref={dialogRef}
       role="dialog"
       aria-modal="true"
       aria-label="Command palette"
@@ -677,6 +696,12 @@ export function CommandPalette() {
             className="flex-1 bg-transparent border-0 outline-none text-text placeholder:text-text-dim"
             style={{ fontFamily: "var(--mono)", fontSize: 13 }}
             aria-label="Search commands"
+            role="combobox"
+            aria-expanded={hasOptions}
+            aria-controls={listId}
+            aria-activedescendant={hasOptions ? optionId(active) : undefined}
+            aria-autocomplete="list"
+            autoComplete="off"
           />
           <kbd
             className="shrink-0 hairline-subtle px-6 py-2 text-text-dim"
@@ -691,6 +716,9 @@ export function CommandPalette() {
         </div>
 
         <div
+          id={listId}
+          role="listbox"
+          aria-label="Results"
           className="overflow-y-auto"
           style={{ maxHeight: "min(60vh, 480px)" }}
         >
@@ -708,20 +736,33 @@ export function CommandPalette() {
                 </p>
               )}
               {displayGroups.map((g) => (
-                <div key={g.name}>
-                  <p className="px-14 pt-12 pb-6 label-text text-text-muted">
+                <div
+                  key={g.name}
+                  role="group"
+                  aria-labelledby={`${listId}-group-${g.name}`}
+                >
+                  <p
+                    id={`${listId}-group-${g.name}`}
+                    role="presentation"
+                    className="px-14 pt-12 pb-6 label-text text-text-muted"
+                  >
                     {g.name}
                   </p>
-                  <ul>
+                  <ul role="presentation">
                     {g.items.map((a) => {
                       flatIndex++;
-                      const isActive = flatIndex === active;
+                      const index = flatIndex;
+                      const isActive = index === active;
                       const Icon = a.icon;
                       return (
-                        <li key={a.id}>
+                        <li key={a.id} role="presentation">
                           <button
                             type="button"
-                            onMouseEnter={() => setActive(flatIndex)}
+                            id={optionId(index)}
+                            role="option"
+                            aria-selected={isActive}
+                            tabIndex={-1}
+                            onMouseEnter={() => setActive(index)}
                             onClick={() => handleSelect(a)}
                             className={`w-full flex items-center gap-12 px-14 py-10 text-left transition-colors ${
                               isActive
@@ -792,7 +833,7 @@ export function CommandPalette() {
             <kbd style={{ fontFamily: "var(--mono)", fontSize: 9 }}>↵</kbd>{" "}
             select
           </p>
-          <p className="label-text text-text-dim">
+          <p className="label-text text-text-dim" aria-live="polite">
             {navList.length} result{navList.length === 1 ? "" : "s"}
           </p>
         </footer>

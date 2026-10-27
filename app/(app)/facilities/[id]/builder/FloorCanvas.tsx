@@ -83,6 +83,19 @@ export function FloorCanvas({
   gridSize,
   gridEnabled,
 }: Props) {
+  // Enter / Space on a focused item selects it; Shift toggles it into the
+  // current selection — the keyboard twin of the pointer-down behaviour.
+  const selectByKey = (ref: SelectionRef, additive: boolean) => {
+    if (!additive) {
+      onSetSelection([ref]);
+      return;
+    }
+    onSetSelection(
+      isRefSelected(selection, ref)
+        ? selection.filter((s) => !refsEqual(s, ref))
+        : [...selection, ref]
+    );
+  };
   const {
     viewport,
     viewportRef,
@@ -636,6 +649,7 @@ export function FloorCanvas({
                 showHandles={showHandlesFor(ref)}
                 isMobile={isMobile}
                 onPointerDownItem={onPointerDownItem}
+                onSelectKey={selectByKey}
                 onMoveDelta={onMoveDelta}
                 onResize={onResizeElement}
                 onRotateStart={onRotateStart}
@@ -663,6 +677,7 @@ export function FloorCanvas({
                 overlapping={overlappingSectionIds.has(s.id)}
                 isMobile={isMobile}
                 onPointerDownItem={onPointerDownItem}
+                onSelectKey={selectByKey}
                 onMoveDelta={onMoveDelta}
                 onResize={onResizeSection}
                 onRotateStart={onRotateStart}
@@ -689,6 +704,7 @@ export function FloorCanvas({
                 showHandles={showHandlesFor(ref)}
                 isMobile={isMobile}
                 onPointerDownItem={onPointerDownItem}
+                onSelectKey={selectByKey}
                 onMoveDelta={onMoveDelta}
                 onResize={onResizeElement}
                 onRotateStart={onRotateStart}

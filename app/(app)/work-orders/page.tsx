@@ -76,14 +76,14 @@ export default async function WorkOrdersPage() {
       />
 
       <section aria-labelledby="create">
-        <SectionTitle numeral="01" eyebrow="New" title="Create work order" />
+        <SectionTitle id="create" numeral="01" eyebrow="New" title="Create work order" />
         <div className="hairline bg-[var(--surface)] p-20">
           <CreateWorkOrderForm kits={kits} facilities={facilities} />
         </div>
       </section>
 
       <section aria-labelledby="list">
-        <SectionTitle numeral="02" eyebrow="Queue" title="Work orders" />
+        <SectionTitle id="list" numeral="02" eyebrow="Queue" title="Work orders" />
         {workOrders.length === 0 ? (
           <EmptyState
             title="No work orders yet"

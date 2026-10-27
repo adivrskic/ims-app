@@ -21,6 +21,7 @@ import { refsEqual } from "./types";
 import { useIsMobile } from "./useIsMobile";
 import { MobileInspectorSheet } from "./MobileInspectorSheet";
 import { SnapshotsModal } from "./SnapshotsModal";
+import { alphaCode } from "@/lib/format";
 import type { RestoreSnapshotResult } from "./actions";
 import type {
   SectionDraft,
@@ -61,6 +62,12 @@ interface State extends HistoryEntry {
   past: HistoryEntry[];
   future: HistoryEntry[];
   dirty: boolean;
+  /**
+   * True while a run of arrow-key nudges is in progress. The first nudge of
+   * a run pushes one history entry; the rest reuse it, so Undo steps back
+   * over the whole run without also reverting the edit before it.
+   */
+  nudging: boolean;
 }
 
 type DragKind = "move" | "resize" | "rotate";
@@ -76,6 +83,7 @@ type Action =
   | { type: "delete_selected" }
   | { type: "duplicate_selected" }
   | { type: "nudge"; dx: number; dy: number }
+  | { type: "end_nudge" }
   | { type: "begin_drag"; mode: DragKind }
   | { type: "drag_move"; dx: number; dy: number }
   | { type: "end_drag" }
@@ -133,12 +141,18 @@ function pushHistory(state: State): State {
 }
 
 function newId() {
-  return `new-${Math.random().toString(36).slice(2, 10)}`;
+  return `new-${crypto.randomUUID()}`;
 }
 
 const refKey = (r: SelectionRef) => `${r.kind}:${r.id}`;
 
 function reducer(state: State, action: Action): State {
+  // Any action other than a nudge ends the current nudge run.
+  if (state.nudging && action.type !== "nudge") {
+    state = { ...state, nudging: false };
+  }
+  if (action.type === "end_nudge") return state;
+
   switch (action.type) {
     case "set_selection":
       return { ...state, selection: action.refs };
@@ -164,7 +178,7 @@ function reducer(state: State, action: Action): State {
     case "add_section": {
       const nextSort =
         Math.max(0, ...state.sections.map((s) => s.sort_order)) + 1;
-      const code = String.fromCharCode(65 + state.sections.length) || "X";
+      const code = alphaCode(state.sections.length);
       const newSection: SectionDraft = {
         id: newId(),
         isNew: true,
@@ -324,12 +338,9 @@ function reducer(state: State, action: Action): State {
 
     case "nudge": {
       if (state.selection.length === 0) return state;
-      const lastEntry = state.past[state.past.length - 1];
-      const sameShape =
-        lastEntry &&
-        lastEntry.sections.length === state.sections.length &&
-        lastEntry.elements.length === state.elements.length;
-      const next = sameShape ? state : pushHistory(state);
+      // First nudge of a run records history; later ones in the same run
+      // (until a key-up or any other action) share that entry.
+      const next = state.nudging ? state : pushHistory(state);
       const selectedSectionIds = new Set(
         state.selection.filter((r) => r.kind === "section").map((r) => r.id)
       );
@@ -338,6 +349,7 @@ function reducer(state: State, action: Action): State {
       );
       return {
         ...next,
+        nudging: true,
         sections: state.sections.map((s) =>
           selectedSectionIds.has(s.id)
             ? {
@@ -541,6 +553,7 @@ export function BuilderShell({
     moveSnapshot: null,
     past: [],
     future: [],
+    nudging: false,
     dirty: false,
   });
 
@@ -551,6 +564,14 @@ export function BuilderShell({
   } | null>(null);
   const [snapshotsOpen, setSnapshotsOpen] = useState(false);
   const [scanOpen, setScanOpen] = useState(false);
+  // Timer id kept in a ref so an unmount mid-countdown cannot set
+  // state on a gone component.
+  const feedbackTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    return () => {
+      if (feedbackTimer.current) clearTimeout(feedbackTimer.current);
+    };
+  }, []);
   const [snapEnabled, setSnapEnabled] = useState(true);
 
   // Slotting (#8) reads a `door` element as the receiving / travel-distance
@@ -653,7 +674,7 @@ export function BuilderShell({
             } unlinked`
           : "Layout restored",
     });
-    setTimeout(() => setFeedback(null), 3500);
+    feedbackTimer.current = setTimeout(() => setFeedback(null), 3500);
   }, []);
 
   const handleSave = useCallback(async () => {
@@ -662,7 +683,7 @@ export function BuilderShell({
         kind: "err",
         msg: "Resolve overlapping sections before saving",
       });
-      setTimeout(() => setFeedback(null), 3000);
+      feedbackTimer.current = setTimeout(() => setFeedback(null), 3000);
       return;
     }
     setSaving(true);
@@ -681,7 +702,7 @@ export function BuilderShell({
     }
     setFeedback({ kind: "ok", msg: result.success ?? "Saved" });
     dispatch({ type: "reset_dirty" });
-    setTimeout(() => setFeedback(null), 2000);
+    feedbackTimer.current = setTimeout(() => setFeedback(null), 2000);
   }, [
     warehouseId,
     state.sections,
@@ -698,7 +719,7 @@ export function BuilderShell({
     if (r.error) {
       setFloorUnitState(prev);
       setFeedback({ kind: "err", msg: r.error });
-      setTimeout(() => setFeedback(null), 2500);
+      feedbackTimer.current = setTimeout(() => setFeedback(null), 2500);
     }
   }, [floorUnit, warehouseId]);
 
@@ -833,6 +854,8 @@ export function BuilderShell({
     };
 
     const onKey = (e: KeyboardEvent) => {
+      // A modal owns the keyboard while open (its own Escape / Tab trap).
+      if (scanOpen || snapshotsOpen) return;
       if (isFormField(e.target)) return;
       const mod = e.metaKey || e.ctrlKey;
 
@@ -916,10 +939,22 @@ export function BuilderShell({
       }
     };
 
+    // Releasing an arrow key ends the nudge run, so the next press starts a
+    // fresh undo entry.
+    const onKeyUp = (e: KeyboardEvent) => {
+      if (e.key.startsWith("Arrow")) dispatch({ type: "end_nudge" });
+    };
+
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    window.addEventListener("keyup", onKeyUp);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("keyup", onKeyUp);
+    };
   }, [
     state.selection.length,
+    scanOpen,
+    snapshotsOpen,
     handleSave,
     handleZoomIn,
     handleZoomOut,

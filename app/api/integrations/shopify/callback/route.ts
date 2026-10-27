@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { getCurrentOrgContext } from "@/lib/data/user";
 import { encrypt } from "@/lib/integrations/crypto";
 import {
   exchangeCodeForToken,
@@ -8,7 +9,6 @@ import {
   verifyState,
 } from "@/lib/integrations/shopify/oauth";
 import {
-  ShopifyClient,
   clientFromIntegration,
 } from "@/lib/integrations/shopify/client";
 import { SHOPIFY_WEBHOOK_TOPICS } from "@/lib/integrations/shopify/types";
@@ -44,6 +44,25 @@ export async function GET(req: NextRequest) {
     return errorRedirect(req, `state_${stateResult.reason}`);
   }
   const orgId = stateResult.orgId;
+
+  // 2b. The state proves WE minted it for orgId, but not that the browser
+  //     finishing the handshake belongs to that workspace: a signed state can
+  //     be lifted from one session and replayed from another. Require the
+  //     current session's active workspace to match, and the same permission
+  //     /connect demanded.
+  const ctx = await getCurrentOrgContext();
+  if (!ctx) {
+    return NextResponse.redirect(
+      new URL(
+        `/login?next=${encodeURIComponent("/integrations/shopify")}`,
+        req.url
+      )
+    );
+  }
+  if (ctx.orgId !== orgId) return errorRedirect(req, "state_org_mismatch");
+  if (!ctx.can("integrations.manage")) {
+    return errorRedirect(req, "forbidden");
+  }
 
   // 3. Normalize + verify shop domain
   const shopDomain = normalizeShopDomain(params.get("shop") ?? "");

@@ -5,6 +5,25 @@ import { getReasons } from "@/lib/data/adjustments";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { SectionDetail } from "./SectionDetail";
 
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ id: string; sectionId: string }>;
+}) {
+  const { sectionId } = await params;
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("sections")
+    .select("code, name")
+    .eq("id", sectionId)
+    .maybeSingle();
+  return {
+    title: data
+      ? `Section ${data.code ?? ""}${data.name ? ` · ${data.name}` : ""}`.trim()
+      : "Section",
+  };
+}
+
 export default async function SectionPage({
   params,
 }: {
@@ -12,37 +31,39 @@ export default async function SectionPage({
 }) {
   const { id: facilityId, sectionId } = await params;
   const supabase = await createClient();
-  const ctx = await getCurrentOrgContext();
 
-  const { data: section } = await supabase
-    .from("sections")
-    .select(
-      "id, code, name, total_bays, total_levels, color, warehouse_id, slot_capacity"
-    )
-    .eq("id", sectionId)
-    .maybeSingle();
+  // The section, its facility, its locations and the org context only need
+  // the route ids, so they load in one round; the reason codes need the org.
+  const [{ data: section }, { data: warehouse }, { data: rawLocations }, ctx] =
+    await Promise.all([
+      supabase
+        .from("sections")
+        .select(
+          "id, code, name, total_bays, total_levels, color, warehouse_id, slot_capacity"
+        )
+        .eq("id", sectionId)
+        .maybeSingle(),
+      supabase
+        .from("warehouses")
+        .select("id, name")
+        .eq("id", facilityId)
+        .maybeSingle(),
+      // Locations within this section, joined to product info. is_active is
+      // respected so retired slot records don't muddy the grid.
+      supabase
+        .from("locations")
+        .select(
+          "id, bay, level, quantity, placed_at, product:products(id, name, barcode, internal_sku, photo_url, category_id)"
+        )
+        .eq("section_id", sectionId)
+        .eq("is_active", true)
+        .order("level", { ascending: false })
+        .order("bay", { ascending: true }),
+      getCurrentOrgContext(),
+    ]);
 
   if (!section || section.warehouse_id !== facilityId) notFound();
-
-  const { data: warehouse } = await supabase
-    .from("warehouses")
-    .select("id, name")
-    .eq("id", facilityId)
-    .maybeSingle();
-
   if (!warehouse) notFound();
-
-  // Locations within this section, joined to product info. is_active is
-  // respected so retired slot records don't muddy the grid.
-  const { data: rawLocations } = await supabase
-    .from("locations")
-    .select(
-      "id, bay, level, quantity, placed_at, product:products(id, name, barcode, internal_sku, photo_url, category_id)"
-    )
-    .eq("section_id", sectionId)
-    .eq("is_active", true)
-    .order("level", { ascending: false })
-    .order("bay", { ascending: true });
 
   // Active adjustment reasons for the manual-edit reason picker (controlled
   // vocabulary; a reason flagged requires_approval routes the edit to the queue).

@@ -25,6 +25,11 @@ export default function GlobalError({
 
   return (
     <html lang="en">
+      {/* This boundary replaces the root layout, so nothing else sets the
+          document title — without one the tab reads "localhost" / the URL. */}
+      <head>
+        <title>Nautilus couldn’t load</title>
+      </head>
       <body
         style={{
           margin: 0,

@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { getActionContext } from "@/lib/data/actionContext";
 import { parseAssembleResult } from "@/lib/data/assemble";
 import { WORK_ORDER_STATUSES } from "@/lib/data/workOrders";
+import { assertOrgOwns } from "@/lib/data/assertOrgOwns";
 
 async function nextWoCode(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -64,6 +65,12 @@ export async function createWorkOrder(
   }>;
   if (components.length === 0) {
     return { error: "Define the kit's bill of materials first" };
+  }
+
+  // The facility id is client-supplied — it must be one of ours before the
+  // work order is attached to it.
+  if (!(await assertOrgOwns(ctx.supabase, "warehouses", warehouseId, ctx.orgId))) {
+    return { error: "That facility is not in this workspace" };
   }
 
   const code = await nextWoCode(ctx.supabase, ctx.orgId);

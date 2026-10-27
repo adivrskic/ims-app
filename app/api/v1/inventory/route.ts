@@ -5,11 +5,13 @@ import {
   apiTrialEnded,
   apiMissingScope,
   apiRateLimited,
+  isApiIpRateLimited,
   API_RATE_LIMIT,
 } from "@/lib/apiAuth";
 import { isEntitled } from "@/lib/entitlement";
 import { rateLimit } from "@/lib/rateLimit";
 import { fetchAllPaged } from "@/lib/data/paginate";
+import { isUuid } from "@/lib/net/validate";
 
 export const dynamic = "force-dynamic";
 
@@ -21,6 +23,7 @@ export const dynamic = "force-dynamic";
  */
 export async function GET(req: Request) {
   const auth = await authenticateApiKey(req);
+  if (isApiIpRateLimited(auth)) return apiRateLimited(auth.retryAfter);
   if (!auth) return apiUnauthorized();
   if (!isEntitled(auth.entitlement)) return apiTrialEnded(auth.entitlement);
   if (!auth.hasScope("location:read")) return apiMissingScope("location:read");
@@ -33,6 +36,12 @@ export async function GET(req: Request) {
   if (!rl.allowed) return apiRateLimited(rl.retryAfter);
 
   const warehouseId = new URL(req.url).searchParams.get("warehouse_id");
+  if (warehouseId !== null && !isUuid(warehouseId)) {
+    return Response.json(
+      { error: "warehouse_id must be a UUID" },
+      { status: 400 }
+    );
+  }
   const admin = createAdminClient();
 
   // Paginate: a single .select() stops at PostgREST's ~1000-row cap, so any
@@ -56,10 +65,13 @@ export async function GET(req: Request) {
       return q.range(from, to).throwOnError();
     });
   } catch (e) {
-    return Response.json(
-      { error: e instanceof Error ? e.message : "Query failed" },
-      { status: 500 }
+    // Log the Postgres message for us; never echo it to the caller (it can
+    // name tables, columns and policies).
+    console.error(
+      "[api/v1/inventory] query failed:",
+      e instanceof Error ? e.message : e
     );
+    return Response.json({ error: "Internal error" }, { status: 500 });
   }
 
   const onHand = new Map<string, number>();

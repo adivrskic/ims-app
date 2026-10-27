@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { getActionContext } from "@/lib/data/actionContext";
 import { bomCreatesCycle } from "@/lib/data/bom";
 import { assembleKit } from "@/lib/data/assemble";
+import { assertOrgOwns } from "@/lib/data/assertOrgOwns";
 
 /** Mark a product as a kit (or not). Opt-in, like lot tracking. */
 export async function setKitFlag(formData: FormData): Promise<void> {
@@ -47,6 +48,17 @@ export async function addKitComponent(
   }
   if (!Number.isFinite(qty) || qty <= 0) {
     return { error: "Quantity must be a positive number" };
+  }
+
+  // Both ids are client-supplied; each must be a product in THIS workspace
+  // before the edge is written.
+  const [ownsKit, ownsComponent] = await Promise.all([
+    assertOrgOwns(ctx.supabase, "products", kitProductId, ctx.orgId),
+    assertOrgOwns(ctx.supabase, "products", componentProductId, ctx.orgId),
+  ]);
+  if (!ownsKit) return { error: "That kit is not in this workspace" };
+  if (!ownsComponent) {
+    return { error: "That component is not in this workspace" };
   }
 
   // Multi-level BOM: reject edges that would create a cycle (A→B→…→A), not

@@ -7,7 +7,7 @@ export default function DevicesSettingsPage() {
   return (
     <div className="flex flex-col gap-40">
       <section aria-labelledby="overview">
-        <SectionTitle eyebrow="Hardware" title="Connected devices" />
+        <SectionTitle id="overview" eyebrow="Hardware" title="Connected devices" />
         <p
           className="mono-sm text-text-muted hairline bg-[var(--surface)] px-20 py-16"
           style={{ lineHeight: 1.6 }}

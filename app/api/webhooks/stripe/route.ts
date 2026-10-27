@@ -35,6 +35,22 @@ export async function POST(req: Request) {
     );
   }
 
+  // Idempotency: Stripe retries until it sees a 2xx and may deliver the same
+  // event more than once. Record the event id first; a unique violation
+  // means it was already handled. Any OTHER failure (e.g. the table missing
+  // before 20261026120000_rls_hardening lands) is logged and ignored so the
+  // webhook keeps working — a duplicate apply is idempotent on the row.
+  const admin = createAdminClient();
+  const { error: eventErr } = await admin
+    .from("stripe_events")
+    .insert({ id: event.id, created: event.created });
+  if (eventErr) {
+    if (eventErr.code === "23505") {
+      return new Response("duplicate", { status: 200 });
+    }
+    console.error("[stripe webhook] event ledger insert failed:", eventErr.message);
+  }
+
   try {
     switch (event.type) {
       case "checkout.session.completed": {
@@ -49,7 +65,7 @@ export async function POST(req: Request) {
             : session.subscription?.id ?? null;
         if (orgId && subId) {
           const sub = await stripe.subscriptions.retrieve(subId);
-          await applySubscription(orgId, sub);
+          await applySubscription(orgId, sub, event);
         }
         break;
       }
@@ -58,7 +74,7 @@ export async function POST(req: Request) {
       case "customer.subscription.deleted": {
         const sub = event.data.object as Stripe.Subscription;
         const orgId = (sub.metadata?.org_id as string | undefined) ?? null;
-        if (orgId) await applySubscription(orgId, sub);
+        if (orgId) await applySubscription(orgId, sub, event);
         break;
       }
       default:
@@ -73,11 +89,39 @@ export async function POST(req: Request) {
   return new Response("ok", { status: 200 });
 }
 
-/** Map a Stripe subscription onto the org's org_subscriptions row. */
+/**
+ * Map a Stripe subscription onto the org's org_subscriptions row.
+ *
+ * Ordering: Stripe does not guarantee delivery order, so a delayed
+ * `subscription.updated` can arrive after the `subscription.deleted` that
+ * superseded it. Each applied event is stamped with its subscription id in
+ * app.stripe_events; if the ledger already holds a NEWER event for the same
+ * subscription, this one is stale and skipped. Fails open (applies) when the
+ * ledger can't be read, so a missing table never blocks billing sync.
+ */
 async function applySubscription(
   orgId: string,
-  sub: Stripe.Subscription
+  sub: Stripe.Subscription,
+  event: Stripe.Event
 ): Promise<void> {
+  const ledger = createAdminClient();
+  try {
+    const { data: newer, error: newerErr } = await ledger
+      .from("stripe_events")
+      .select("id")
+      .eq("subscription_id", sub.id)
+      .gt("created", event.created)
+      .limit(1);
+    if (!newerErr && newer && newer.length > 0) {
+      console.warn(
+        `[stripe webhook] skipping stale event ${event.id} for subscription ${sub.id}`
+      );
+      return;
+    }
+  } catch (err) {
+    console.error("[stripe webhook] event ledger read failed:", err);
+  }
+
   // Read version-tolerant fields loosely (period fields have shifted between
   // Stripe API versions between the subscription and its items).
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -124,4 +168,16 @@ async function applySubscription(
       `org_subscriptions upsert failed for org ${orgId}: ${error.message}`
     );
   }
+
+  // Stamp the ledger row with the subscription it applied to, so later
+  // events for the same subscription can tell whether they're stale.
+  // Best-effort: the row may not exist before the migration lands.
+  void ledger
+    .from("stripe_events")
+    .update({ subscription_id: sub.id })
+    .eq("id", event.id)
+    .then(
+      () => {},
+      () => {}
+    );
 }

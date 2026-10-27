@@ -20,6 +20,13 @@ export async function createClient() {
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       db: { schema: process.env.NEXT_PUBLIC_SUPABASE_DB_SCHEMA as "public" },
+      // Session cookies are Secure in production (never sent over plain http)
+      // and SameSite=Lax (not attached to cross-site POSTs). Must match
+      // lib/supabase/middleware.ts, which writes the same cookies on refresh.
+      cookieOptions: {
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "lax",
+      },
       cookies: {
         getAll() {
           return cookieStore.getAll();

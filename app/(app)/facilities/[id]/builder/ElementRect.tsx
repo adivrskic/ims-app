@@ -4,6 +4,7 @@ import type { LayoutElementDraft, SelectionRef } from "./types";
 import type { Guide, Rect, DragMode } from "./snap";
 import { useDraggableItem, type RectPatch } from "./useDraggableItem";
 import { useRotateHandle } from "./useRotateHandle";
+import { ELEMENT_PRESETS } from "./elementPresets";
 
 interface Props {
   element: LayoutElementDraft;
@@ -27,6 +28,8 @@ interface Props {
   onGuidesChange: (guides: Guide[]) => void;
   panLock: boolean;
   isMobile?: boolean;
+  /** Keyboard selection (Enter / Space; Shift adds to the selection). */
+  onSelectKey?: (ref: SelectionRef, additive: boolean) => void;
 }
 
 const MIN_SIZE_BY_KIND: Record<string, number> = { door: 8 };
@@ -49,6 +52,7 @@ export function ElementRect({
   onGuidesChange,
   panLock,
   isMobile = false,
+  onSelectKey,
 }: Props) {
   const minSize = MIN_SIZE_BY_KIND[element.kind] ?? 24;
   const ref: SelectionRef = { kind: element.kind, id: element.id };
@@ -113,7 +117,20 @@ export function ElementRect({
   const grabCursor = panLock ? "inherit" : isMoving ? "grabbing" : "grab";
 
   return (
-    <g transform={`rotate(${rotation} ${x + w / 2} ${y + h / 2})`}>
+    <g
+      transform={`rotate(${rotation} ${x + w / 2} ${y + h / 2})`}
+      tabIndex={0}
+      role="button"
+      aria-label={`${ELEMENT_PRESETS[element.kind]?.label ?? element.kind}${
+        element.label ? ` · ${element.label}` : ""
+      }`}
+      aria-pressed={selected}
+      onKeyDown={(e) => {
+        if (e.key !== "Enter" && e.key !== " ") return;
+        e.preventDefault();
+        onSelectKey?.(ref, e.shiftKey);
+      }}
+    >
       {renderFill({ element, inv, selected })}
 
       <rect

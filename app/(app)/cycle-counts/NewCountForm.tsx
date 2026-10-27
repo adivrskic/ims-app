@@ -59,7 +59,10 @@ export function NewCountForm({
   reasons,
   initialProductId,
 }: Props) {
-  const [state, formAction] = useActionState(recordCycleCount, undefined);
+  const [state, formAction, pending] = useActionState(
+    recordCycleCount,
+    undefined
+  );
   const [productId, setProductId] = useState(initialProductId ?? "");
   const [locationId, setLocationId] = useState("");
   const [countedQty, setCountedQty] = useState("");
@@ -148,7 +151,12 @@ export function NewCountForm({
         />
 
         <div className="flex items-end">
-          <CornerButton type="submit" variant="primary" disabled={!canRecord}>
+          <CornerButton
+            type="submit"
+            variant="primary"
+            disabled={!canRecord}
+            loading={pending}
+          >
             Record count
           </CornerButton>
         </div>

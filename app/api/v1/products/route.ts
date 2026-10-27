@@ -5,6 +5,7 @@ import {
   apiTrialEnded,
   apiMissingScope,
   apiRateLimited,
+  isApiIpRateLimited,
   API_RATE_LIMIT,
 } from "@/lib/apiAuth";
 import { isEntitled } from "@/lib/entitlement";
@@ -19,6 +20,7 @@ export const dynamic = "force-dynamic";
  */
 export async function GET(req: Request) {
   const auth = await authenticateApiKey(req);
+  if (isApiIpRateLimited(auth)) return apiRateLimited(auth.retryAfter);
   if (!auth) return apiUnauthorized();
   if (!isEntitled(auth.entitlement)) return apiTrialEnded(auth.entitlement);
   if (!auth.hasScope("product:read")) return apiMissingScope("product:read");
@@ -45,7 +47,8 @@ export async function GET(req: Request) {
     .limit(limit);
 
   if (error) {
-    return Response.json({ error: error.message }, { status: 500 });
+    console.error("[api/v1/products] query failed:", error.message);
+    return Response.json({ error: "Internal error" }, { status: 500 });
   }
 
   return Response.json({ data: data ?? [] });

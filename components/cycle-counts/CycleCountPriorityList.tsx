@@ -21,6 +21,7 @@ export function CycleCountPriorityList({
   return (
     <section aria-labelledby="count-next-heading">
       <SectionTitle
+        id="count-next-heading"
         eyebrow="Prioritize"
         title="Count next"
         action={

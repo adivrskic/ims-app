@@ -4,6 +4,7 @@ import { getCurrentOrgContext } from "@/lib/data/user";
 import { getActiveScope, scopeDescription } from "@/lib/facilityScope";
 import { getBackorders } from "@/lib/data/allocation";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { Th, Td } from "@/components/ui/Table";
 import { KpiCard } from "@/components/ui/KpiCard";
 import { SectionTitle } from "@/components/ui/SectionTitle";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -74,6 +75,9 @@ export default async function BackordersPage() {
       ) : (
         <>
           <section aria-labelledby="kpis">
+            <h2 id="kpis" className="sr-only">
+              Backorder summary
+            </h2>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-16">
               <KpiCard label="Backordered units" value={totalUnits.toLocaleString()} />
               <KpiCard label="Orders affected" value={orderCount.toLocaleString()} />
@@ -83,6 +87,7 @@ export default async function BackordersPage() {
 
           <section aria-labelledby="list">
             <SectionTitle
+              id="list"
               numeral="01"
               eyebrow="Queue"
               title="Backordered lines"
@@ -94,16 +99,20 @@ export default async function BackordersPage() {
             />
             <div className="hairline bg-[var(--surface)] overflow-hidden">
               <div className="overflow-x-auto">
-                <table className="w-full" style={{ borderCollapse: "collapse" }}>
+                <table
+                  className="w-full"
+                  style={{ borderCollapse: "collapse" }}
+                  aria-label="Backordered lines"
+                >
                   <thead>
                     <tr className="hairline-b bg-[var(--surface-2)]">
                       <Th>Order</Th>
                       <Th>Product</Th>
                       <Th>Status</Th>
-                      <Th className="text-right">Requested</Th>
-                      <Th className="text-right">Allocated</Th>
-                      <Th className="text-right">Backordered</Th>
-                      <Th className="text-right">Age</Th>
+                      <Th align="right">Requested</Th>
+                      <Th align="right">Allocated</Th>
+                      <Th align="right">Backordered</Th>
+                      <Th align="right">Age</Th>
                     </tr>
                   </thead>
                   <tbody>
@@ -138,22 +147,22 @@ export default async function BackordersPage() {
                               {STATUS_LABEL[r.orderStatus] ?? r.orderStatus}
                             </span>
                           </Td>
-                          <Td className="text-right">
+                          <Td align="right">
                             <span className="mono-sm tnum text-text-secondary">
                               {r.requested}
                             </span>
                           </Td>
-                          <Td className="text-right">
+                          <Td align="right">
                             <span className="mono-sm tnum text-text-secondary">
                               {r.allocated}
                             </span>
                           </Td>
-                          <Td className="text-right">
+                          <Td align="right">
                             <span className="mono-body tnum text-[var(--warning)]">
                               {r.backordered}
                             </span>
                           </Td>
-                          <Td className="text-right">
+                          <Td align="right">
                             <span className="mono-sm tnum text-text-dim">
                               {age != null ? `${age}d` : "—"}
                             </span>
@@ -170,27 +179,4 @@ export default async function BackordersPage() {
       )}
     </div>
   );
-}
-
-function Th({
-  children,
-  className = "",
-}: {
-  children?: React.ReactNode;
-  className?: string;
-}) {
-  return (
-    <th className={`label-text text-left px-14 py-12 font-normal ${className}`}>
-      {children}
-    </th>
-  );
-}
-function Td({
-  children,
-  className = "",
-}: {
-  children?: React.ReactNode;
-  className?: string;
-}) {
-  return <td className={`px-14 py-12 ${className}`}>{children}</td>;
 }

@@ -50,7 +50,6 @@ export function SectionDetail({
   warehouseId,
   sectionId,
   sectionCode,
-  sectionName,
   sectionColor,
   totalBays,
   totalLevels,
@@ -68,7 +67,6 @@ export function SectionDetail({
     text: string;
     tone: "error" | "info";
   } | null>(null);
-  const error = notice?.tone === "error" ? notice.text : null;
   const setError = (text: string | null) =>
     setNotice(text ? { text, tone: "error" } : null);
   const setQueuedNotice = (text: string) => setNotice({ text, tone: "info" });
@@ -897,6 +895,7 @@ function LocationCard({
             <input
               type="number"
               min={0}
+              aria-label="Quantity in this slot"
               value={draftQty}
               disabled={busy}
               onChange={(e) => setDraftQty(e.target.value)}
@@ -1318,7 +1317,7 @@ function EmptyHint({ totalLevels }: { totalLevels: number }) {
     <>
       <p className="label-text text-text-muted">Slot detail</p>
       <p className="mono-sm text-text-dim" style={{ lineHeight: 1.6 }}>
-        Tap any cell in the grid to see what's stored there. From the slot
+        Tap any cell in the grid to see what’s stored there. From the slot
         detail you can edit quantities, remove items, and place new products.
       </p>
       <p

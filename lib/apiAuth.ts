@@ -5,6 +5,7 @@ import { effectivePermissions, type Permission } from "@/lib/permissions";
 import type { ApiScope } from "@/lib/apiScopes";
 import { getOrgEntitlement } from "@/lib/data/entitlement";
 import type { Entitlement } from "@/lib/entitlement";
+import { clientIpFrom, rateLimit } from "@/lib/rateLimit";
 
 /**
  * Authentication for the public API (Authorization: Bearer <key>).
@@ -42,18 +43,56 @@ function extractBearer(req: Request): string | null {
   return m ? m[1].trim() : null;
 }
 
+/** Per-IP budget for key lookups, applied BEFORE the key is checked. */
+export const API_IP_RATE_LIMIT = { max: 120, windowSeconds: 60 };
+
+/**
+ * Sentinel returned by authenticateApiKey when the caller's IP has exhausted
+ * its window: routes answer apiRateLimited(retryAfter) instead of a 401.
+ */
+export interface ApiIpRateLimited {
+  rateLimited: true;
+  retryAfter: number;
+}
+
+export function isApiIpRateLimited(
+  v: ApiKeyContext | ApiIpRateLimited | null
+): v is ApiIpRateLimited {
+  return v !== null && "rateLimited" in v;
+}
+
+function clientIp(req: Request): string {
+  const get = (name: string) => req.headers.get(name);
+  const ip = clientIpFrom(get);
+  if (ip !== "unknown") return ip;
+  return get("x-real-ip")?.trim() || "unknown";
+}
+
+/** Only touch api_keys.last_used_at when the stored stamp is this stale. */
+const LAST_USED_MIN_INTERVAL_MS = 60_000;
+
 export async function authenticateApiKey(
   req: Request
-): Promise<ApiKeyContext | null> {
+): Promise<ApiKeyContext | ApiIpRateLimited | null> {
   const token = extractBearer(req);
   if (!token) return null;
+
+  // Per-IP throttle before any database work: without it, an attacker can
+  // grind sha256 lookups against api_keys for free, since the per-key budget
+  // only starts once a key has been found.
+  const rl = await rateLimit(
+    `api:ip:${clientIp(req)}`,
+    API_IP_RATE_LIMIT.max,
+    API_IP_RATE_LIMIT.windowSeconds
+  );
+  if (!rl.allowed) return { rateLimited: true, retryAfter: rl.retryAfter };
 
   const hash = createHash("sha256").update(token).digest("hex");
   const admin = createAdminClient();
 
   const { data: key } = await admin
     .from("api_keys")
-    .select("id, org_id, created_by, scopes, revoked_at")
+    .select("id, org_id, created_by, scopes, revoked_at, last_used_at")
     .eq("key_hash", hash)
     .is("revoked_at", null)
     .maybeSingle();
@@ -64,6 +103,7 @@ export async function authenticateApiKey(
     org_id: string;
     created_by: string;
     scopes: string[] | null;
+    last_used_at: string | null;
   };
 
   // Resolve the issuing member's effective RBAC for this org. If they've since
@@ -84,11 +124,23 @@ export async function authenticateApiKey(
   const m = member as { role: string; permissions: string[] | null };
   const perms = effectivePermissions(m.role, m.permissions);
 
-  // Stamp last_used_at (best-effort; never block the request on it).
-  await admin
-    .from("api_keys")
-    .update({ last_used_at: new Date().toISOString() })
-    .eq("id", k.id);
+  // Stamp last_used_at — fire-and-forget (the request never waits on it or
+  // fails because of it) and at most once a minute per key, so a busy
+  // integration doesn't turn every GET into a write.
+  const lastUsed = k.last_used_at ? Date.parse(k.last_used_at) : NaN;
+  if (
+    !Number.isFinite(lastUsed) ||
+    Date.now() - lastUsed > LAST_USED_MIN_INTERVAL_MS
+  ) {
+    void admin
+      .from("api_keys")
+      .update({ last_used_at: new Date().toISOString() })
+      .eq("id", k.id)
+      .then(
+        () => {},
+        () => {}
+      );
+  }
 
   /* A key with no scopes grants nothing. createApiKey requires at least one,
      so this only catches malformed/legacy rows — failing closed is correct. */

@@ -1,9 +1,11 @@
 import Link from "next/link";
-import { createClient } from "@/lib/supabase/server";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Badge } from "@/components/ui/Badge";
 import { EmptyState } from "@/components/ui/EmptyState";
-import { CornerButton, CornerLink } from "@/components/ui/CornerButton";
+import { CornerLink } from "@/components/ui/CornerButton";
+import { LocalTime } from "@/components/ui/LocalTime";
+import { Th, Td } from "@/components/ui/Table";
+import { RelativeDate } from "@/app/(app)/_components/RelativeDate";
 import { ChevronRight, ClipboardList, Plus, PackageX } from "lucide-react";
 import { getActiveScope, scopeDescription } from "@/lib/facilityScope";
 import { OrdersRealtime } from "@/components/realtime/PageRealtime";
@@ -87,37 +89,6 @@ const FILTERS: Array<{
   { key: "cancelled", label: "Cancelled", statuses: ["cancelled"] },
 ];
 
-function relTime(iso: string | null): string {
-  if (!iso) return "—";
-  const ms = Date.now() - new Date(iso).getTime();
-  const m = Math.floor(ms / 60000);
-  if (m < 60) return `${m}m ago`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h ago`;
-  const d = Math.floor(h / 24);
-  if (d < 7) return `${d}d ago`;
-  return new Date(iso).toLocaleDateString(undefined, {
-    month: "short",
-    day: "numeric",
-  });
-}
-
-function deliveryLabel(date: string | null, window: string | null): string {
-  if (!date) return "—";
-  const d = new Date(date + "T00:00:00");
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const diff = Math.round((d.getTime() - today.getTime()) / 86400000);
-  let base: string;
-  if (diff === 0) base = "Today";
-  else if (diff === 1) base = "Tomorrow";
-  else if (diff === -1) base = "Yesterday";
-  else if (diff > 0 && diff < 7) base = `In ${diff}d`;
-  else
-    base = d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
-  return window ? `${base} · ${window}` : base;
-}
-
 export default async function OrdersPage({
   searchParams,
 }: {
@@ -132,8 +103,10 @@ export default async function OrdersPage({
   const page = parsePage(rawPage);
   const pageSize = parsePageSize(rawPageSize);
 
-  const scope = await getActiveScope();
-  const ctx = await getCurrentOrgContext();
+  const [scope, ctx] = await Promise.all([
+    getActiveScope(),
+    getCurrentOrgContext(),
+  ]);
   const facilityId = scope.mode === "single" ? scope.id : null;
 
   const data = ctx
@@ -264,13 +237,17 @@ export default async function OrdersPage({
       ) : (
         <div className="hairline bg-[var(--surface)] overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full" style={{ borderCollapse: "collapse" }}>
+            <table
+              className="w-full"
+              style={{ borderCollapse: "collapse" }}
+              aria-label="Orders"
+            >
               <thead>
                 <tr className="hairline-b bg-[var(--surface-2)]">
                   <Th>Order</Th>
                   <Th>Type</Th>
                   <Th>Customer</Th>
-                  <Th className="text-right">Items</Th>
+                  <Th align="right">Items</Th>
                   <Th>Delivery</Th>
                   <Th>Status</Th>
                   <Th>Created</Th>
@@ -311,7 +288,7 @@ export default async function OrdersPage({
                           {o.customer_name ?? "—"}
                         </Link>
                       </Td>
-                      <Td className="text-right">
+                      <Td align="right">
                         <span
                           className="tnum text-text-secondary"
                           style={{ fontFamily: "var(--mono)", fontSize: 12 }}
@@ -320,9 +297,11 @@ export default async function OrdersPage({
                         </span>
                       </Td>
                       <Td>
-                        <span className="mono-sm text-text-secondary">
-                          {deliveryLabel(o.delivery_date, o.delivery_window)}
-                        </span>
+                        <RelativeDate
+                          date={o.delivery_date}
+                          suffix={o.delivery_window}
+                          className="mono-sm text-text-secondary"
+                        />
                       </Td>
                       <Td>
                         <Badge tone={cfg.tone} variant="filled">
@@ -330,9 +309,11 @@ export default async function OrdersPage({
                         </Badge>
                       </Td>
                       <Td>
-                        <span className="mono-sm text-text-dim">
-                          {relTime(o.created_at)}
-                        </span>
+                        <LocalTime
+                          iso={o.created_at}
+                          format="relative"
+                          className="mono-sm text-text-dim"
+                        />
                       </Td>
                       <Td>
                         <ChevronRight
@@ -364,28 +345,3 @@ export default async function OrdersPage({
   );
 }
 
-function Th({
-  children,
-  className = "",
-}: {
-  children?: React.ReactNode;
-  className?: string;
-}) {
-  return (
-    <th className={`label-text text-left px-14 py-12 font-normal ${className}`}>
-      {children}
-    </th>
-  );
-}
-
-function Td({
-  children,
-  className = "",
-}: {
-  children?: React.ReactNode;
-  className?: string;
-}) {
-  return (
-    <td className={`px-14 py-14 align-middle ${className}`}>{children}</td>
-  );
-}

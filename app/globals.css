@@ -97,8 +97,10 @@
   --surface-3: rgba(255, 255, 255, 0.04);
   --text: #e6ecf5;
   --text-secondary: #a8b8cc;
-  --text-muted: #7388a8;
-  --text-dim: #4d6585;
+  /* Muted/dim ink must still clear AA on --surface (#0c1f3c): the old
+     #4d6585 dim was ~2.6:1 and unreadable as placeholder/label text. */
+  --text-muted: #8197b6;
+  --text-dim: #8aa0bf;
   --border: rgba(140, 175, 220, 0.16);
   --border-subtle: rgba(140, 175, 220, 0.08);
   --border-faint: rgba(255, 255, 255, 0.04);
@@ -142,8 +144,8 @@
   /* Brand — the display gold is darkened for contrast. #d4a949 on white
      is ~1.9:1, which fails as text, as an icon, and as a 1px border. This
      is still unmistakably gold but clears AA for body text. */
-  --accent: #8f6d24;
-  --accent-bright: #a8822f;
+  --accent: #7f6020;
+  --accent-bright: #8f6d24;
   --accent-deep: #6f5419;
   --accent-dim: rgba(143, 109, 36, 0.12);
   --accent-soft: rgba(143, 109, 36, 0.5);
@@ -180,7 +182,7 @@
   --text: #111110;
   --text-secondary: #3d3d3a;
   --text-muted: #63635e;
-  --text-dim: #92928c;
+  --text-dim: #6b6b66;
   --border: rgba(17, 17, 16, 0.18);
   --border-subtle: rgba(17, 17, 16, 0.11);
   --border-faint: rgba(17, 17, 16, 0.06);
@@ -338,25 +340,6 @@ table,
   height: 12px;
 }
 
-.bracket-hover--sm::before,
-.bracket-hover--sm::after {
-  width: 6px;
-  height: 6px;
-}
-.bracket-hover--sm::before {
-  top: -3px;
-  left: -3px;
-}
-.bracket-hover--sm::after {
-  bottom: -3px;
-  right: -3px;
-}
-.bracket-hover--sm:hover::before,
-.bracket-hover--sm:hover::after {
-  width: 10px;
-  height: 10px;
-}
-
 /* Static bracket marks — for hero corners */
 .brackets {
   position: relative;
@@ -456,11 +439,7 @@ table,
 }
 
 /* ═══ AMBIENT GLOWS ═══ */
-.glow-tl::before,
-.glow-tr::before,
-.glow-bl::before,
-.glow-br::before,
-.glow-center::before {
+.glow-tl::before {
   content: "";
   position: absolute;
   width: 720px;
@@ -478,64 +457,8 @@ table,
   top: -280px;
   left: -280px;
 }
-.glow-tr::before {
-  top: -280px;
-  right: -280px;
-}
-.glow-bl::before {
-  bottom: -280px;
-  left: -280px;
-}
-.glow-br::before {
-  bottom: -280px;
-  right: -280px;
-}
-.glow-center::before {
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-}
-
-/* Top hairline gradient — fade-in/out gold rule */
-.hairline-gradient-t {
-  position: relative;
-}
-.hairline-gradient-t::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 1px;
-  background: linear-gradient(
-    90deg,
-    transparent 0%,
-    var(--accent) 50%,
-    transparent 100%
-  );
-  pointer-events: none;
-}
-
-/* Editorial scan-line texture */
-.scanlines {
-  background-image: repeating-linear-gradient(
-    180deg,
-    transparent 0px,
-    transparent 3px,
-    var(--sheen-faint) 3px,
-    var(--sheen-faint) 4px
-  );
-}
 
 /* ═══ TYPOGRAPHY ═══ */
-.heading-xl {
-  font-family: var(--display);
-  font-size: clamp(48px, 6.5vw, 96px);
-  font-weight: 600;
-  line-height: 1.02;
-  letter-spacing: -2px;
-  color: var(--text);
-}
 .heading-lg {
   font-family: var(--display);
   font-size: clamp(40px, 5vw, 68px);
@@ -544,27 +467,12 @@ table,
   letter-spacing: -2px;
   color: var(--text);
 }
-.heading-md {
-  font-family: var(--display);
-  font-size: clamp(36px, 4.5vw, 56px);
-  font-weight: 700;
-  line-height: 1.08;
-  letter-spacing: -1.5px;
-  color: var(--text);
-}
 .heading-sm {
   font-family: var(--display);
   font-size: clamp(28px, 3vw, 40px);
   font-weight: 700;
   line-height: 1.1;
   letter-spacing: -1px;
-}
-.heading-xs {
-  font-family: var(--display);
-  font-size: 22px;
-  font-weight: 600;
-  letter-spacing: -0.4px;
-  line-height: 1.25;
 }
 .body-text {
   font-family: var(--mono);
@@ -580,16 +488,11 @@ table,
   color: var(--text-secondary);
   font-weight: 400;
 }
-.body-text--display-lg {
-  font-family: var(--display);
-  font-size: 20px;
-  line-height: 1.6;
-  color: var(--text-secondary);
-  font-weight: 400;
-}
+/* 10px is the floor: 9px uppercase mono failed every legibility check and
+   the nav group labels / table headers it styles have room for it. */
 .label-text {
   font-family: var(--mono);
-  font-size: 9px;
+  font-size: 10px;
   letter-spacing: 1.5px;
   text-transform: uppercase;
   color: var(--text-muted);
@@ -612,40 +515,10 @@ table,
   font-size: 11px;
   line-height: 1.5;
 }
-.accent-text {
-  color: var(--accent);
-}
 .accent-italic {
   font-style: italic;
   font-weight: 500;
   color: var(--accent);
-}
-
-/* Gradient accent — hero numerals only */
-.accent-gradient {
-  background: linear-gradient(
-    135deg,
-    var(--accent-bright) 0%,
-    var(--accent) 50%,
-    var(--accent-deep) 100%
-  );
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-}
-
-/* Section numeral — large outlined organizational marker */
-.section-numeral {
-  font-family: var(--display);
-  font-weight: 700;
-  font-size: clamp(80px, 12vw, 200px);
-  letter-spacing: -6px;
-  line-height: 0.85;
-  color: transparent;
-  -webkit-text-stroke: 1px var(--border-subtle);
-  font-variant-numeric: tabular-nums;
-  user-select: none;
-  pointer-events: none;
 }
 
 /* ═══ HAIRLINES ═══
@@ -677,28 +550,6 @@ table,
 }
 .hairline-r {
   border-right: 1px solid var(--border-subtle);
-}
-.hairline-l {
-  border-left: 1px solid var(--border-subtle);
-}
-
-.surface-card {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  transition: border-color var(--dur-base) var(--ease-out),
-    background-color var(--dur-base) var(--ease-out);
-}
-.surface-card:hover {
-  border-color: var(--border-hover);
-}
-
-.surface-elevated {
-  background: linear-gradient(
-      180deg,
-      var(--sheen) 0%,
-      transparent 100%
-    ),
-    var(--surface);
 }
 
 .row-interactive {
@@ -1139,54 +990,6 @@ textarea.field-input {
   to {
     opacity: 1;
   }
-}
-
-/* ═══ DEBUG PANEL SLIDERS ═══ */
-.debug-slider {
-  -webkit-appearance: none;
-  appearance: none;
-  background: transparent;
-  width: 100%;
-  cursor: pointer;
-  height: 12px;
-  padding: 0;
-  margin: 0;
-}
-.debug-slider::-webkit-slider-runnable-track {
-  height: 1px;
-  background: var(--border);
-  border: 0;
-}
-.debug-slider::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  width: 10px;
-  height: 10px;
-  background: var(--accent);
-  border: 0;
-  border-radius: 0;
-  margin-top: -4.5px;
-  cursor: grab;
-}
-.debug-slider::-webkit-slider-thumb:active {
-  cursor: grabbing;
-  background: var(--accent-bright);
-}
-.debug-slider:focus-visible::-webkit-slider-thumb {
-  outline: 1px solid var(--accent);
-  outline-offset: 2px;
-}
-.debug-slider::-moz-range-track {
-  height: 1px;
-  background: var(--border);
-  border: 0;
-}
-.debug-slider::-moz-range-thumb {
-  width: 10px;
-  height: 10px;
-  background: var(--accent);
-  border: 0;
-  border-radius: 0;
-  cursor: grab;
 }
 
 /* ═══ REDUCED MOTION ═══ */

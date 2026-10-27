@@ -1,7 +1,7 @@
 "use client";
 
-import { forwardRef, useId } from "react";
-import type { InputHTMLAttributes, ReactNode } from "react";
+import { useId } from "react";
+import type { InputHTMLAttributes, ReactNode, Ref } from "react";
 import { AlertCircle } from "lucide-react";
 
 interface Props extends Omit<InputHTMLAttributes<HTMLInputElement>, "size"> {
@@ -20,6 +20,8 @@ interface Props extends Omit<InputHTMLAttributes<HTMLInputElement>, "size"> {
   compact?: boolean;
   /** Applied to the outer wrapper (grid sizing etc.). */
   className?: string;
+  /** React 19: `ref` is an ordinary prop, forwarded to the <input>. */
+  ref?: Ref<HTMLInputElement>;
 }
 
 /**
@@ -27,21 +29,19 @@ interface Props extends Omit<InputHTMLAttributes<HTMLInputElement>, "size"> {
  * beneath — the one field system every form uses (see the FIELDS block in
  * globals.css). Controlled or uncontrolled is up to the caller.
  */
-export const Input = forwardRef<HTMLInputElement, Props>(function Input(
-  {
-    label,
-    labelNote,
-    error,
-    hint,
-    icon,
-    compact = false,
-    id,
-    className,
-    disabled,
-    ...props
-  },
-  ref
-) {
+export function Input({
+  label,
+  labelNote,
+  error,
+  hint,
+  icon,
+  compact = false,
+  id,
+  className,
+  disabled,
+  ref,
+  ...props
+}: Props) {
   const generatedId = useId();
   const inputId = id ?? generatedId;
   const errorId = error ? `${inputId}-error` : undefined;
@@ -90,4 +90,4 @@ export const Input = forwardRef<HTMLInputElement, Props>(function Input(
       ) : null}
     </div>
   );
-});
+}

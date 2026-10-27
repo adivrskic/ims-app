@@ -101,7 +101,11 @@ async function computeValuation(
     unit_cost: string | null;
     category: { name: string | null } | { name: string | null }[] | null;
   };
-  const [prodRows, { data: movement }, receiptRows] = await Promise.all([
+  // Every read throws on a query error (throwOnError / explicit check) so a
+  // failed page surfaces as a 500 to the export route instead of an empty,
+  // plausible-looking valuation.
+  const [prodRows, { data: movement, error: movementErr }, receiptRows] =
+    await Promise.all([
     fetchAllPaged<P>((from, to) =>
       supabase
         .from("products")
@@ -109,6 +113,7 @@ async function computeValuation(
         .eq("org_id", orgId)
         .order("id", { ascending: true })
         .range(from, to)
+        .throwOnError()
     ),
     supabase.rpc("product_movement_stats", {
       p_org: orgId,
@@ -133,9 +138,12 @@ async function computeValuation(
         .gt("quantity_received", 0)
         .not("received_at", "is", null);
       if (warehouseId) q = q.eq("po.warehouse_id", warehouseId);
-      return q.order("id", { ascending: true }).range(from, to);
+      return q.order("id", { ascending: true }).range(from, to).throwOnError();
     }),
   ]);
+  if (movementErr) {
+    throw new Error(`product_movement_stats failed: ${movementErr.message}`);
+  }
 
   const layersByProduct = new Map<string, CostLayer[]>();
   for (const r of receiptRows) {

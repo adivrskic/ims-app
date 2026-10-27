@@ -6,10 +6,12 @@ import {
   apiForbidden,
   apiMissingScope,
   apiRateLimited,
+  isApiIpRateLimited,
   API_RATE_LIMIT,
 } from "@/lib/apiAuth";
 import { isEntitled } from "@/lib/entitlement";
 import { rateLimit } from "@/lib/rateLimit";
+import { isUuid } from "@/lib/net/validate";
 
 export const dynamic = "force-dynamic";
 
@@ -34,6 +36,7 @@ const ALLOWED_ACTIONS = new Set([
  */
 export async function POST(req: Request) {
   const auth = await authenticateApiKey(req);
+  if (isApiIpRateLimited(auth)) return apiRateLimited(auth.retryAfter);
   if (!auth) return apiUnauthorized();
   if (!isEntitled(auth.entitlement)) return apiTrialEnded(auth.entitlement);
   /* Two gates: the key must carry the scope, AND its issuer must still hold
@@ -67,6 +70,15 @@ export async function POST(req: Request) {
 
   if (!productId) {
     return Response.json({ error: "product_id is required" }, { status: 400 });
+  }
+  if (!isUuid(productId)) {
+    return Response.json({ error: "product_id must be a UUID" }, { status: 400 });
+  }
+  if (warehouseId !== null && !isUuid(warehouseId)) {
+    return Response.json(
+      { error: "warehouse_id must be a UUID" },
+      { status: 400 }
+    );
   }
   if (!ALLOWED_ACTIONS.has(action)) {
     return Response.json({ error: `Unsupported action: ${action}` }, {
@@ -126,7 +138,8 @@ export async function POST(req: Request) {
     .single();
 
   if (error) {
-    return Response.json({ error: error.message }, { status: 500 });
+    console.error("[api/v1/scans] insert failed:", error.message);
+    return Response.json({ error: "Internal error" }, { status: 500 });
   }
 
   return Response.json({ data: { id: scan.id } }, { status: 201 });

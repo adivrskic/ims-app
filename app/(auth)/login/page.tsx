@@ -18,10 +18,7 @@ export default async function LoginPage({
       ? "You were signed out because this device's access was revoked. Sign in again to continue."
       : undefined);
 
-  return (
-    <div className="flex flex-col gap-28">
-      <h1 className="heading-sm">Sign in</h1>
-      <LoginForm next={next ?? "/"} initialError={notice} />
-    </div>
-  );
+  // LoginForm renders the page's one <h1>; a second heading here read as two
+  // page titles to assistive tech.
+  return <LoginForm next={next ?? "/"} initialError={notice} />;
 }

@@ -4,6 +4,10 @@ import { isAuthorizedCronRequest } from "@/lib/cronAuth";
 import { productVelocities } from "@/lib/data/velocity";
 import { daysToStockout } from "@/lib/replenishment";
 import { dispatchEvent } from "@/lib/integrations/dispatch";
+import { fetchAllPaged } from "@/lib/data/paginate";
+
+/** PostgREST `in (...)` lists go in the URL; keep each one short. */
+const IN_CHUNK = 200;
 
 /**
  * Scheduled stockout-alert sweep (§2b).
@@ -77,17 +81,21 @@ async function processOrg(
   admin: ReturnType<typeof createAdminClient>,
   orgId: string
 ): Promise<number> {
-  // Products + their on-hand totals.
-  const { data: products } = await admin
-    .from("products")
-    .select("id, name, locations:locations ( quantity )")
-    .eq("org_id", orgId);
-
-  const rows = (products ?? []) as Array<{
+  // Products + their on-hand totals. Paged: a plain select stops at
+  // PostgREST's ~1000-row cap, so products past it were never checked.
+  type ProductRow = {
     id: string;
     name: string;
     locations: Array<{ quantity: number | null }> | null;
-  }>;
+  };
+  const rows = await fetchAllPaged<ProductRow>((from, to) =>
+    admin
+      .from("products")
+      .select("id, name, locations:locations ( quantity )")
+      .eq("org_id", orgId)
+      .order("id", { ascending: true })
+      .range(from, to)
+  );
   if (rows.length === 0) return 0;
 
   const productIds = rows.map((r) => r.id);
@@ -123,19 +131,24 @@ async function processOrg(
   cooldownSince.setDate(cooldownSince.getDate() - ALERT_COOLDOWN_DAYS);
   const links = atRisk.map((a) => `/inventory/${a.id}`);
 
-  const { data: recent } = await admin
-    .from("notifications")
-    .select("user_id, link")
-    .in("user_id", userIds)
-    .eq("kind", "stock_alert")
-    .in("link", links)
-    .gte("created_at", cooldownSince.toISOString());
-
-  const alreadyAlerted = new Set(
-    ((recent ?? []) as Array<{ user_id: string; link: string | null }>).map(
-      (r) => `${r.user_id}|${r.link}`
-    )
-  );
+  // Chunk the link list: it rides in the query string, and hundreds of
+  // at-risk products would overflow the URL (and the response row cap).
+  const alreadyAlerted = new Set<string>();
+  for (let i = 0; i < links.length; i += IN_CHUNK) {
+    const { data: recent } = await admin
+      .from("notifications")
+      .select("user_id, link")
+      .in("user_id", userIds)
+      .eq("kind", "stock_alert")
+      .in("link", links.slice(i, i + IN_CHUNK))
+      .gte("created_at", cooldownSince.toISOString());
+    for (const r of (recent ?? []) as Array<{
+      user_id: string;
+      link: string | null;
+    }>) {
+      alreadyAlerted.add(`${r.user_id}|${r.link}`);
+    }
+  }
 
   // Build notification rows (one per user per at-risk product, minus dedup).
   type NotificationInsert = {

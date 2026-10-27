@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect } from "react";
 import { X } from "lucide-react";
+import { useDialog } from "@/lib/useDialog";
 import { Inspector } from "./Inspector";
 import type {
   SectionDraft,
@@ -46,16 +46,9 @@ export function MobileInspectorSheet({
   onDeleteSelected,
   onClose,
 }: Props) {
-  // Close on Escape (paired with on-screen X). Keep the document-level
-  // scroll lock loose: the canvas already sets touch-action: none.
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
+  // Focus in, Tab trap, Escape (paired with the on-screen X) and focus
+  // return. No scroll lock: the canvas already sets touch-action: none.
+  const sheetRef = useDialog({ open, onClose, lockScroll: false });
 
   const title = sheetTitle(selection);
 
@@ -82,6 +75,7 @@ export function MobileInspectorSheet({
         role="dialog"
         aria-label="Item inspector"
         aria-modal="false"
+        ref={sheetRef}
       >
         {/* Drag affordance (visual only for now) */}
         <div className="flex items-center justify-center pt-8 pb-2" aria-hidden>

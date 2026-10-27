@@ -1,5 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { SectionTitle } from "@/components/ui/SectionTitle";
+import { LocalTime } from "@/components/ui/LocalTime";
+import { parsePage } from "@/lib/listParams";
 import { Badge } from "@/components/ui/Badge";
 import Link from "next/link";
 import { ChevronLeft, ChevronRight, History } from "lucide-react";
@@ -47,7 +49,7 @@ export default async function AuditLogPage({
   searchParams: Promise<{ page?: string }>;
 }) {
   const { page: pageStr } = await searchParams;
-  const page = Math.max(1, parseInt(pageStr ?? "1", 10) || 1);
+  const page = parsePage(pageStr);
   const offset = (page - 1) * PAGE_SIZE;
 
   const supabase = await createClient();
@@ -110,26 +112,15 @@ export default async function AuditLogPage({
                   : null) ??
                 row.actor_type ??
                 "system";
-              const time = row.created_at ? new Date(row.created_at) : null;
               return (
                 <li
                   key={row.id}
                   className="px-20 py-12 flex items-center gap-14 row-interactive"
                 >
-                  <time
+                  <LocalTime
+                    iso={row.created_at}
                     className="mono-sm text-text-dim tnum w-[110px] shrink-0"
-                    dateTime={row.created_at ?? undefined}
-                  >
-                    {time
-                      ? `${time.toLocaleDateString(undefined, {
-                          month: "short",
-                          day: "numeric",
-                        })} · ${time.toLocaleTimeString(undefined, {
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        })}`
-                      : "—"}
-                  </time>
+                  />
                   <Badge tone={actionTone(row.action)} variant="filled">
                     {row.action}
                   </Badge>

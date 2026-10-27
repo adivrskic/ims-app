@@ -3,7 +3,6 @@
 import { Trash2 } from "lucide-react";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
-import { CornerButton } from "@/components/ui/CornerButton";
 import type { SectionDraft, CategoryOption } from "./types";
 
 const COLORS = [
@@ -145,7 +144,7 @@ export function SectionInspector({
           options={categories.map((c) => ({ value: c.id, label: c.name }))}
         />
         <p className="mono-sm text-text-dim mt-6" style={{ fontSize: 10 }}>
-          Slotting prefers homing this category's products here.
+          Slotting prefers homing this category’s products here.
         </p>
         <div className="mt-10">
           <Input

@@ -1,6 +1,7 @@
 import { SectionTitle } from "@/components/ui/SectionTitle";
 import { Badge } from "@/components/ui/Badge";
-import { CornerButton } from "@/components/ui/CornerButton";
+import { SubmitButton } from "@/components/ui/SubmitButton";
+import { LocalTime } from "@/components/ui/LocalTime";
 import { SecurityClient } from "./SecurityClient";
 import { PasswordChangeForm } from "./PasswordChangeForm";
 import { getCurrentUser } from "@/lib/data/user";
@@ -36,18 +37,6 @@ function deviceLabel(ua: string | null): string {
   return os ? `${browser} · ${os}` : browser;
 }
 
-function timeAgo(iso: string | null): string {
-  if (!iso) return "—";
-  const m = Math.floor((Date.now() - new Date(iso).getTime()) / 60000);
-  if (m < 1) return "just now";
-  if (m < 60) return `${m}m ago`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h ago`;
-  const d = Math.floor(h / 24);
-  if (d < 30) return `${d}d ago`;
-  return new Date(iso).toLocaleDateString();
-}
-
 export default async function SecurityPage() {
   const user = await getCurrentUser();
   const sessions: DeviceSession[] = user
@@ -57,17 +46,22 @@ export default async function SecurityPage() {
   return (
     <div className="flex flex-col gap-40">
       <section aria-labelledby="password-heading">
-        <SectionTitle eyebrow="Credentials" title="Password" />
+        <SectionTitle id="password-heading" eyebrow="Credentials" title="Password" />
         <PasswordChangeForm />
       </section>
 
       <section aria-labelledby="2fa-heading">
-        <SectionTitle eyebrow="Sign-in" title="Two-factor authentication" />
+        <SectionTitle
+          id="2fa-heading"
+          eyebrow="Sign-in"
+          title="Two-factor authentication"
+        />
         <SecurityClient />
       </section>
 
       <section aria-labelledby="sessions-heading">
         <SectionTitle
+          id="sessions-heading"
           eyebrow="Sessions"
           title="Active devices"
           action={
@@ -120,20 +114,24 @@ export default async function SecurityPage() {
                   <div className="flex items-center gap-12 mono-sm text-text-muted">
                     {s.ip && <span>{s.ip}</span>}
                     <span>·</span>
-                    <span>Active {timeAgo(s.lastSeenAt)}</span>
+                    <span>
+                      Active <LocalTime iso={s.lastSeenAt} format="relative" />
+                    </span>
                   </div>
                 </div>
                 {!s.current && (
                   <form action={revokeDeviceSession}>
                     <input type="hidden" name="id" value={s.id} />
-                    <CornerButton
-                      type="submit"
+                    <SubmitButton
                       variant="danger"
                       size="sm"
-                      ariaLabel="Revoke this device"
+                      ariaLabel={`Revoke ${deviceLabel(s.userAgent)}`}
+                      confirm={`Sign out ${deviceLabel(s.userAgent)}${
+                        s.ip ? ` (${s.ip})` : ""
+                      }? That device will have to sign in again.`}
                     >
                       Revoke
-                    </CornerButton>
+                    </SubmitButton>
                   </form>
                 )}
               </li>

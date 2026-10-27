@@ -5,6 +5,7 @@ import {
 } from "@/lib/data/entitlement";
 import { getValuation } from "@/lib/data/valuation";
 import { csvCell } from "@/lib/print/csv";
+import { isUuid } from "@/lib/net/validate";
 
 export const dynamic = "force-dynamic";
 
@@ -15,7 +16,25 @@ export async function GET(req: Request) {
   if (await isTrialExpired(ctx.orgId)) return trialEndedExportResponse();
 
   const facility = new URL(req.url).searchParams.get("facility");
-  const r = await getValuation(ctx.orgId, facility || null);
+  if (facility && facility !== "all" && !isUuid(facility)) {
+    return new Response("facility must be a UUID", { status: 400 });
+  }
+
+  // getValuation already pages every read (lib/data/paginate) and throws on a
+  // failed query — answer 500 rather than a header-only CSV.
+  let r: Awaited<ReturnType<typeof getValuation>>;
+  try {
+    r = await getValuation(
+      ctx.orgId,
+      facility && facility !== "all" ? facility : null
+    );
+  } catch (e) {
+    console.error(
+      "valuation export failed:",
+      e instanceof Error ? e.message : e
+    );
+    return new Response("Export failed", { status: 500 });
+  }
 
   const header = [
     "sku",
@@ -50,6 +69,9 @@ export async function GET(req: Request) {
     headers: {
       "Content-Type": "text/csv; charset=utf-8",
       "Content-Disposition": `attachment; filename="inventory-valuation-${stamp}.csv"`,
+      // Financial figures scoped to a session — never let a shared cache
+      // hand one workspace's valuation to another.
+      "Cache-Control": "no-store",
     },
   });
 }

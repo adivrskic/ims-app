@@ -6,6 +6,14 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { Badge } from "@/components/ui/Badge";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { CornerLink } from "@/components/ui/CornerButton";
+import { LocalTime } from "@/components/ui/LocalTime";
+import { ListPagination } from "@/components/ui/ListPagination";
+import { Th, Td } from "@/components/ui/Table";
+import {
+  parsePage,
+  parsePageSize,
+  PAGE_SIZE_OPTIONS,
+} from "@/lib/listParams";
 import { ArrowLeftRight, ArrowRight, Plus, ChevronRight } from "lucide-react";
 
 export const metadata = { title: "Transfers" };
@@ -38,46 +46,72 @@ const TRANSFER_STATUS: Record<
 function firstOf<T>(v: T | T[] | null | undefined): T | null {
   return Array.isArray(v) ? v[0] ?? null : v ?? null;
 }
-function relTime(iso: string | null): string {
-  if (!iso) return "—";
-  const d = Math.floor((Date.now() - new Date(iso).getTime()) / 86400000);
-  if (d < 1) return "Today";
-  if (d < 7) return `${d}d ago`;
-  return new Date(iso).toLocaleDateString(undefined, {
-    month: "short",
-    day: "numeric",
-  });
-}
+export default async function TransfersPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ page?: string; pageSize?: string }>;
+}) {
+  const { page: rawPage, pageSize: rawPageSize } = await searchParams;
+  const page = parsePage(rawPage);
+  const pageSize = parsePageSize(rawPageSize);
 
-export default async function TransfersPage() {
-  const ctx = await getCurrentOrgContext();
+  const [ctx, scope] = await Promise.all([
+    getCurrentOrgContext(),
+    getActiveScope(),
+  ]);
   if (!ctx) {
     return <PageHeader eyebrow="Flow" title="Transfers" description="No workspace." />;
   }
   const supabase = await createClient();
-  const scope = await getActiveScope();
-
-  let query = supabase
-    .from("orders")
-    .select(
-      `id, order_number, status, created_at,
-       source:warehouses!orders_warehouse_id_fkey ( name ),
-       dest:warehouses!orders_destination_warehouse_id_fkey ( name ),
-       items:order_items ( count )`
-    )
-    .eq("org_id", ctx.orgId)
-    .eq("order_type", "internal_transfer");
 
   // Honour the active facility like every other list. A transfer has two ends,
   // so "at this facility" means either end — scoping on the source alone would
   // hide everything inbound, which is the half you most need to see.
-  if (scope.mode === "single") {
-    query = query.or(
-      `warehouse_id.eq.${scope.id},destination_warehouse_id.eq.${scope.id}`
-    );
-  }
+  const scopeFilter =
+    scope.mode === "single"
+      ? `warehouse_id.eq.${scope.id},destination_warehouse_id.eq.${scope.id}`
+      : null;
 
-  const { data } = await query.order("created_at", { ascending: false });
+  // One page window with an exact total (the list used to stop silently at
+  // PostgREST's 1,000-row cap), plus head counts for the header so the
+  // numbers cover every transfer, not just the visible page.
+  const pageCall = (offset: number) => {
+    let q = supabase
+      .from("orders")
+      .select(
+        `id, order_number, status, created_at,
+         source:warehouses!orders_warehouse_id_fkey ( name ),
+         dest:warehouses!orders_destination_warehouse_id_fkey ( name ),
+         items:order_items ( count )`,
+        { count: "exact" }
+      )
+      .eq("org_id", ctx.orgId)
+      .eq("order_type", "internal_transfer");
+    if (scopeFilter) q = q.or(scopeFilter);
+    return q
+      .order("created_at", { ascending: false })
+      .order("id", { ascending: true }) // stable tiebreak across pages
+      .range(offset, offset + pageSize - 1);
+  };
+  const headCount = () => {
+    let q = supabase
+      .from("orders")
+      .select("id", { count: "exact", head: true })
+      .eq("org_id", ctx.orgId)
+      .eq("order_type", "internal_transfer");
+    if (scopeFilter) q = q.or(scopeFilter);
+    return q;
+  };
+
+  const [
+    { data, count },
+    { count: inTransitRaw },
+    { count: openRaw },
+  ] = await Promise.all([
+    pageCall((page - 1) * pageSize),
+    headCount().eq("status", "out_for_delivery"),
+    headCount().not("status", "in", "(complete,cancelled)"),
+  ]);
 
   type Row = {
     id: string;
@@ -88,13 +122,19 @@ export default async function TransfersPage() {
     dest: { name: string } | { name: string }[] | null;
     items: Array<{ count: number }> | { count: number } | null;
   };
-  const transfers = (data ?? []) as Row[];
-  const inTransit = transfers.filter(
-    (t) => t.status === "out_for_delivery"
-  ).length;
-  const open = transfers.filter(
-    (t) => t.status !== "complete" && t.status !== "cancelled"
-  ).length;
+  const totalCount = count ?? 0;
+  const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
+
+  // If a stale ?page= overshot, re-fetch the last valid page.
+  let transfers = (data ?? []) as Row[];
+  let servedPage = page;
+  if (transfers.length === 0 && totalCount > 0 && page > totalPages) {
+    servedPage = totalPages;
+    const retry = await pageCall((servedPage - 1) * pageSize);
+    transfers = (retry.data ?? []) as Row[];
+  }
+  const inTransit = inTransitRaw ?? 0;
+  const open = openRaw ?? 0;
 
   return (
     <div className="flex flex-col gap-32">
@@ -122,7 +162,7 @@ export default async function TransfersPage() {
         }
       />
 
-      {transfers.length === 0 ? (
+      {totalCount === 0 ? (
         <EmptyState
           title="No transfers yet"
           description="Create a transfer to move stock from one facility to another. It'll show its source, destination, and in-transit status here."
@@ -131,12 +171,16 @@ export default async function TransfersPage() {
       ) : (
         <div className="hairline bg-[var(--surface)] overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full" style={{ borderCollapse: "collapse" }}>
+            <table
+              className="w-full"
+              style={{ borderCollapse: "collapse" }}
+              aria-label="Transfers"
+            >
               <thead>
                 <tr className="hairline-b bg-[var(--surface-2)]">
                   <Th>Transfer</Th>
                   <Th>Route</Th>
-                  <Th className="text-right">Items</Th>
+                  <Th align="right">Items</Th>
                   <Th>Status</Th>
                   <Th>Created</Th>
                   <th aria-hidden style={{ width: 28 }} />
@@ -181,7 +225,7 @@ export default async function TransfersPage() {
                           </span>
                         </span>
                       </Td>
-                      <Td className="text-right">
+                      <Td align="right">
                         <span className="tnum text-text-secondary" style={{ fontFamily: "var(--mono)", fontSize: 12 }}>
                           {items?.count ?? 0}
                         </span>
@@ -195,9 +239,11 @@ export default async function TransfersPage() {
                         </span>
                       </Td>
                       <Td>
-                        <span className="mono-sm text-text-dim">
-                          {relTime(t.created_at)}
-                        </span>
+                        <LocalTime
+                          iso={t.created_at}
+                          format="relative"
+                          className="mono-sm text-text-dim"
+                        />
                       </Td>
                       <Td>
                         <ChevronRight
@@ -212,31 +258,20 @@ export default async function TransfersPage() {
               </tbody>
             </table>
           </div>
+          <ListPagination
+            basePath="/transfers"
+            label="Transfers pagination"
+            page={servedPage}
+            totalPages={totalPages}
+            pageSize={pageSize}
+            totalCount={totalCount}
+            shown={transfers.length}
+            pageSizeOptions={PAGE_SIZE_OPTIONS}
+            baseParams={{ pageSize: String(pageSize) }}
+          />
         </div>
       )}
     </div>
   );
 }
 
-function Th({
-  children,
-  className = "",
-}: {
-  children?: React.ReactNode;
-  className?: string;
-}) {
-  return (
-    <th className={`label-text text-left px-14 py-12 font-normal ${className}`}>
-      {children}
-    </th>
-  );
-}
-function Td({
-  children,
-  className = "",
-}: {
-  children?: React.ReactNode;
-  className?: string;
-}) {
-  return <td className={`px-14 py-12 ${className}`}>{children}</td>;
-}

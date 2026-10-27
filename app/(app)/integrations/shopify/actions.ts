@@ -49,6 +49,17 @@ export async function updateDefaultFacility(
     .maybeSingle();
   if (!integration) return { error: "Shopify isn't connected" };
 
+  // The id comes straight from the client. Confirm it names one of THIS
+  // workspace's facilities before it becomes the routing target for every
+  // incoming Shopify order — the admin client below bypasses RLS.
+  const { data: warehouse } = await admin
+    .from("warehouses")
+    .select("id")
+    .eq("id", facilityId)
+    .eq("org_id", ctx.orgId)
+    .maybeSingle();
+  if (!warehouse) return { error: "That facility is not in this workspace" };
+
   const config = integration.config as Record<string, unknown>;
   await admin
     .from("integrations")

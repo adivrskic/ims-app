@@ -21,6 +21,7 @@ import {
   type RestoreSnapshotResult,
 } from "./actions";
 import type { SectionDraft, LayoutElementDraft } from "./types";
+import { useDialog } from "@/lib/useDialog";
 
 interface Props {
   warehouseId: string;
@@ -69,14 +70,8 @@ export function SnapshotsModal({
     };
   }, [warehouseId]);
 
-  // Escape closes
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  // Focus in, Tab trap, Escape, focus return, scroll lock.
+  const dialogRef = useDialog({ open: true, onClose });
 
   const handleCreate = async () => {
     setSaving(true);
@@ -160,6 +155,7 @@ export function SnapshotsModal({
         role="dialog"
         aria-label="Snapshots"
         aria-modal="true"
+        ref={dialogRef}
       >
         {/* Header */}
         <header className="hairline-b px-18 py-14 flex items-center gap-10 shrink-0">

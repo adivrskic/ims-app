@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { X } from "lucide-react";
+import { useDialog } from "@/lib/useDialog";
 
 interface Shortcut {
   keys: string[];
@@ -46,10 +47,8 @@ export function KeyboardShortcuts() {
         tag === "select" ||
         target?.isContentEditable;
 
-      if (e.key === "Escape" && open) {
-        setOpen(false);
-        return;
-      }
+      // Escape is handled by useDialog (it also restores focus).
+      if (e.key === "Escape") return;
 
       if (isEditable) return;
 
@@ -69,12 +68,17 @@ export function KeyboardShortcuts() {
       window.removeEventListener("keydown", onKey);
       window.removeEventListener("open-keyboard-shortcuts", onCustom);
     };
-  }, [open]);
+  }, []);
+
+  // Focus in, Tab trap, Escape, focus return, scroll lock.
+  const onClose = useCallback(() => setOpen(false), []);
+  const dialogRef = useDialog({ open, onClose });
 
   if (!open) return null;
 
   return (
     <div
+      ref={dialogRef}
       role="dialog"
       aria-modal="true"
       aria-labelledby="keyboard-shortcuts-title"

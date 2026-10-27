@@ -3,6 +3,9 @@ import { createClient } from "@/lib/supabase/server";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { CornerButton } from "@/components/ui/CornerButton";
+import { LocalTime } from "@/components/ui/LocalTime";
+import { getCurrentUser } from "@/lib/data/user";
+import { parsePage } from "@/lib/listParams";
 import { Bell, Check, ChevronLeft, ChevronRight, Mail } from "lucide-react";
 import { NotificationsRealtime } from "@/components/realtime/PageRealtime";
 import { markAllNotificationsRead, setDigestEmailEnabled } from "../actions";
@@ -60,19 +63,6 @@ const ROW_SELECT = "id, kind, title, body, link, read_at, created_at";
 
 const PAGE_SIZE = 25;
 
-function timeAgo(iso: string | null): string {
-  if (!iso) return "";
-  const ms = Date.now() - new Date(iso).getTime();
-  const m = Math.floor(ms / 60000);
-  if (m < 1) return "just now";
-  if (m < 60) return `${m} min ago`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h} hr ago`;
-  const d = Math.floor(h / 24);
-  if (d < 7) return `${d} day${d === 1 ? "" : "s"} ago`;
-  return new Date(iso).toLocaleDateString();
-}
-
 export default async function NotificationsPage({
   searchParams,
 }: {
@@ -80,13 +70,11 @@ export default async function NotificationsPage({
 }) {
   const { filter: rawFilter, page: rawPage } = await searchParams;
   const activeFilter = FILTERS.find((f) => f.key === rawFilter) ?? FILTERS[0];
-  const page = Math.max(1, parseInt(rawPage ?? "1", 10) || 1);
+  const page = parsePage(rawPage);
   const offset = (page - 1) * PAGE_SIZE;
 
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = await getCurrentUser();
   if (!user) return null;
 
   const { data: profile } = await supabase
@@ -350,13 +338,12 @@ function NotificationRow({
           >
             {n.title}
           </p>
-          <time
-            className="mono-sm text-text-dim shrink-0"
-            dateTime={n.created_at ?? undefined}
-            style={{ fontSize: 11 }}
-          >
-            {timeAgo(n.created_at)}
-          </time>
+          <LocalTime
+            iso={n.created_at}
+            format="relative"
+            fallback=""
+            className="mono-sm text-text-dim shrink-0 text-[11px]"
+          />
         </div>
         {n.body && (
           <p

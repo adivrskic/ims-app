@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Check, Printer, Loader2, AlertTriangle } from "lucide-react";
 import { CornerButton } from "@/components/ui/CornerButton";
 import { usePrinter } from "./PrinterProvider";
@@ -39,6 +39,15 @@ export function PrintLabelButton({
   const { supported, device, printing, connect, print, error } = usePrinter();
   const [justPrinted, setJustPrinted] = useState(false);
   const [localErr, setLocalErr] = useState<string | null>(null);
+  // The "Printed" flash timer — cleared on unmount so it never sets state
+  // on a button that navigated away.
+  const resetRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (resetRef.current) clearTimeout(resetRef.current);
+    },
+    []
+  );
 
   if (!supported) {
     return (
@@ -72,7 +81,8 @@ export function PrintLabelButton({
     try {
       await print(zpl);
       setJustPrinted(true);
-      setTimeout(() => setJustPrinted(false), 1800);
+      if (resetRef.current) clearTimeout(resetRef.current);
+      resetRef.current = setTimeout(() => setJustPrinted(false), 1800);
     } catch (err) {
       setLocalErr(err instanceof Error ? err.message : "Print failed");
     }

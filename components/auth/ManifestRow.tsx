@@ -6,6 +6,12 @@ interface Props {
   number: string;
   /** Uppercase mono label above the input. Optional for action rows. */
   label?: string;
+  /**
+   * The id of the input this row labels. When given, the label renders as a
+   * real `<label htmlFor>` so screen readers announce it and clicking it
+   * focuses the field; pass the same value as `id` on the input.
+   */
+  inputId?: string;
   /** Content shown on the right of the label row (e.g., a "Reset →" link). */
   rightSlot?: ReactNode;
   /**
@@ -29,16 +35,26 @@ interface Props {
 export function ManifestRow({
   number,
   label,
+  inputId,
   rightSlot,
   children,
 }: Props) {
   return (
     <div className={styles.row}>
-      <span className={styles.number}>{number} —</span>
+      <span className={styles.number} aria-hidden>
+        {number} —
+      </span>
       <div className={styles.content}>
         {(label || rightSlot) && (
           <div className={styles.labelRow}>
-            {label && <span className={styles.label}>{label}</span>}
+            {label &&
+              (inputId ? (
+                <label htmlFor={inputId} className={styles.label}>
+                  {label}
+                </label>
+              ) : (
+                <span className={styles.label}>{label}</span>
+              ))}
             {rightSlot}
           </div>
         )}

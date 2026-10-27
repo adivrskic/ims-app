@@ -4,6 +4,7 @@ import { getActiveScope, scopeDescription } from "@/lib/facilityScope";
 import { getForecastWorklist } from "@/lib/data/forecast";
 import { applyForecastSettings } from "./actions";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { Th, Td } from "@/components/ui/Table";
 import { KpiCard } from "@/components/ui/KpiCard";
 import { SectionTitle } from "@/components/ui/SectionTitle";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -51,6 +52,9 @@ export default async function ForecastPage() {
       ) : (
         <>
           <section aria-labelledby="kpis">
+            <h2 id="kpis" className="sr-only">
+              Forecast summary
+            </h2>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-16">
               <KpiCard label="Suggest raising" value={raises.toLocaleString()} />
               <KpiCard label="Suggest lowering" value={lowers.toLocaleString()} />
@@ -60,6 +64,7 @@ export default async function ForecastPage() {
 
           <section aria-labelledby="list">
             <SectionTitle
+              id="list"
               numeral="01"
               eyebrow="Planning"
               title="Reorder points to tune"
@@ -74,16 +79,20 @@ export default async function ForecastPage() {
             />
             <div className="hairline bg-[var(--surface)] overflow-hidden">
               <div className="overflow-x-auto">
-                <table className="w-full" style={{ borderCollapse: "collapse" }}>
+                <table
+                  className="w-full"
+                  style={{ borderCollapse: "collapse" }}
+                  aria-label="Forecast suggestions by product"
+                >
                   <thead>
                     <tr className="hairline-b bg-[var(--surface-2)]">
                       <Th>Product</Th>
-                      <Th className="text-right">Demand/day</Th>
-                      <Th className="text-center">Trend</Th>
-                      <Th className="text-right">Current ROP</Th>
-                      <Th className="text-right">Suggested</Th>
-                      <Th className="text-right">Safety</Th>
-                      <Th className="text-right">Apply</Th>
+                      <Th align="right">Demand/day</Th>
+                      <Th align="center">Trend</Th>
+                      <Th align="right">Current ROP</Th>
+                      <Th align="right">Suggested</Th>
+                      <Th align="right">Safety</Th>
+                      <Th align="right">Apply</Th>
                     </tr>
                   </thead>
                   <tbody>
@@ -104,16 +113,16 @@ export default async function ForecastPage() {
                             </span>
                           )}
                         </Td>
-                        <Td className="text-right">
+                        <Td align="right">
                           <span className="mono-sm tnum text-text-secondary">{r.avgDaily.toFixed(2)}</span>
                         </Td>
-                        <Td className="text-center">
+                        <Td align="center">
                           <TrendIcon slope={r.trendPerDay} />
                         </Td>
-                        <Td className="text-right">
+                        <Td align="right">
                           <span className="mono-sm tnum text-text-dim">{r.currentReorderPoint}</span>
                         </Td>
-                        <Td className="text-right">
+                        <Td align="right">
                           <span
                             className={`mono-body tnum ${
                               r.reorderPointDelta > 0 ? "text-[var(--warning)]" : "text-[var(--info)]"
@@ -125,12 +134,12 @@ export default async function ForecastPage() {
                             </span>
                           </span>
                         </Td>
-                        <Td className="text-right">
+                        <Td align="right">
                           <span className="mono-sm tnum text-text-secondary">
                             {r.currentSafetyStock} → {r.suggestedSafetyStock}
                           </span>
                         </Td>
-                        <Td className="text-right">
+                        <Td align="right">
                           {/* Applying writes products.reorder_point — same gate
                               as the action and the RLS policy behind it. */}
                           {ctx.can("inventory.manage") ? (
@@ -163,25 +172,4 @@ function TrendIcon({ slope }: { slope: number }) {
   if (slope < -0.02)
     return <TrendingDown size={13} strokeWidth={1.5} className="inline text-[var(--info)]" />;
   return <Minus size={13} strokeWidth={1.5} className="inline text-text-dim" />;
-}
-
-function Th({
-  children,
-  className = "",
-}: {
-  children?: React.ReactNode;
-  className?: string;
-}) {
-  return (
-    <th className={`label-text text-left px-14 py-12 font-normal ${className}`}>{children}</th>
-  );
-}
-function Td({
-  children,
-  className = "",
-}: {
-  children?: React.ReactNode;
-  className?: string;
-}) {
-  return <td className={`px-14 py-12 ${className}`}>{children}</td>;
 }

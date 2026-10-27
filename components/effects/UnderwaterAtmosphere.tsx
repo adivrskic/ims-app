@@ -1,7 +1,6 @@
-"use client";
-
 /**
  * Underwater atmosphere — depth gradient, surface halo, volumetric god rays.
+ * Static SVG (SMIL animations only) — no hooks, so it needs no "use client".
  *
  * Dark mode only. Light mode is a flat paper sheet across the whole product,
  * so globals-underwater.css hides `.ua-atmosphere` there rather than tinting

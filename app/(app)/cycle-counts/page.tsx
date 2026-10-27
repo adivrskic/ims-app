@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { Th, Td } from "@/components/ui/Table";
 import { KpiCard } from "@/components/ui/KpiCard";
 import { Badge } from "@/components/ui/Badge";
 import { SectionTitle } from "@/components/ui/SectionTitle";
@@ -191,7 +192,7 @@ export default async function CycleCountsPage({
       )}
 
       <section aria-labelledby="new-count">
-        <SectionTitle numeral="01" eyebrow="Record" title="New count" />
+        <SectionTitle id="new-count" numeral="01" eyebrow="Record" title="New count" />
         <NewCountForm
           products={products}
           locations={locations}
@@ -201,7 +202,7 @@ export default async function CycleCountsPage({
       </section>
 
       <section aria-labelledby="kpis">
-        <SectionTitle numeral="02" eyebrow="Health" title="Overall" />
+        <SectionTitle id="kpis" numeral="02" eyebrow="Health" title="Overall" />
         <div className="grid grid-cols-1 md:grid-cols-3 gap-16">
           <KpiCard
             label="Counts on record"
@@ -251,6 +252,7 @@ export default async function CycleCountsPage({
 
       <section aria-labelledby="history">
         <SectionTitle
+          id="history"
           numeral="03"
           eyebrow="History"
           title={
@@ -315,7 +317,11 @@ export default async function CycleCountsPage({
           />
         ) : (
           <div className="hairline bg-[var(--surface)] overflow-hidden">
-            <table className="w-full" style={{ borderCollapse: "collapse" }}>
+            <table
+              className="w-full"
+              style={{ borderCollapse: "collapse" }}
+              aria-label="Cycle count history"
+            >
               <thead>
                 <tr className="hairline-b bg-[var(--surface-2)]">
                   <Th>When</Th>
@@ -326,7 +332,7 @@ export default async function CycleCountsPage({
                   <Th align="right">Variance</Th>
                   <Th>Status</Th>
                   <Th>By</Th>
-                  <Th align="right" srOnly>
+                  <Th align="right" className="sr-only">
                     Open
                   </Th>
                 </tr>
@@ -488,44 +494,5 @@ export default async function CycleCountsPage({
         )}
       </section>
     </div>
-  );
-}
-
-function Th({
-  children,
-  align = "left",
-  srOnly,
-}: {
-  children: React.ReactNode;
-  align?: "left" | "right";
-  srOnly?: boolean;
-}) {
-  return (
-    <th
-      scope="col"
-      className={`px-16 py-10 label-text text-text-muted ${
-        align === "right" ? "text-right" : "text-left"
-      } ${srOnly ? "sr-only" : ""}`}
-    >
-      {children}
-    </th>
-  );
-}
-
-function Td({
-  children,
-  align = "left",
-}: {
-  children: React.ReactNode;
-  align?: "left" | "right";
-}) {
-  return (
-    <td
-      className={`px-16 py-12 ${
-        align === "right" ? "text-right" : "text-left"
-      }`}
-    >
-      {children}
-    </td>
   );
 }

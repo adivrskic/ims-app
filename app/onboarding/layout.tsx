@@ -3,7 +3,7 @@ import { LogoWordmark } from "@/components/ui/LogoWordmark";
 import { signOut } from "@/app/(auth)/actions";
 import { ThemeToggle } from "@/components/nav/ThemeToggle";
 
-export const metadata = { title: "Set up workspace · Nautilus" };
+export const metadata = { title: "Set up workspace" };
 
 export default function OnboardingLayout({
   children,

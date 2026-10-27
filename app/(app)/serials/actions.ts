@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { getActionContext } from "@/lib/data/actionContext";
 import type { SerialStatus } from "@/types/db";
+import { assertOrgOwns } from "@/lib/data/assertOrgOwns";
 
 const VALID_STATUS: SerialStatus[] = [
   "in_stock",
@@ -55,6 +56,14 @@ export async function registerSerials(
     .eq("org_id", ctx.orgId)
     .maybeSingle();
   if (!product) return { error: "Product not found in this workspace" };
+
+  // Optional facility — when given, it must be one of this workspace's.
+  if (
+    warehouseId &&
+    !(await assertOrgOwns(ctx.supabase, "warehouses", warehouseId, ctx.orgId))
+  ) {
+    return { error: "That facility is not in this workspace" };
+  }
 
   // Skip serials already registered for this product.
   const { data: existing } = await ctx.supabase

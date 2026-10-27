@@ -8,6 +8,7 @@ import { DeleteReportButton } from "./DeleteReportButton";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { CornerLink } from "@/components/ui/CornerButton";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { Th, Td } from "@/components/ui/Table";
 import { Download, Table2 } from "lucide-react";
 
 export const metadata = { title: "Report" };
@@ -20,10 +21,12 @@ export default async function ReportRunPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const ctx = await getCurrentOrgContext();
+  const [ctx, supabase, scope] = await Promise.all([
+    getCurrentOrgContext(),
+    createClient(),
+    getActiveScope(),
+  ]);
   if (!ctx) notFound();
-  const supabase = await createClient();
-  const scope = await getActiveScope();
   const warehouseId = scope.mode === "single" ? scope.id : null;
 
   const { data: report } = await supabase
@@ -86,18 +89,17 @@ export default async function ReportRunPage({
       ) : (
         <div className="hairline bg-[var(--surface)] overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full" style={{ borderCollapse: "collapse" }}>
+            <table
+              className="w-full"
+              style={{ borderCollapse: "collapse" }}
+              aria-label={`${r.name} rows`}
+            >
               <thead>
                 <tr className="hairline-b bg-[var(--surface-2)]">
                   {result.columns.map((c) => (
-                    <th
-                      key={c.key}
-                      className={`label-text px-14 py-12 font-normal ${
-                        c.numeric ? "text-right" : "text-left"
-                      }`}
-                    >
+                    <Th key={c.key} align={c.numeric ? "right" : "left"}>
                       {c.label}
-                    </th>
+                    </Th>
                   ))}
                 </tr>
               </thead>
@@ -105,14 +107,15 @@ export default async function ReportRunPage({
                 {result.rows.map((row, i) => (
                   <tr key={i} className="hairline-b last:border-b-0">
                     {result.columns.map((c) => (
-                      <td
+                      <Td
                         key={c.key}
-                        className={`px-14 py-10 ${
-                          c.numeric ? "text-right mono-sm tnum" : "mono-sm"
+                        align={c.numeric ? "right" : "left"}
+                        className={`${
+                          c.numeric ? "mono-sm tnum" : "mono-sm"
                         } text-text-secondary`}
                       >
                         {formatCell(row[c.key])}
-                      </td>
+                      </Td>
                     ))}
                   </tr>
                 ))}

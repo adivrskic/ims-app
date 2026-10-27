@@ -38,7 +38,7 @@ export default async function ReportsPage() {
       />
 
       <section aria-labelledby="saved">
-        <SectionTitle numeral="01" eyebrow="Library" title="Saved reports" />
+        <SectionTitle id="saved" numeral="01" eyebrow="Library" title="Saved reports" />
         {reports.length === 0 ? (
           <EmptyState
             title="No reports yet"
@@ -77,7 +77,7 @@ export default async function ReportsPage() {
       </section>
 
       <section aria-labelledby="new">
-        <SectionTitle numeral="02" eyebrow="Build" title="New report" />
+        <SectionTitle id="new" numeral="02" eyebrow="Build" title="New report" />
         <ReportBuilder />
       </section>
     </div>

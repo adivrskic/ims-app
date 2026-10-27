@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, useTransition, useEffect, useRef } from "react";
 import { ChipGroup } from "@/components/ui/ChipGroup";
 import { CornerButton } from "@/components/ui/CornerButton";
 import { FormSection } from "@/components/ui/FormSection";
@@ -27,6 +27,14 @@ export function WorkModulesForm({ initialActivities, initialPriorities }: Props)
   const [activities, setActivities] = useState<string[]>(initialActivities);
   const [priorities, setPriorities] = useState<string[]>(initialPriorities);
   const [saved, setSaved] = useState(false);
+  // Timer id kept in a ref so an unmount mid-countdown cannot set
+  // state on a gone component.
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    return () => {
+      if (timer.current) clearTimeout(timer.current);
+    };
+  }, []);
   const [pending, startTransition] = useTransition();
 
   return (
@@ -35,7 +43,7 @@ export function WorkModulesForm({ initialActivities, initialPriorities }: Props)
         startTransition(async () => {
           await updateWorkModules(fd);
           setSaved(true);
-          setTimeout(() => setSaved(false), 2500);
+          timer.current = setTimeout(() => setSaved(false), 2500);
         })
       }
       className="hairline bg-[var(--surface)] p-16 flex flex-col gap-16"

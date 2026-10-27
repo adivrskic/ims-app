@@ -1,7 +1,7 @@
 "use client";
 
 import { usePathname, useSearchParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { X } from "lucide-react";
 import Link from "next/link";
 
@@ -14,7 +14,6 @@ import Link from "next/link";
 export function KioskExit() {
   const pathname = usePathname();
   const params = useSearchParams();
-  const [, force] = useState(0);
 
   const exitHref = (() => {
     const next = new URLSearchParams(params);
@@ -26,7 +25,6 @@ export function KioskExit() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
-        force((n) => n + 1);
         window.location.href = exitHref;
       }
     };

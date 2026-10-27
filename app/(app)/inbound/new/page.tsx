@@ -5,6 +5,14 @@ import { NewAsnForm } from "./NewAsnForm";
 
 export const metadata = { title: "New ASN" };
 
+/**
+ * PostgREST silently caps a select at 1,000 rows, so a workspace with more
+ * products than that used to get a picker missing the tail of the catalogue
+ * with no warning. The cap is now explicit and surfaced.
+ * TODO: async search picker.
+ */
+const PICKER_CAP = 1000;
+
 export default async function NewAsnPage() {
   const ctx = await getCurrentOrgContext();
   if (!ctx) return <PageHeader eyebrow="Inbound" title="New ASN" description="No workspace." />;
@@ -28,8 +36,10 @@ export default async function NewAsnPage() {
         .from("products")
         .select("id, name")
         .eq("org_id", ctx.orgId)
-        .order("name"),
+        .order("name")
+        .limit(PICKER_CAP),
     ]);
+  const productList = (products ?? []) as Array<{ id: string; name: string }>;
 
   return (
     <div className="flex flex-col gap-24 max-w-[760px]">
@@ -43,8 +53,14 @@ export default async function NewAsnPage() {
       <NewAsnForm
         suppliers={(suppliers ?? []) as Array<{ id: string; name: string }>}
         warehouses={(warehouses ?? []) as Array<{ id: string; name: string }>}
-        products={(products ?? []) as Array<{ id: string; name: string }>}
+        products={productList}
       />
+      {productList.length >= PICKER_CAP && (
+        <p className="mono-sm text-text-muted" role="status">
+          Showing the first {PICKER_CAP.toLocaleString()} products by name —
+          search in Inventory to find the rest.
+        </p>
+      )}
     </div>
   );
 }

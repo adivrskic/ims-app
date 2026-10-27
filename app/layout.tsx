@@ -29,6 +29,9 @@ export const metadata: Metadata = {
     template: "%s · Nautilus",
   },
   description: "Warehouse operations dashboard.",
+  // Every page on this host is sign-in or behind it; nautilusinventory.com
+  // is the indexable site. Paired with app/robots.ts.
+  robots: { index: false, follow: false },
 };
 
 // NOTE: no `themeColor` here. The theme is chosen by the user and stored in

@@ -97,21 +97,26 @@ async function runMovements(
   orgId: string,
   opts: RunOpts
 ): Promise<Row[]> {
-  let q = supabase
-    .from("scan_history")
-    .select(
-      "scanned_at, action, quantity, reason_code, notes, product:products ( name )"
-    )
-    .eq("org_id", orgId)
-    .order("scanned_at", { ascending: false })
-    .limit(opts.limit ?? 1000);
-  if (opts.warehouseId) q = q.eq("warehouse_id", opts.warehouseId);
-  if (opts.filters.action) q = q.eq("action", opts.filters.action);
-  if (opts.filters.since) q = q.gte("scanned_at", `${opts.filters.since}T00:00:00Z`);
-  if (opts.filters.until) q = q.lte("scanned_at", `${opts.filters.until}T23:59:59Z`);
-  const { data } = await q;
+  // Paged up to the caller's limit: a single .limit(100000) still stops at
+  // PostgREST's ~1000-row cap, which quietly truncated the CSV export. Errors
+  // throw (throwOnError) so the export answers 500 instead of an empty file.
+  const data = await fetchAllPaged<Record<string, unknown>>((from, to) => {
+    let q = supabase
+      .from("scan_history")
+      .select(
+        "scanned_at, action, quantity, reason_code, notes, product:products ( name )"
+      )
+      .eq("org_id", orgId)
+      .order("scanned_at", { ascending: false })
+      .order("id", { ascending: true });
+    if (opts.warehouseId) q = q.eq("warehouse_id", opts.warehouseId);
+    if (opts.filters.action) q = q.eq("action", opts.filters.action);
+    if (opts.filters.since) q = q.gte("scanned_at", `${opts.filters.since}T00:00:00Z`);
+    if (opts.filters.until) q = q.lte("scanned_at", `${opts.filters.until}T23:59:59Z`);
+    return q.range(from, to).throwOnError();
+  }, opts.limit ?? 1000);
 
-  return ((data ?? []) as Array<Record<string, unknown>>).map((r) => {
+  return data.map((r) => {
     const product = oneOf(r.product) as { name: string | null } | null;
     return {
       scanned_at: r.scanned_at
@@ -131,20 +136,21 @@ async function runOrders(
   orgId: string,
   opts: RunOpts
 ): Promise<Row[]> {
-  let q = supabase
-    .from("orders")
-    .select(
-      "id, order_number, order_type, status, customer_name, delivery_date"
-    )
-    .eq("org_id", orgId)
-    .order("created_at", { ascending: false })
-    .limit(opts.limit ?? 1000);
-  if (opts.warehouseId) q = q.eq("warehouse_id", opts.warehouseId);
-  if (opts.filters.status) q = q.eq("status", opts.filters.status);
-  if (opts.filters.order_type) q = q.eq("order_type", opts.filters.order_type);
-  const { data: orders } = await q;
-
-  const orderList = (orders ?? []) as Array<Record<string, unknown>>;
+  // Paged like runMovements — see the note there.
+  const orderList = await fetchAllPaged<Record<string, unknown>>((from, to) => {
+    let q = supabase
+      .from("orders")
+      .select(
+        "id, order_number, order_type, status, customer_name, delivery_date"
+      )
+      .eq("org_id", orgId)
+      .order("created_at", { ascending: false })
+      .order("id", { ascending: true });
+    if (opts.warehouseId) q = q.eq("warehouse_id", opts.warehouseId);
+    if (opts.filters.status) q = q.eq("status", opts.filters.status);
+    if (opts.filters.order_type) q = q.eq("order_type", opts.filters.order_type);
+    return q.range(from, to).throwOnError();
+  }, opts.limit ?? 1000);
   if (orderList.length === 0) return [];
 
   // Paginate: the ORDER rows are limited, but their line items are not — an

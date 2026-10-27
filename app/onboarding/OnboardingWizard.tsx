@@ -145,6 +145,7 @@ export function OnboardingWizard({
   const router = useRouter();
   const formRef = useRef<HTMLFormElement>(null);
   const errorRef = useRef<HTMLParagraphElement>(null);
+  const headingRef = useRef<HTMLHeadingElement>(null);
 
   const [state, formAction, pending] = useActionState<
     WorkspaceCreateState | undefined,
@@ -213,6 +214,23 @@ export function OnboardingWizard({
       errorRef.current?.scrollIntoView({ block: "center" });
     }
   }, [state?.error]);
+
+  // Step change → move focus to the new step's heading. The steps are
+  // `hidden` panels in one form, so without this a keyboard user who pressed
+  // Continue was left focused on a button that just disappeared, and a screen
+  // reader announced nothing. Skipped on first mount (and on the draft
+  // restore that follows it) so the page doesn't steal focus on load.
+  const focusedStepRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (!restored) return;
+    if (focusedStepRef.current === null) {
+      focusedStepRef.current = d.step;
+      return;
+    }
+    if (focusedStepRef.current === d.step) return;
+    focusedStepRef.current = d.step;
+    headingRef.current?.focus({ preventScroll: false });
+  }, [d.step, restored]);
 
   // ── Derived ─────────────────────────────────────────────────────────────
   const industryDef = getIndustry(d.industry || null);
@@ -336,7 +354,13 @@ export function OnboardingWizard({
             ? `— Welcome, ${firstName}`
             : "— New workspace"}
         </span>
+        {/* tabIndex -1 + ref: the heading is the focus target when the step
+            changes (see the effect above), so keyboard and screen-reader
+            users land on the new step's title instead of wherever focus was
+            left in the previous step's (now hidden) fields. */}
         <h1
+          ref={headingRef}
+          tabIndex={-1}
           style={{
             fontFamily: "var(--display)",
             fontSize: 34,
@@ -345,6 +369,7 @@ export function OnboardingWizard({
             letterSpacing: "-0.5px",
             margin: 0,
             color: "var(--text)",
+            outline: "none",
           }}
         >
           {title.pre}

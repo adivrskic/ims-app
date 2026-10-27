@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState, useEffect } from "react";
+import { useMemo, useState, useEffect, useSyncExternalStore } from "react";
 import { useThemeMode } from "@/lib/useThemeMode";
 import { Canvas, useThree, type ThreeEvent } from "@react-three/fiber";
 import { OrbitControls, Text, Billboard, Grid } from "@react-three/drei";
@@ -63,6 +63,34 @@ const SCENE = {
 /** SVG-positive-CW degrees → Three.js Y-axis radians (right-hand-rule). */
 const ry = (deg: number) => -((deg || 0) * Math.PI) / 180;
 
+const REDUCED_MOTION = "(prefers-reduced-motion: reduce)";
+const subscribeReducedMotion = (cb: () => void) => {
+  const mq = window.matchMedia(REDUCED_MOTION);
+  mq.addEventListener("change", cb);
+  return () => mq.removeEventListener("change", cb);
+};
+/** True when the OS asks for reduced motion (false on the server). */
+function useReducedMotion(): boolean {
+  return useSyncExternalStore(
+    subscribeReducedMotion,
+    () => window.matchMedia(REDUCED_MOTION).matches,
+    () => false
+  );
+}
+
+/**
+ * Keeps the GL clear colour in step with the theme. `onCreated` only runs
+ * once, so a light/dark switch while the viewer was open used to leave the
+ * old background behind the scene.
+ */
+function ClearColor({ color }: { color: string }) {
+  const { gl } = useThree();
+  useEffect(() => {
+    gl.setClearColor(new THREE.Color(color));
+  }, [gl, color]);
+  return null;
+}
+
 interface Props {
   canvasWidth: number;
   canvasHeight: number;
@@ -70,6 +98,8 @@ interface Props {
   sections: ViewerSection[];
   elements: ViewerElement[];
   onSectionClick: (id: string) => void;
+  /** Hover on a section (used to prefetch its detail route). */
+  onSectionHover?: (id: string) => void;
 }
 
 export function FacilityViewer3D({
@@ -79,8 +109,10 @@ export function FacilityViewer3D({
   sections,
   elements,
   onSectionClick,
+  onSectionHover,
 }: Props) {
   const c = SCENE[useThemeMode()];
+  const reduceMotion = useReducedMotion();
   // Frame the camera around the canvas center. Distance is derived from the
   // canvas diagonal so small facilities don't get a wide-shot vibe.
   const center: [number, number, number] = useMemo(
@@ -106,10 +138,8 @@ export function FacilityViewer3D({
         shadows
         gl={{ antialias: true, alpha: false }}
         camera={{ position: cameraPosition, fov: 42, near: 1, far: diag * 8 }}
-        onCreated={({ gl }) => {
-          gl.setClearColor(new THREE.Color(c.clear));
-        }}
       >
+        <ClearColor color={c.clear} />
         {/* Lights — warm key from above-right, cool fill, ambient lift. */}
         <ambientLight intensity={0.55} />
         <directionalLight
@@ -164,7 +194,12 @@ export function FacilityViewer3D({
 
         {/* Sections */}
         {sections.map((s) => (
-          <SectionMesh key={s.id} s={s} onClick={() => onSectionClick(s.id)} />
+          <SectionMesh
+            key={s.id}
+            s={s}
+            onClick={() => onSectionClick(s.id)}
+            onHover={() => onSectionHover?.(s.id)}
+          />
         ))}
 
         {/* Foreground elements (door / note) — drawn over sections. */}
@@ -177,7 +212,7 @@ export function FacilityViewer3D({
         <OrbitControls
           target={center}
           makeDefault
-          enableDamping
+          enableDamping={!reduceMotion}
           dampingFactor={0.08}
           maxPolarAngle={Math.PI / 2 - 0.05}
           minDistance={diag * 0.15}
@@ -273,6 +308,7 @@ function FootprintOutline({
     g.setAttribute("position", new THREE.BufferAttribute(pts, 3));
     return g;
   }, [width, height]);
+  useEffect(() => () => geom.dispose(), [geom]);
 
   return (
     <line>
@@ -287,9 +323,11 @@ function FootprintOutline({
 function SectionMesh({
   s,
   onClick,
+  onHover,
 }: {
   s: ViewerSection;
   onClick: () => void;
+  onHover?: () => void;
 }) {
   const c = SCENE[useThemeMode()];
   const [hover, setHover] = useState(false);
@@ -307,11 +345,21 @@ function SectionMesh({
       ),
     [s.floor_width, height, s.floor_height]
   );
+  useEffect(() => () => edges.dispose(), [edges]);
+  // If the viewer unmounts while a section is hovered (route change on
+  // click), the pointer cursor would otherwise stick on the next page.
+  useEffect(
+    () => () => {
+      document.body.style.cursor = "";
+    },
+    []
+  );
 
   const handleOver = (e: ThreeEvent<PointerEvent>) => {
     e.stopPropagation();
     setHover(true);
     document.body.style.cursor = "pointer";
+    onHover?.();
   };
   const handleOut = () => {
     setHover(false);
@@ -419,20 +467,46 @@ function SectionMesh({
 // ─── Layout elements ─────────────────────────────────────────────────────
 
 const BG_KINDS = new Set<ElementKind>(["walkway", "obstacle", "staging"]);
+/** Height of a note's billboarded label above the floor. */
+const NOTE_LABEL_Y = 24;
 
 function ElementMesh({ element: el }: { element: ViewerElement }) {
   const c = SCENE[useThemeMode()];
   const cx = el.floor_x + el.floor_width / 2;
   const cz = el.floor_y + el.floor_height / 2;
 
+  // Hand-built geometries are memoised and disposed on change/unmount —
+  // building them inline in render leaked a GPU buffer per frame.
+  const wEdges = useMemo(
+    () =>
+      el.kind === "walkway"
+        ? new THREE.EdgesGeometry(
+            new THREE.PlaneGeometry(el.floor_width, el.floor_height)
+          )
+        : null,
+    [el.kind, el.floor_width, el.floor_height]
+  );
+  useEffect(() => () => wEdges?.dispose(), [wEdges]);
+  const stem = useMemo(() => {
+    if (el.kind !== "note") return null;
+    const g = new THREE.BufferGeometry();
+    g.setAttribute(
+      "position",
+      new THREE.BufferAttribute(
+        new Float32Array([0, 0, 0, 0, NOTE_LABEL_Y - 4, 0]),
+        3
+      )
+    );
+    return g;
+  }, [el.kind]);
+  useEffect(() => () => stem?.dispose(), [stem]);
+
   switch (el.kind) {
     case "walkway": {
       // Low translucent slab on the floor with the element color, slightly raised
       // so it doesn't z-fight the floor plane. A faint border helps the path
       // read against the dark floor at a distance.
-      const wEdges = new THREE.EdgesGeometry(
-        new THREE.PlaneGeometry(el.floor_width, el.floor_height)
-      );
+      if (!wEdges) return null;
       return (
         <group position={[cx, 0.08, cz]} rotation={[0, ry(el.rotation), 0]}>
           <mesh rotation={[-Math.PI / 2, 0, 0]}>
@@ -560,15 +634,8 @@ function ElementMesh({ element: el }: { element: ViewerElement }) {
       // A floating label is hard to localize in 3D, so pin it to the floor
       // with a thin stem and a small base marker, then billboard the text
       // above the stem.
-      const labelY = 24;
-      const stem = new THREE.BufferGeometry();
-      stem.setAttribute(
-        "position",
-        new THREE.BufferAttribute(
-          new Float32Array([0, 0, 0, 0, labelY - 4, 0]),
-          3
-        )
-      );
+      const labelY = NOTE_LABEL_Y;
+      if (!stem) return null;
       return (
         <group position={[cx, 0, cz]}>
           {/* Base marker on the floor */}

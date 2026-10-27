@@ -43,7 +43,9 @@ import {
   type CardKey,
 } from "@/lib/dashboardWidgets";
 import { ALWAYS_ON_MODULES } from "@/lib/modules";
-import { getSuppliers } from "@/lib/data/org";
+import { createClient } from "@/lib/supabase/server";
+import { LocalTime } from "@/components/ui/LocalTime";
+import { formatDate } from "@/lib/format";
 import { sampleCounts } from "@/lib/sampleData/types";
 import { SampleDataBanner } from "@/components/dashboard/SampleDataBanner";
 import { SampleDataOffer } from "@/components/dashboard/SampleDataControls";
@@ -173,8 +175,8 @@ interface OverviewVM {
 }
 
 export default async function OverviewPage() {
-  const scope = await getActiveScope();
-  const [ctx, membership, profile] = await Promise.all([
+  const [scope, ctx, membership, profile] = await Promise.all([
+    getActiveScope(),
     getCurrentOrgContext(),
     getActiveMembership(),
     getProfile(),
@@ -182,12 +184,22 @@ export default async function OverviewPage() {
   const role: DashboardRole = (ctx?.role as DashboardRole) ?? "member";
 
   const facilityId = scope.mode === "single" ? scope.id : null;
-  const [data, kiosk] = ctx
+  const [data, kiosk, supplierCount] = ctx
     ? await Promise.all([
         getOverviewData(ctx.orgId, facilityId),
         getKioskData(ctx.orgId, facilityId),
+        // Only the number is needed for the checklist, so a head count
+        // replaces loading every supplier row just to read `.length`.
+        createClient()
+          .then((supabase) =>
+            supabase
+              .from("suppliers")
+              .select("id", { count: "exact", head: true })
+              .eq("org_id", ctx.orgId)
+          )
+          .then(({ count }) => count ?? 0),
       ])
-    : [null, null];
+    : [null, null, 0];
 
   const productCount = data?.productCount ?? 0;
   const sectionCount = data?.sectionCount ?? 0;
@@ -253,7 +265,6 @@ export default async function OverviewPage() {
   const sample = org?.sample_data ?? null;
   const sampleN = sampleCounts(sample);
   const own = (total: number, sampled: number) => Math.max(0, total - sampled);
-  const supplierCount = ctx ? (await getSuppliers(ctx.orgId)).length : 0;
   const ownVm: OverviewVM = {
     ...vm,
     productCount: own(vm.productCount, sampleN.products),
@@ -374,6 +385,7 @@ function Block({
       return (
         <section aria-labelledby={block.id}>
           <SectionTitle
+            id={block.id}
             numeral={nextNumeral()}
             eyebrow={block.title.eyebrow}
             title={block.title.title}
@@ -667,6 +679,7 @@ function ReorderSection({ vm, numeral }: { vm: OverviewVM; numeral: string }) {
   return (
     <section aria-labelledby="alerts">
       <SectionTitle
+        id="alerts"
         numeral={numeral}
         eyebrow="Reorder"
         title={
@@ -696,6 +709,7 @@ function PickQueueSection({
   return (
     <section aria-labelledby="pick-queue">
       <SectionTitle
+        id="pick-queue"
         numeral={numeral}
         eyebrow="Fulfilment"
         title="Pick queue"
@@ -751,6 +765,7 @@ function PoSection({
   return (
     <section aria-labelledby="pos-in-transit">
       <SectionTitle
+        id="pos-in-transit"
         numeral={numeral}
         eyebrow="Inbound"
         title="POs in transit"
@@ -789,12 +804,7 @@ function PoSection({
                 className="mono-sm text-text-dim tnum shrink-0"
                 dateTime={po.expected_date ?? undefined}
               >
-                {po.expected_date
-                  ? new Date(po.expected_date).toLocaleDateString(undefined, {
-                      month: "short",
-                      day: "numeric",
-                    })
-                  : "—"}
+                {formatDate(po.expected_date)}
               </time>
             </li>
           ))}
@@ -814,6 +824,7 @@ function MoversSection({
   return (
     <section aria-labelledby="movers">
       <SectionTitle
+        id="movers"
         numeral={numeral}
         eyebrow="Velocity"
         title="Top movers · 14d"
@@ -868,7 +879,12 @@ function RecentScansSection({
 }) {
   return (
     <section aria-labelledby="recent-scans">
-      <SectionTitle numeral={numeral} eyebrow="Activity" title="Recent scans" />
+      <SectionTitle
+        id="recent-scans"
+        numeral={numeral}
+        eyebrow="Activity"
+        title="Recent scans"
+      />
       {vm.recentScans.length === 0 ? (
         <EmptyState
           title={
@@ -907,17 +923,11 @@ function RecentScansSection({
                 <span className="mono-sm text-text-muted tnum">
                   {s.quantity ?? "—"}
                 </span>
-                <time
+                <LocalTime
+                  iso={s.scanned_at}
+                  format="time"
                   className="mono-sm text-text-dim tnum"
-                  dateTime={s.scanned_at ?? undefined}
-                >
-                  {s.scanned_at
-                    ? new Date(s.scanned_at).toLocaleTimeString(undefined, {
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      })
-                    : "—"}
-                </time>
+                />
               </li>
             );
           })}
@@ -973,7 +983,12 @@ const CARD: Record<
 function QuickJump({ numeral, cards }: { numeral: string; cards: CardKey[] }) {
   return (
     <section aria-labelledby="quick-jump">
-      <SectionTitle numeral={numeral} eyebrow="Navigate" title="Quick jump" />
+      <SectionTitle
+        id="quick-jump"
+        numeral={numeral}
+        eyebrow="Navigate"
+        title="Quick jump"
+      />
       <GlowCardGrid cards={cards.map((c) => ({ ...CARD[c] }))} />
     </section>
   );

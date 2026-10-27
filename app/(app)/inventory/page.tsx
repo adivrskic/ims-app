@@ -18,8 +18,8 @@ import {
   parseSort,
   parseOrder,
   PAGE_SIZE_OPTIONS,
-  DEFAULT_PAGE_SIZE,
 } from "@/lib/data/inventory";
+import { parsePage, parsePageSize } from "@/lib/listParams";
 
 export const metadata = { title: "Inventory" };
 
@@ -34,17 +34,8 @@ interface SearchParams {
   register?: string;
 }
 
-function parsePage(raw: string | undefined): number {
-  const n = Number(raw);
-  return Number.isFinite(n) && n > 0 ? Math.floor(n) : 1;
-}
-
-function parsePageSize(raw: string | undefined): number {
-  const n = Number(raw);
-  return (PAGE_SIZE_OPTIONS as readonly number[]).includes(n)
-    ? n
-    : DEFAULT_PAGE_SIZE;
-}
+/** PostgREST's silent row cap; the register modal says so when it is hit. */
+const PICKER_CAP = 1000;
 
 export default async function InventoryPage({
   searchParams,
@@ -68,49 +59,56 @@ export default async function InventoryPage({
   const page = parsePage(rawPage);
   const pageSize = parsePageSize(rawPageSize);
 
-  const scope = await getActiveScope();
-  const ctx = await getCurrentOrgContext();
+  const [scope, ctx] = await Promise.all([
+    getActiveScope(),
+    getCurrentOrgContext(),
+  ]);
   const facilityId = scope.mode === "single" ? scope.id : null;
   const canManage = ctx?.can("inventory.manage") ?? false;
-  const membership = ctx ? await getActiveMembership() : null;
+
+  // Once the org is known, the membership, the categories (filter dropdown +
+  // register form), the active suppliers (the register modal's
+  // preferred-supplier picker) and the list itself are independent, so they
+  // load in one round instead of four.
+  const [membership, categories, suppliers, data] = await Promise.all([
+    ctx ? getActiveMembership() : null,
+    ctx ? getCategories(ctx.orgId) : [],
+    ctx
+      ? createClient()
+          .then((supabase) =>
+            supabase
+              .from("suppliers")
+              .select("id, name")
+              .eq("org_id", ctx.orgId)
+              .eq("is_active", true)
+              .order("name")
+              // TODO: async search picker — PostgREST caps this at 1,000.
+              .limit(PICKER_CAP)
+          )
+          .then(
+            ({ data }) => (data ?? []) as Array<{ id: string; name: string }>
+          )
+      : ([] as Array<{ id: string; name: string }>),
+    ctx
+      ? getInventoryList(ctx.orgId, facilityId, {
+          q,
+          category,
+          low,
+          sort,
+          order,
+          page,
+          pageSize,
+        })
+      : {
+          products: [],
+          totalCount: 0,
+          page: 1,
+          pageSize,
+          totalPages: 1,
+        },
+  ]);
   const canSeedSample =
     canManage && ctx?.role !== "member" && !membership?.org?.sample_data;
-
-  // Categories (id + name) drive both the filter dropdown and the register form.
-  const categories = ctx ? await getCategories(ctx.orgId) : [];
-
-  // Active suppliers feed the register modal's preferred-supplier picker. Without
-  // this the picker was permanently disabled ("Add suppliers under Settings…")
-  // even when the org had suppliers.
-  let suppliers: Array<{ id: string; name: string }> = [];
-  if (ctx) {
-    const supabase = await createClient();
-    const { data } = await supabase
-      .from("suppliers")
-      .select("id, name")
-      .eq("org_id", ctx.orgId)
-      .eq("is_active", true)
-      .order("name");
-    suppliers = (data ?? []) as Array<{ id: string; name: string }>;
-  }
-
-  const data = ctx
-    ? await getInventoryList(ctx.orgId, facilityId, {
-        q,
-        category,
-        low,
-        sort,
-        order,
-        page,
-        pageSize,
-      })
-    : {
-        products: [],
-        totalCount: 0,
-        page: 1,
-        pageSize,
-        totalPages: 1,
-      };
 
   const { products, totalCount, totalPages } = data;
   const servedPage = data.page;

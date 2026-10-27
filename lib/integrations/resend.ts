@@ -6,7 +6,6 @@ import {
   testEmail,
   eventEmail,
   type InviteEmailInput,
-  type EventEmailInput,
 } from "@/lib/email/templates";
 import type { EventPayload, IntegrationRecord } from "./types";
 

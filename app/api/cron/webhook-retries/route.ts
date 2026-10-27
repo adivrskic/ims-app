@@ -54,19 +54,47 @@ export async function POST(req: Request) {
     dropped: 0,
   };
 
-  const { data, error } = await admin
+  const nowIso = new Date().toISOString();
+  const { data: dueIds, error } = await admin
     .from("webhook_deliveries")
-    .select(
-      "id, endpoint_id, org_id, event_type, event_id, request_body, attempts, next_retry_at"
-    )
+    .select("id")
     .eq("succeeded", false)
-    .lte("next_retry_at", new Date().toISOString())
+    .lte("next_retry_at", nowIso)
     .lt("attempts", MAX_WEBHOOK_ATTEMPTS)
     .order("next_retry_at", { ascending: true })
     .limit(BATCH_SIZE);
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+
+  const candidateIds = ((dueIds ?? []) as Array<{ id: string }>).map(
+    (r) => r.id
+  );
+  if (candidateIds.length === 0) {
+    return NextResponse.json({ ok: true, ...summary });
+  }
+
+  // CLAIM before sending. Two overlapping sweeps (a slow run meeting the
+  // next 15-minute tick) could otherwise both pick the same rows and deliver
+  // each twice. Pushing next_retry_at forward in one UPDATE, filtered on the
+  // same due condition, means only the sweep whose update lands sees the row
+  // come back — the loser gets nothing and moves on. redeliverWebhook then
+  // sets the real backoff (or clears it) when the attempt completes.
+  const claimUntil = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+  const { data, error: claimErr } = await admin
+    .from("webhook_deliveries")
+    .update({ next_retry_at: claimUntil })
+    .in("id", candidateIds)
+    .eq("succeeded", false)
+    .lte("next_retry_at", nowIso)
+    .lt("attempts", MAX_WEBHOOK_ATTEMPTS)
+    .select(
+      "id, endpoint_id, org_id, event_type, event_id, request_body, attempts, next_retry_at"
+    );
+
+  if (claimErr) {
+    return NextResponse.json({ error: claimErr.message }, { status: 500 });
   }
 
   const due = (data ?? []) as DueDelivery[];

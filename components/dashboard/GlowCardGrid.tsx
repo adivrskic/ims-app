@@ -16,10 +16,16 @@ interface Card {
 
 interface Props {
   cards: Card[];
+  /**
+   * Heading level for each card title. Defaults to 3 (the grid normally sits
+   * under a section h2); pass 2 when the grid is the page's own section.
+   */
+  headingLevel?: 2 | 3;
 }
 
-export function GlowCardGrid({ cards }: Props) {
+export function GlowCardGrid({ cards, headingLevel = 3 }: Props) {
   const ref = useGlowCards<HTMLDivElement>();
+  const Heading = headingLevel === 2 ? "h2" : "h3";
 
   return (
     <div
@@ -38,7 +44,7 @@ export function GlowCardGrid({ cards }: Props) {
                 <span className="label-text text-text-dim">Soon</span>
               </div>
               <div>
-                <h3
+                <Heading
                   className="text-text mb-4"
                   style={{
                     fontFamily: "var(--display)",
@@ -48,7 +54,7 @@ export function GlowCardGrid({ cards }: Props) {
                   }}
                 >
                   {card.label}
-                </h3>
+                </Heading>
                 <p
                   className="text-text-muted leading-relaxed"
                   style={{ fontFamily: "var(--mono)", fontSize: 11 }}
@@ -75,7 +81,7 @@ export function GlowCardGrid({ cards }: Props) {
                 )}
               </div>
               <div className="flex-1">
-                <h3
+                <Heading
                   className="text-text mb-4"
                   style={{
                     fontFamily: "var(--display)",
@@ -85,7 +91,7 @@ export function GlowCardGrid({ cards }: Props) {
                   }}
                 >
                   {card.label}
-                </h3>
+                </Heading>
                 <p
                   className="text-text-muted leading-relaxed"
                   style={{ fontFamily: "var(--mono)", fontSize: 11 }}

@@ -2,8 +2,26 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentOrgContext, getActiveMembership } from "@/lib/data/user";
 import { PaperDocument } from "@/components/print/PaperDocument";
+import { formatDate, formatMoney } from "@/lib/format";
 
-export const metadata = { title: "Purchase order document" };
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
+  const { id } = await params;
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("purchase_orders")
+    .select("po_number")
+    .eq("id", id)
+    .maybeSingle();
+  return {
+    title: data?.po_number
+      ? `Purchase order ${data.po_number}`
+      : "Purchase order document",
+  };
+}
 
 type PoStatus =
   | "draft"
@@ -19,24 +37,6 @@ const STATUS_LABEL: Record<PoStatus, string> = {
   fully_received: "Received",
   cancelled: "Cancelled",
 };
-
-function formatDate(iso: string | null | undefined): string {
-  if (!iso) return "—";
-  return new Date(iso).toLocaleDateString(undefined, {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
-}
-
-function formatCurrency(value: number): string {
-  return value.toLocaleString(undefined, {
-    style: "currency",
-    currency: "USD",
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
-}
 
 /**
  * Printable purchase-order document — the same PO + line queries the PO
@@ -197,10 +197,10 @@ export default async function PurchaseOrderPrintPage({
                     {line.quantity_expected.toLocaleString()}
                   </td>
                   <td className="num">
-                    {cost != null ? formatCurrency(cost) : "—"}
+                    {cost != null ? formatMoney(cost) : "—"}
                   </td>
                   <td className="num">
-                    {lineTotal != null ? formatCurrency(lineTotal) : "—"}
+                    {lineTotal != null ? formatMoney(lineTotal) : "—"}
                   </td>
                 </tr>
               );
@@ -213,7 +213,7 @@ export default async function PurchaseOrderPrintPage({
               </td>
               <td>{totalUnits.toLocaleString()}</td>
               <td />
-              <td>{formatCurrency(grandTotal)}</td>
+              <td>{formatMoney(grandTotal)}</td>
             </tr>
           </tfoot>
         </table>

@@ -44,7 +44,7 @@ interface LineItem {
 }
 
 function newId(): string {
-  return Math.random().toString(36).slice(2, 10);
+  return crypto.randomUUID();
 }
 
 export function CreatePoForm({ products, warehouses, suppliers }: Props) {

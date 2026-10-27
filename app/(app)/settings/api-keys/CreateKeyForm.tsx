@@ -16,6 +16,14 @@ export function CreateKeyForm() {
   const [state, formAction, pending] = useActionState(createApiKey, undefined);
   const formRef = useRef<HTMLFormElement>(null);
   const [copied, setCopied] = useState(false);
+  // Timer id kept in a ref so an unmount mid-countdown cannot set
+  // state on a gone component.
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    return () => {
+      if (timer.current) clearTimeout(timer.current);
+    };
+  }, []);
 
   useEffect(() => {
     if (state?.success && state.token) {
@@ -28,7 +36,7 @@ export function CreateKeyForm() {
     try {
       await navigator.clipboard.writeText(state.token);
       setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
+      timer.current = setTimeout(() => setCopied(false), 1500);
     } catch {
       // ignore
     }

@@ -83,7 +83,7 @@ export function CreateWorkspaceForm() {
           className="px-20 pb-16"
           status={
             <span className="text-text-dim" style={{ lineHeight: 1.6 }}>
-              The owner receives a magic-link email. They'll set their password
+              The owner receives a magic-link email. They’ll set their password
               on first sign-in.
             </span>
           }

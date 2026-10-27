@@ -3,6 +3,17 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { getSupplier } from "../../actions";
 import { SupplierForm } from "../../SupplierForm";
 
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
+  const { id } = await params;
+  const r = await getSupplier(id);
+  const name = r.supplier?.name;
+  return { title: name ? `Edit ${name}` : "Edit supplier" };
+}
+
 export default async function EditSupplierPage({
   params,
 }: {

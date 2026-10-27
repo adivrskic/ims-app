@@ -5,6 +5,7 @@ import { getActiveScope } from "@/lib/facilityScope";
 import { getEligibleOrders, getWaves, type WaveStatus } from "@/lib/data/picking";
 import { buildWave, autoBuildWave } from "./actions";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { Th, Td } from "@/components/ui/Table";
 import { SectionTitle } from "@/components/ui/SectionTitle";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Badge } from "@/components/ui/Badge";
@@ -69,6 +70,7 @@ export default async function PickingPage() {
       ) : (
         <section aria-labelledby="build">
           <SectionTitle
+            id="build"
             numeral="01"
             eyebrow="Build"
             title="Ready to pick"
@@ -95,15 +97,19 @@ export default async function PickingPage() {
               <input type="hidden" name="warehouse_id" value={scope.id} />
               <div className="hairline bg-[var(--surface)] overflow-hidden">
                 <div className="overflow-x-auto">
-                  <table className="w-full" style={{ borderCollapse: "collapse" }}>
+                  <table
+                    className="w-full"
+                    style={{ borderCollapse: "collapse" }}
+                    aria-label="Orders ready to wave"
+                  >
                     <thead>
                       <tr className="hairline-b bg-[var(--surface-2)]">
                         <Th className="w-[44px]" />
                         <Th>Order</Th>
                         <Th>Customer</Th>
                         <Th>Delivery</Th>
-                        <Th className="text-right">Lines</Th>
-                        <Th className="text-right">Units</Th>
+                        <Th align="right">Lines</Th>
+                        <Th align="right">Units</Th>
                       </tr>
                     </thead>
                     <tbody>
@@ -144,10 +150,10 @@ export default async function PickingPage() {
                                 : "—"}
                             </span>
                           </Td>
-                          <Td className="text-right">
+                          <Td align="right">
                             <span className="mono-sm tnum text-text-secondary">{o.lineCount}</span>
                           </Td>
-                          <Td className="text-right">
+                          <Td align="right">
                             <span className="mono-body tnum text-text">{o.unitsToPick}</span>
                           </Td>
                         </tr>
@@ -168,7 +174,7 @@ export default async function PickingPage() {
       )}
 
       <section aria-labelledby="waves">
-        <SectionTitle numeral={scope.mode === "single" ? "02" : "01"} eyebrow="Waves" title="Pick waves" />
+        <SectionTitle id="waves" numeral={scope.mode === "single" ? "02" : "01"} eyebrow="Waves" title="Pick waves" />
         {waves.length === 0 ? (
           <EmptyState
             title="No waves yet"
@@ -209,27 +215,4 @@ export default async function PickingPage() {
       </section>
     </div>
   );
-}
-
-function Th({
-  children,
-  className = "",
-}: {
-  children?: React.ReactNode;
-  className?: string;
-}) {
-  return (
-    <th className={`label-text text-left px-14 py-12 font-normal ${className}`}>
-      {children}
-    </th>
-  );
-}
-function Td({
-  children,
-  className = "",
-}: {
-  children?: React.ReactNode;
-  className?: string;
-}) {
-  return <td className={`px-14 py-12 ${className}`}>{children}</td>;
 }

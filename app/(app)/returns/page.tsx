@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { LocalTime } from "@/components/ui/LocalTime";
 import { Badge } from "@/components/ui/Badge";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { RotateCcw } from "lucide-react";
@@ -106,21 +107,6 @@ const FILTERS: Array<{
   { key: "hold", label: "Hold", disposition: "hold_for_inspection" },
   { key: "supplier", label: "Supplier", disposition: "supplier_return" },
 ];
-
-function relTime(iso: string | null): string {
-  if (!iso) return "—";
-  const ms = Date.now() - new Date(iso).getTime();
-  const m = Math.floor(ms / 60000);
-  if (m < 60) return `${m}m ago`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h ago`;
-  const d = Math.floor(h / 24);
-  if (d < 7) return `${d}d ago`;
-  return new Date(iso).toLocaleDateString(undefined, {
-    month: "short",
-    day: "numeric",
-  });
-}
 
 export default async function ReturnsPage({
   searchParams,
@@ -343,9 +329,11 @@ export default async function ReturnsPage({
                           {receiver.full_name || receiver.email.split("@")[0]}
                         </span>
                       )}
-                      <span className="text-text-dim">
-                        {relTime(r.created_at)}
-                      </span>
+                      <LocalTime
+                        iso={r.created_at}
+                        format="relative"
+                        className="text-text-dim"
+                      />
                     </div>
                     {r.reason && (
                       <p className="mono-sm text-text-secondary mt-2">
@@ -370,9 +358,11 @@ export default async function ReturnsPage({
                       />
                     ) : (
                       <span className="label-text text-text-dim inline-flex items-center gap-6">
-                        {r.restocked_at
-                          ? `Restocked ${relTime(r.restocked_at)}`
-                          : `Reviewed ${relTime(r.reviewed_at)}`}
+                        {r.restocked_at ? "Restocked" : "Reviewed"}{" "}
+                        <LocalTime
+                          iso={r.restocked_at ?? r.reviewed_at}
+                          format="relative"
+                        />
                       </span>
                     )}
                   </div>

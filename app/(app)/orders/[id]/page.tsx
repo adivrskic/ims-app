@@ -2,7 +2,10 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { Badge } from "@/components/ui/Badge";
-import { CornerButton, CornerLink } from "@/components/ui/CornerButton";
+import { CornerLink } from "@/components/ui/CornerButton";
+import { SubmitButton } from "@/components/ui/SubmitButton";
+import { FormNotice } from "@/components/ui/FormNotice";
+import { LocalTime } from "@/components/ui/LocalTime";
 import { PageHeader } from "@/components/ui/PageHeader";
 import {
   Check,
@@ -101,22 +104,26 @@ export default async function OrderDetailPage({
   const { error: actionError } = await searchParams;
   const supabase = await createClient();
 
-  const { data: order } = await supabase
-    .from("orders")
-    .select(
-      "id, order_number, order_type, status, customer_name, customer_phone, customer_address, delivery_date, delivery_window, notes, created_at, updated_at, assigned_to, pick_wave_id, warehouse:warehouses!orders_warehouse_id_fkey ( name ), destination:warehouses!orders_destination_warehouse_id_fkey ( name ), assignee:profiles!orders_assigned_to_fkey ( full_name, email ), pick_wave:pick_waves!orders_pick_wave_id_fkey ( id, code, status )"
-    )
-    .eq("id", id)
-    .maybeSingle();
+  // The order, its lines and the org context are independent of one another,
+  // so they load in one round instead of three.
+  const [{ data: order }, { data: items }, orgCtx] = await Promise.all([
+    supabase
+      .from("orders")
+      .select(
+        "id, order_number, order_type, status, customer_name, customer_phone, customer_address, delivery_date, delivery_window, notes, created_at, updated_at, assigned_to, pick_wave_id, warehouse:warehouses!orders_warehouse_id_fkey ( name ), destination:warehouses!orders_destination_warehouse_id_fkey ( name ), assignee:profiles!orders_assigned_to_fkey ( full_name, email ), pick_wave:pick_waves!orders_pick_wave_id_fkey ( id, code, status )"
+      )
+      .eq("id", id)
+      .maybeSingle(),
+    supabase
+      .from("order_items")
+      .select(
+        "id, quantity_requested, quantity_allocated, quantity_picked, notes, product:products ( id, name, barcode ), location:locations ( bay, level, section:sections ( code ) )"
+      )
+      .eq("order_id", id),
+    getCurrentOrgContext(),
+  ]);
 
   if (!order) notFound();
-
-  const { data: items } = await supabase
-    .from("order_items")
-    .select(
-      "id, quantity_requested, quantity_allocated, quantity_picked, notes, product:products ( id, name, barcode ), location:locations ( bay, level, section:sections ( code ) )"
-    )
-    .eq("order_id", id);
 
   type ItemRow = {
     id: string;
@@ -173,7 +180,6 @@ export default async function OrderDetailPage({
   // Desk-side returns: lines with picked units can be returned (gated on
   // orders.manage; the createReturnFromOrder action re-checks server-side and
   // caps quantity at picked minus already-returned).
-  const orgCtx = await getCurrentOrgContext();
   const returnableItems: ReturnableItem[] = !isCancelled
     ? rows
         .filter((i) => (i.quantity_picked ?? 0) > 0)
@@ -196,16 +202,7 @@ export default async function OrderDetailPage({
   return (
     <div className="flex flex-col gap-32">
       <OrderDetailRealtime orderId={id} />
-      {actionError && (
-        <div className="hairline border-[var(--danger-border)] bg-[var(--danger-dim)] px-16 py-12 flex items-start gap-12">
-          <X
-            size={14}
-            strokeWidth={1.5}
-            className="text-[var(--danger)] shrink-0 mt-2"
-          />
-          <p className="mono-sm text-[var(--danger)]">{actionError}</p>
-        </div>
-      )}
+      {actionError && <FormNotice tone="error">{actionError}</FormNotice>}
       <PageHeader
         backHref="/orders"
         backLabel="All orders"
@@ -247,17 +244,23 @@ export default async function OrderDetailPage({
               <form action={advanceOrderStatus}>
                 <input type="hidden" name="id" value={order.id} />
                 <input type="hidden" name="current_status" value={status} />
-                <CornerButton type="submit" variant="primary" size="sm">
+                <SubmitButton variant="primary" size="sm">
                   {nextStatusLabel} →
-                </CornerButton>
+                </SubmitButton>
               </form>
             )}
             {canCancel && (
               <form action={cancelOrder}>
                 <input type="hidden" name="id" value={order.id} />
-                <CornerButton type="submit" variant="danger" size="sm">
+                <SubmitButton
+                  variant="danger"
+                  size="sm"
+                  confirm={`Cancel order ${
+                    order.order_number ?? order.id.slice(0, 8)
+                  }? Its allocations are released and the order cannot be reopened.`}
+                >
                   Cancel order
-                </CornerButton>
+                </SubmitButton>
               </form>
             )}
           </>
@@ -348,9 +351,9 @@ export default async function OrderDetailPage({
               {canCancel && totalBackordered > 0 && (
                 <form action={allocateOrder}>
                   <input type="hidden" name="id" value={order.id} />
-                  <CornerButton type="submit" variant="ghost" size="sm">
+                  <SubmitButton variant="ghost" size="sm">
                     Re-allocate
-                  </CornerButton>
+                  </SubmitButton>
                 </form>
               )}
             </div>
@@ -632,9 +635,7 @@ export default async function OrderDetailPage({
           <div className="hairline bg-[var(--surface-2)] px-16 py-12">
             <p className="label-text text-text-muted">Created</p>
             <p className="mono-sm text-text mt-2">
-              {order.created_at
-                ? new Date(order.created_at).toLocaleString()
-                : "—"}
+              <LocalTime iso={order.created_at} />
             </p>
           </div>
         </aside>

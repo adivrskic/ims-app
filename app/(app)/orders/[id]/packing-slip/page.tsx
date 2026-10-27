@@ -3,7 +3,24 @@ import { createClient } from "@/lib/supabase/server";
 import { getCurrentOrgContext, getActiveMembership } from "@/lib/data/user";
 import { PaperDocument } from "@/components/print/PaperDocument";
 
-export const metadata = { title: "Packing slip" };
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
+  const { id } = await params;
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("orders")
+    .select("order_number")
+    .eq("id", id)
+    .maybeSingle();
+  return {
+    title: data?.order_number
+      ? `Packing slip ${data.order_number}`
+      : "Packing slip",
+  };
+}
 
 /**
  * Printable packing slip for one order.

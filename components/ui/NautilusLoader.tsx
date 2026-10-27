@@ -1,7 +1,6 @@
-"use client";
-
 /**
- * Nautilus loader — the brand mark, drawn in.
+ * Nautilus loader — the brand mark, drawn in. No hooks, handlers or browser
+ * APIs: it renders from server components and client components alike.
  *
  * A logarithmic spiral (the actual growth curve of a nautilus shell,
  * b ≈ ln φ / (π/2)) rendered as one continuous path, with chamber septa

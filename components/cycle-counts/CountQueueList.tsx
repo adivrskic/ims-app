@@ -4,6 +4,7 @@ import { SectionTitle } from "@/components/ui/SectionTitle";
 import { CornerButton, CornerLink } from "@/components/ui/CornerButton";
 import { dismissCountTask } from "@/app/(app)/cycle-counts/actions";
 import type { CountQueueTask } from "@/lib/data/cycleCounts";
+import { formatDate } from "@/lib/format";
 
 /**
  * The scheduled count queue — pending cycle_count_tasks filed by the weekly
@@ -18,11 +19,14 @@ import type { CountQueueTask } from "@/lib/data/cycleCounts";
 export function CountQueueList({ items }: { items: CountQueueTask[] }) {
   if (items.length === 0) return null;
 
+  // Server-side "today" (UTC). Only used for the overdue tint; due dates are
+  // whole days so a few hours of zone skew just delays the red by a morning.
   const today = new Date().toISOString().slice(0, 10);
 
   return (
     <section aria-labelledby="count-queue-heading">
       <SectionTitle
+        id="count-queue-heading"
         eyebrow="Scheduled"
         title="This week's count queue"
         action={
@@ -63,7 +67,8 @@ export function CountQueueList({ items }: { items: CountQueueTask[] }) {
                   overdue ? "text-[var(--danger)]" : "text-text-dim"
                 }`}
               >
-                due {task.due_date}
+                due{" "}
+                <time dateTime={task.due_date}>{formatDate(task.due_date)}</time>
               </p>
 
               <CornerLink

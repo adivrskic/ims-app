@@ -1,6 +1,8 @@
 import { PageHeader } from "@/components/ui/PageHeader";
 import { SupplierForm } from "../SupplierForm";
 
+export const metadata = { title: "New supplier" };
+
 export default function NewSupplierPage() {
   return (
     <>

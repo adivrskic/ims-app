@@ -12,6 +12,7 @@ import { FormSection } from "@/components/ui/FormSection";
 import { FormActions } from "@/components/ui/FormActions";
 import { FormNotice } from "@/components/ui/FormNotice";
 import { createProduct } from "./actions";
+import { useDialog } from "@/lib/useDialog";
 
 interface Category {
   id: string;
@@ -76,15 +77,8 @@ export function RegisterProductButton({
     }
   }, [open]);
 
-  // Escape closes
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open]);
+  // Focus in, Tab trap, Escape, focus return, scroll lock.
+  const dialogRef = useDialog({ open, onClose: () => setOpen(false) });
 
   return (
     <>
@@ -101,6 +95,7 @@ export function RegisterProductButton({
         mounted &&
         createPortal(
           <div
+            ref={dialogRef}
             role="dialog"
             aria-modal="true"
             aria-labelledby="register-title"
@@ -242,6 +237,15 @@ export function RegisterProductButton({
                             label: s.name,
                           }))}
                         />
+                        {suppliers.length >= 1000 && (
+                          <p
+                            className="mono-sm text-text-muted md:col-span-2"
+                            role="status"
+                          >
+                            Showing the first 1,000 suppliers by name — the
+                            rest can be set from the product page later.
+                          </p>
+                        )}
                       </div>
                     </FormSection>
 

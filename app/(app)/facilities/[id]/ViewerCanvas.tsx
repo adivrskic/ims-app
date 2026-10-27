@@ -47,6 +47,8 @@ interface Props {
   containerRef: RefObject<HTMLDivElement | null>;
   viewportApi: ViewportApi;
   onSectionClick: (sectionId: string) => void;
+  /** Hover / focus on a section (used to prefetch its detail route). */
+  onSectionHover?: (sectionId: string) => void;
 }
 
 const BACKGROUND_KINDS: ElementKind[] = ["staging", "walkway", "obstacle"];
@@ -62,6 +64,7 @@ export function ViewerCanvas({
   containerRef,
   viewportApi,
   onSectionClick,
+  onSectionHover,
 }: Props) {
   const {
     viewport,
@@ -396,7 +399,10 @@ export function ViewerCanvas({
                   e.preventDefault();
                   onSectionClick(s.id);
                 }}
-                onFocus={() => setFocusId(s.id)}
+                onFocus={() => {
+                  setFocusId(s.id);
+                  onSectionHover?.(s.id);
+                }}
                 onBlur={() =>
                   setFocusId((id) => (id === s.id ? null : id))
                 }
@@ -415,7 +421,10 @@ export function ViewerCanvas({
                   if (moved) return;
                   onSectionClick(s.id);
                 }}
-                onPointerEnter={() => setHoverId(s.id)}
+                onPointerEnter={() => {
+                  setHoverId(s.id);
+                  onSectionHover?.(s.id);
+                }}
                 onPointerLeave={() =>
                   setHoverId((id) => (id === s.id ? null : id))
                 }

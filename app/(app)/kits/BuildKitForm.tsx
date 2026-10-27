@@ -39,7 +39,7 @@ export function BuildKitForm({ kitProductId, warehouses }: Props) {
         type="number"
         min={1}
         defaultValue={1}
-        className="hairline-subtle bg-[var(--surface-2)] mono-sm tnum text-text px-8 py-4 text-right w-[56px] focus:border-[var(--accent)] outline-none"
+        className="hairline-subtle bg-[var(--surface-2)] mono-sm tnum text-text px-8 py-4 text-right w-[56px] focus:border-[var(--accent)] outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
         aria-label="Quantity to build"
       />
       <Select

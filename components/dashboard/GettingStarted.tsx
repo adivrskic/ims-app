@@ -31,6 +31,7 @@ export function GettingStarted({ numeral, items, footer }: Props) {
   return (
     <section aria-labelledby="getting-started">
       <SectionTitle
+        id="getting-started"
         numeral={numeral}
         eyebrow="Welcome"
         title="Getting started"

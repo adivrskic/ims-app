@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, useTransition, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { Check } from "lucide-react";
 import { CornerButton } from "@/components/ui/CornerButton";
@@ -24,6 +24,14 @@ export function SupplierForm({ mode, initialData }: Props) {
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+  // Timer id kept in a ref so an unmount mid-countdown cannot set
+  // state on a gone component.
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    return () => {
+      if (timer.current) clearTimeout(timer.current);
+    };
+  }, []);
 
   const [name, setName] = useState(initialData?.name ?? "");
   const [contactName, setContactName] = useState(
@@ -94,7 +102,7 @@ export function SupplierForm({ mode, initialData }: Props) {
           return;
         }
         setSaved(true);
-        setTimeout(() => setSaved(false), 2000);
+        timer.current = setTimeout(() => setSaved(false), 2000);
         router.refresh();
       }
     });

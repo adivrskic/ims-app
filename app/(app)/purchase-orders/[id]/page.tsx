@@ -1,4 +1,4 @@
-import { Fragment, type ReactNode } from "react";
+import { Fragment } from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { FileText, Printer, Send, X as XIcon } from "lucide-react";
@@ -8,13 +8,16 @@ import { getSlottingSuggestions } from "@/lib/data/slotting";
 import { getFillableBackorders } from "@/lib/data/allocation";
 import { fillBackorders } from "@/app/(app)/orders/actions";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { Th, Td } from "@/components/ui/Table";
 import { SectionTitle } from "@/components/ui/SectionTitle";
-import { CornerButton, CornerLink } from "@/components/ui/CornerButton";
+import { CornerLink } from "@/components/ui/CornerButton";
+import { SubmitButton } from "@/components/ui/SubmitButton";
+import { formatDate, formatMoney } from "@/lib/format";
 import { ReceiveLineForm } from "./ReceiveLineForm";
 import { markPoSent, markPoCancelled } from "../actions";
 import { PurchaseOrderDetailRealtime } from "@/components/realtime/PageRealtime";
 import { PrintLabelButton } from "@/components/print/PrintLabelButton";
-import { receiveLabel, productLabel } from "@/lib/print/zplTemplates";
+import { receiveLabel } from "@/lib/print/zplTemplates";
 
 export const metadata = { title: "Purchase order" };
 
@@ -33,24 +36,6 @@ const STATUS_LABEL: Record<PoStatus, string> = {
   cancelled: "Cancelled",
 };
 
-function formatDate(iso: string | null | undefined): string {
-  if (!iso) return "—";
-  return new Date(iso).toLocaleDateString(undefined, {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
-}
-
-function formatCurrency(value: number): string {
-  return value.toLocaleString(undefined, {
-    style: "currency",
-    currency: "USD",
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
-}
-
 export default async function PurchaseOrderDetailPage({
   params,
 }: {
@@ -64,34 +49,38 @@ export default async function PurchaseOrderDetailPage({
    * separate query because we want them sorted independently and because
    * embedding many-to-many with ordering gets messy in PostgREST.
    */
-  const { data: poData, error: poErr } = await supabase
-    .from("purchase_orders")
-    .select(
-      `id, po_number, status, supplier_id, supplier_name, supplier_contact,
-       warehouse_id, expected_date, sent_at, received_at, created_at, notes,
-       warehouse:warehouses ( id, name )`
-    )
-    .eq("id", id)
-    .maybeSingle();
+  // The PO, its lines and the org context are independent, so one round.
+  const [{ data: poData, error: poErr }, { data: lineData }, ctx] =
+    await Promise.all([
+      supabase
+        .from("purchase_orders")
+        .select(
+          `id, po_number, status, supplier_id, supplier_name, supplier_contact,
+           warehouse_id, expected_date, sent_at, received_at, created_at, notes,
+           warehouse:warehouses ( id, name )`
+        )
+        .eq("id", id)
+        .maybeSingle(),
+      supabase
+        .from("po_line_items")
+        .select(
+          `id, product_id, product_name, barcode, quantity_expected,
+           quantity_received, unit_cost, landed_unit_cost, reasoning,
+           received_at, lot_number, qc_status`
+        )
+        .eq("po_id", id)
+        // po_line_items has no created_at — ordering on it errored the whole
+        // query (silently: only data is destructured) and the lines table
+        // rendered empty. Caught in the 2026-07-03 browser pass.
+        .order("id", { ascending: true }),
+      getCurrentOrgContext(),
+    ]);
 
   if (poErr || !poData) notFound();
 
   const warehouse = Array.isArray(poData.warehouse)
     ? poData.warehouse[0]
     : poData.warehouse;
-
-  const { data: lineData } = await supabase
-    .from("po_line_items")
-    .select(
-      `id, product_id, product_name, barcode, quantity_expected,
-       quantity_received, unit_cost, landed_unit_cost, reasoning,
-       received_at, lot_number, qc_status`
-    )
-    .eq("po_id", id)
-    // po_line_items has no created_at — ordering on it errored the whole
-    // query (silently: only data is destructured) and the lines table
-    // rendered empty. Caught in the 2026-07-03 browser pass.
-    .order("id", { ascending: true });
 
   type LineRow = {
     id: string;
@@ -152,32 +141,13 @@ export default async function PurchaseOrderDetailPage({
   // each still-open line so the receiver knows where to put stock away. Skipped
   // entirely unless we're in a receivable state with a destination facility.
   const slotHints = new Map<string, { label: string; reasons: string[] }>();
-  if (canReceive && warehouse?.id) {
-    const ctx = await getCurrentOrgContext();
-    if (ctx) {
-      const openLines = lines.filter(
-        (l) => l.product_id && (l.quantity_received ?? 0) < l.quantity_expected
-      );
-      const results = await Promise.all(
-        openLines.map((l) =>
-          getSlottingSuggestions(
-            supabase,
-            ctx.orgId,
-            warehouse.id,
-            l.product_id as string,
-            {
-              limit: 1,
-              quantity:
-                l.quantity_expected - (l.quantity_received ?? 0) || 1,
-            }
-          ).then((r) => ({ lineId: l.id, top: r.suggestions[0] ?? null }))
+  const slotLines =
+    canReceive && warehouse?.id && ctx
+      ? lines.filter(
+          (l) =>
+            l.product_id && (l.quantity_received ?? 0) < l.quantity_expected
         )
-      );
-      for (const { lineId, top } of results) {
-        if (top) slotHints.set(lineId, { label: top.label, reasons: top.reasons });
-      }
-    }
-  }
+      : [];
 
   // Backorder fill suggestions (allocation §): for products already received on
   // this PO, surface how much backordered order demand the new stock can fill.
@@ -190,33 +160,52 @@ export default async function PurchaseOrderDetailPage({
     orderCount: number;
   };
   const fillSuggestions: FillSuggestion[] = [];
-  if ((canReceive || status === "fully_received") && warehouse?.id) {
-    const ctx = await getCurrentOrgContext();
-    if (ctx) {
-      const receivedProducts = new Map<string, string>();
-      for (const l of lines) {
-        if (l.product_id && (l.quantity_received ?? 0) > 0) {
-          receivedProducts.set(l.product_id, l.product_name);
-        }
+  const receivedProducts = new Map<string, string>();
+  if ((canReceive || status === "fully_received") && warehouse?.id && ctx) {
+    for (const l of lines) {
+      if (l.product_id && (l.quantity_received ?? 0) > 0) {
+        receivedProducts.set(l.product_id, l.product_name);
       }
-      const fills = await Promise.all(
-        [...receivedProducts.entries()].map(([pid, name]) =>
-          getFillableBackorders(supabase, ctx.orgId, warehouse.id, pid).then(
-            (f) => ({ ...f, name })
-          )
+    }
+  }
+
+  // Slot hints and fill suggestions only depend on the lines, so both sets
+  // of lookups run in one round rather than one after the other.
+  const [slotResults, fills] = await Promise.all([
+    Promise.all(
+      slotLines.map((l) =>
+        getSlottingSuggestions(
+          supabase,
+          ctx!.orgId,
+          warehouse!.id,
+          l.product_id as string,
+          {
+            limit: 1,
+            quantity: l.quantity_expected - (l.quantity_received ?? 0) || 1,
+          }
+        ).then((r) => ({ lineId: l.id, top: r.suggestions[0] ?? null }))
+      )
+    ),
+    Promise.all(
+      [...receivedProducts.entries()].map(([pid, name]) =>
+        getFillableBackorders(supabase, ctx!.orgId, warehouse!.id, pid).then(
+          (f) => ({ ...f, name })
         )
-      );
-      for (const f of fills) {
-        if (f.fillableUnits > 0) {
-          fillSuggestions.push({
-            productId: f.productId,
-            productName: f.name,
-            fillableUnits: f.fillableUnits,
-            backorderedUnits: f.backorderedUnits,
-            orderCount: f.orderCount,
-          });
-        }
-      }
+      )
+    ),
+  ]);
+  for (const { lineId, top } of slotResults) {
+    if (top) slotHints.set(lineId, { label: top.label, reasons: top.reasons });
+  }
+  for (const f of fills) {
+    if (f.fillableUnits > 0) {
+      fillSuggestions.push({
+        productId: f.productId,
+        productName: f.name,
+        fillableUnits: f.fillableUnits,
+        backorderedUnits: f.backorderedUnits,
+        orderCount: f.orderCount,
+      });
     }
   }
 
@@ -261,19 +250,25 @@ export default async function PurchaseOrderDetailPage({
             {canSend && (
               <form action={markPoSent}>
                 <input type="hidden" name="id" value={poData.id} />
-                <CornerButton type="submit" variant="primary" size="sm">
+                <SubmitButton variant="primary" size="sm">
                   <Send size={11} strokeWidth={1.5} />
                   Mark as sent
-                </CornerButton>
+                </SubmitButton>
               </form>
             )}
             {canEdit && (
               <form action={markPoCancelled}>
                 <input type="hidden" name="id" value={poData.id} />
-                <CornerButton type="submit" variant="ghost" size="sm">
+                <SubmitButton
+                  variant="ghost"
+                  size="sm"
+                  confirm={`Cancel ${title}${
+                    poData.supplier_name ? ` to ${poData.supplier_name}` : ""
+                  }? Nothing further can be received against it.`}
+                >
                   <XIcon size={11} strokeWidth={1.5} />
                   Cancel PO
-                </CornerButton>
+                </SubmitButton>
               </form>
             )}
           </div>
@@ -295,10 +290,10 @@ export default async function PurchaseOrderDetailPage({
           />
           <Stat
             label="Value received"
-            value={formatCurrency(totalValue)}
+            value={formatMoney(totalValue)}
             sub={
               expectedValue > 0
-                ? `Of ${formatCurrency(expectedValue)} expected`
+                ? `Of ${formatMoney(expectedValue)} expected`
                 : undefined
             }
           />
@@ -309,6 +304,7 @@ export default async function PurchaseOrderDetailPage({
       {fillSuggestions.length > 0 && (
         <section aria-labelledby="backorder-fill">
           <SectionTitle
+            id="backorder-fill"
             eyebrow="Allocation"
             title="Fill backorders"
             action={
@@ -346,9 +342,9 @@ export default async function PurchaseOrderDetailPage({
                   />
                   <input type="hidden" name="product_id" value={f.productId} />
                   <input type="hidden" name="po_id" value={poData.id} />
-                  <CornerButton type="submit" variant="primary" size="sm">
+                  <SubmitButton variant="primary" size="sm">
                     Fill backorders
-                  </CornerButton>
+                  </SubmitButton>
                 </form>
               </li>
             ))}
@@ -360,7 +356,7 @@ export default async function PurchaseOrderDetailPage({
           summary; manually-created ones may not). */}
       {poData.notes && (
         <section aria-labelledby="notes">
-          <SectionTitle eyebrow="Context" title="Notes" />
+          <SectionTitle id="notes" eyebrow="Context" title="Notes" />
           <article className="hairline bg-[var(--surface)] p-20 flex items-start gap-14">
             <span
               className="w-22 h-22 hairline-subtle bg-[var(--surface-2)] flex items-center justify-center shrink-0 text-text-muted"
@@ -386,6 +382,7 @@ export default async function PurchaseOrderDetailPage({
       {/* Line items */}
       <section aria-labelledby="lines">
         <SectionTitle
+          id="lines"
           eyebrow="Items"
           title="Line items"
           action={
@@ -409,7 +406,11 @@ export default async function PurchaseOrderDetailPage({
         ) : (
           <div className="hairline bg-[var(--surface)] overflow-hidden">
             <div className="overflow-x-auto">
-              <table className="w-full" style={{ borderCollapse: "collapse" }}>
+              <table
+                className="w-full"
+                style={{ borderCollapse: "collapse" }}
+                aria-label="Purchase order lines"
+              >
                 <thead>
                   <tr className="hairline-b bg-[var(--surface-2)]">
                     <Th>#</Th>
@@ -562,7 +563,7 @@ export default async function PurchaseOrderDetailPage({
                           <Td align="right">
                             <span className="mono-sm text-text-secondary tnum">
                               {displayCost != null
-                                ? formatCurrency(displayCost)
+                                ? formatMoney(displayCost)
                                 : "—"}
                             </span>
                           </Td>
@@ -678,53 +679,5 @@ function Stat({
       </p>
       {sub && <p className="mono-sm text-text-muted">{sub}</p>}
     </article>
-  );
-}
-
-function Th({
-  children,
-  align = "left",
-}: {
-  children: ReactNode;
-  align?: "left" | "right" | "center";
-}) {
-  return (
-    <th
-      className={`label-text text-text-muted px-16 py-10 ${
-        align === "right"
-          ? "text-right"
-          : align === "center"
-          ? "text-center"
-          : "text-left"
-      }`}
-      style={{ fontWeight: 500 }}
-    >
-      {children}
-    </th>
-  );
-}
-
-function Td({
-  children,
-  align = "left",
-  colSpan,
-}: {
-  children: ReactNode;
-  align?: "left" | "right" | "center";
-  colSpan?: number;
-}) {
-  return (
-    <td
-      colSpan={colSpan}
-      className={`px-16 py-12 align-middle ${
-        align === "right"
-          ? "text-right"
-          : align === "center"
-          ? "text-center"
-          : "text-left"
-      }`}
-    >
-      {children}
-    </td>
   );
 }

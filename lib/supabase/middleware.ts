@@ -14,8 +14,8 @@ import { NextResponse, type NextRequest } from "next/server";
  * response, or the session silently expires.
  */
 export async function updateSession(request: NextRequest) {
-  // Forward the full URL to server components via a request header,
-  // so lib/kiosk.ts can read ?kiosk=1 from a layout.
+  // Forward the full URL to server components via a request header, so the
+  // trial gate (lib/data/entitlement.ts) can read the pathname from a layout.
   const requestHeaders = new Headers(request.headers);
   requestHeaders.set("x-url", request.url);
 
@@ -23,11 +23,35 @@ export async function updateSession(request: NextRequest) {
     request: { headers: requestHeaders },
   });
 
+  const path = request.nextUrl.pathname;
+
+  // Self-authenticating API routes carry no user session and must NOT be
+  // redirected to /login: cron routes authenticate via the CRON_SECRET bearer
+  // token, webhooks via HMAC signature, OAuth callbacks via state, and the
+  // public /api/v1 surface via an API key. They do their own auth in the route
+  // handler. (These live under app/api/*, distinct from the session-scoped user
+  // APIs under app/(app)/api/*.) Decided BEFORE the Supabase client exists so
+  // these requests never pay for an auth.getUser() round trip — a webhook
+  // burst or an API scan shouldn't hit the auth server at all.
+  const isSelfAuthApi =
+    path.startsWith("/api/cron") ||
+    path.startsWith("/api/webhooks") ||
+    path.startsWith("/api/integrations") ||
+    path.startsWith("/api/v1");
+  if (isSelfAuthApi) {
+    return response;
+  }
+
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       db: { schema: process.env.NEXT_PUBLIC_SUPABASE_DB_SCHEMA as "public" },
+      // Keep in step with lib/supabase/server.ts.
+      cookieOptions: {
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "lax",
+      },
       cookies: {
         getAll() {
           return request.cookies.getAll();
@@ -46,7 +70,7 @@ export async function updateSession(request: NextRequest) {
           // AND stamp x-url again. Passing `{ request }` alone forwarded the
           // original headers, which never carried x-url, so every
           // token-refresh request reached the layouts without it — the trial
-          // gate and lib/kiosk.ts both read it.
+          // gate reads it.
           const refreshedHeaders = new Headers(request.headers);
           refreshedHeaders.set("x-url", request.url);
           response = NextResponse.next({
@@ -64,8 +88,6 @@ export async function updateSession(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  const path = request.nextUrl.pathname;
-
   // Mint a stable device id cookie for authenticated browser sessions. Cookies
   // can't be set during a server-component render, so the layout's session
   // tracker relies on this being present. One-time per device.
@@ -77,21 +99,6 @@ export async function updateSession(request: NextRequest) {
       path: "/",
       maxAge: 60 * 60 * 24 * 365,
     });
-  }
-
-  // Self-authenticating API routes carry no user session and must NOT be
-  // redirected to /login: cron routes authenticate via the CRON_SECRET bearer
-  // token, webhooks via HMAC signature, OAuth callbacks via state, and the
-  // public /api/v1 surface via an API key. They do their own auth in the route
-  // handler. (These live under app/api/*, distinct from the session-scoped user
-  // APIs under app/(app)/api/*.)
-  const isSelfAuthApi =
-    path.startsWith("/api/cron") ||
-    path.startsWith("/api/webhooks") ||
-    path.startsWith("/api/integrations") ||
-    path.startsWith("/api/v1");
-  if (isSelfAuthApi) {
-    return response;
   }
 
   const isAuthPath =

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, useTransition, useEffect, useRef } from "react";
 import {
   AlertTriangle,
   Check,
@@ -11,6 +11,7 @@ import {
   Zap,
 } from "lucide-react";
 import { CornerButton } from "@/components/ui/CornerButton";
+import { LocalTime } from "@/components/ui/LocalTime";
 import { Badge } from "@/components/ui/Badge";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { EVENT_META } from "@/lib/integrations/types";
@@ -305,11 +306,7 @@ function EndpointRow({ endpoint }: { endpoint: Endpoint }) {
             className="mono-sm text-text-dim ml-auto"
             style={{ fontSize: 10 }}
           >
-            Last delivered{" "}
-            {new Date(endpoint.last_delivered_at).toLocaleString("en-US", {
-              dateStyle: "short",
-              timeStyle: "short",
-            })}
+            Last delivered <LocalTime iso={endpoint.last_delivered_at} />
           </span>
         )}
       </footer>
@@ -358,11 +355,19 @@ function SecretRevealCard({
   onDismiss: () => void;
 }) {
   const [copied, setCopied] = useState(false);
+  // Timer id kept in a ref so an unmount mid-countdown cannot set
+  // state on a gone component.
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    return () => {
+      if (timer.current) clearTimeout(timer.current);
+    };
+  }, []);
 
   const handleCopy = async () => {
     await navigator.clipboard.writeText(secret);
     setCopied(true);
-    setTimeout(() => setCopied(false), 1800);
+    timer.current = setTimeout(() => setCopied(false), 1800);
   };
 
   return (

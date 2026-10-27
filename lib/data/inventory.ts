@@ -123,7 +123,7 @@ export function getInventoryList(
           p_offset: offset,
         });
 
-      let { data, error } = await call((requestedPage - 1) * size);
+      const { data, error } = await call((requestedPage - 1) * size);
       if (error) {
         console.error("inventory_list rpc failed:", error.message);
         return {

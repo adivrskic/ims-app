@@ -8,6 +8,7 @@ import {
 } from "@/lib/data/slotting";
 import { ApplyMoveButton } from "./ApplyMoveButton";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { Th, Td } from "@/components/ui/Table";
 import { KpiCard } from "@/components/ui/KpiCard";
 import { SectionTitle } from "@/components/ui/SectionTitle";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -84,7 +85,7 @@ export default async function SlottingPage() {
       ) : (
         <>
           <section aria-labelledby="kpis">
-            <SectionTitle numeral="01" eyebrow="Headline" title="Slotting signals" />
+            <SectionTitle id="kpis" numeral="01" eyebrow="Headline" title="Slotting signals" />
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-16">
               <KpiCard
                 label="Mis-slotted SKUs"
@@ -169,15 +170,19 @@ function FacilityReport({
       ) : (
         <div className="hairline bg-[var(--surface)] overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full" style={{ borderCollapse: "collapse" }}>
+            <table
+              className="w-full"
+              style={{ borderCollapse: "collapse" }}
+              aria-label="Slotting suggestions"
+            >
               <thead>
                 <tr className="hairline-b bg-[var(--surface-2)]">
                   <Th>Product</Th>
                   <Th>Current</Th>
                   <Th>Suggested</Th>
                   <Th>Why</Th>
-                  <Th className="text-right">Velocity</Th>
-                  <Th className="text-right">Apply</Th>
+                  <Th align="right">Velocity</Th>
+                  <Th align="right">Apply</Th>
                 </tr>
               </thead>
               <tbody>
@@ -225,12 +230,12 @@ function FacilityReport({
                         {m.reason}
                       </span>
                     </Td>
-                    <Td className="text-right">
+                    <Td align="right">
                       <span className="mono-sm tnum text-text-secondary">
                         {m.velocity > 0 ? `${m.velocity.toFixed(2)}/d` : "—"}
                       </span>
                     </Td>
-                    <Td className="text-right">
+                    <Td align="right">
                       <ApplyMoveButton
                         toLabel={m.suggested.label}
                         args={{
@@ -254,27 +259,4 @@ function FacilityReport({
       )}
     </section>
   );
-}
-
-function Th({
-  children,
-  className = "",
-}: {
-  children?: React.ReactNode;
-  className?: string;
-}) {
-  return (
-    <th className={`label-text text-left px-14 py-12 font-normal ${className}`}>
-      {children}
-    </th>
-  );
-}
-function Td({
-  children,
-  className = "",
-}: {
-  children?: React.ReactNode;
-  className?: string;
-}) {
-  return <td className={`px-14 py-12 ${className}`}>{children}</td>;
 }

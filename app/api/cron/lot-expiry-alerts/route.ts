@@ -2,6 +2,10 @@ import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { isAuthorizedCronRequest } from "@/lib/cronAuth";
 import { daysToExpiry } from "@/lib/lots";
+import { fetchAllPaged } from "@/lib/data/paginate";
+
+/** PostgREST `in (...)` lists go in the URL; keep each one short. */
+const IN_CHUNK = 200;
 
 /**
  * Scheduled lot-expiry alert sweep.
@@ -57,20 +61,25 @@ async function processOrg(
   cutoff.setDate(cutoff.getDate() + ALERT_THRESHOLD_DAYS);
   const cutoffIso = cutoff.toISOString().slice(0, 10);
 
-  const { data: lots } = await admin
-    .from("lots")
-    .select("id, lot_number, expires_at, product:products ( name )")
-    .eq("org_id", orgId)
-    .not("expires_at", "is", null)
-    .lte("expires_at", cutoffIso);
-
+  // Paged: a plain select stops at PostgREST's ~1000-row cap. (app.lots has
+  // no quantity column — lot on-hand isn't tracked per lot row — so there is
+  // no `quantity > 0` filter to apply here.)
   type LotRow = {
     id: string;
     lot_number: string;
     expires_at: string | null;
     product: { name: string } | { name: string }[] | null;
   };
-  const atRisk = (lots ?? []) as LotRow[];
+  const atRisk = await fetchAllPaged<LotRow>((from, to) =>
+    admin
+      .from("lots")
+      .select("id, lot_number, expires_at, product:products ( name )")
+      .eq("org_id", orgId)
+      .not("expires_at", "is", null)
+      .lte("expires_at", cutoffIso)
+      .order("id", { ascending: true })
+      .range(from, to)
+  );
   if (atRisk.length === 0) return 0;
 
   // Owners + admins get the alert.
@@ -88,18 +97,23 @@ async function processOrg(
   const cooldownSince = new Date();
   cooldownSince.setDate(cooldownSince.getDate() - ALERT_COOLDOWN_DAYS);
 
-  const { data: recent } = await admin
-    .from("notifications")
-    .select("user_id, link")
-    .in("user_id", userIds)
-    .eq("kind", "lot_expiry")
-    .in("link", links)
-    .gte("created_at", cooldownSince.toISOString());
-  const alreadyAlerted = new Set(
-    ((recent ?? []) as Array<{ user_id: string; link: string | null }>).map(
-      (r) => `${r.user_id}|${r.link}`
-    )
-  );
+  // Chunk the link list: it rides in the query string.
+  const alreadyAlerted = new Set<string>();
+  for (let i = 0; i < links.length; i += IN_CHUNK) {
+    const { data: recent } = await admin
+      .from("notifications")
+      .select("user_id, link")
+      .in("user_id", userIds)
+      .eq("kind", "lot_expiry")
+      .in("link", links.slice(i, i + IN_CHUNK))
+      .gte("created_at", cooldownSince.toISOString());
+    for (const r of (recent ?? []) as Array<{
+      user_id: string;
+      link: string | null;
+    }>) {
+      alreadyAlerted.add(`${r.user_id}|${r.link}`);
+    }
+  }
 
   type NotificationInsert = {
     org_id: string;

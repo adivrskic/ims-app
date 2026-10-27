@@ -2,13 +2,13 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Logo } from "@/components/ui/Logo";
 import { CornerLink } from "@/components/ui/CornerButton";
-import { AlertTriangle, Inbox } from "lucide-react";
+import { AlertTriangle } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { InviteAcceptClient } from "./InviteAcceptClient";
 import { ThemeToggle } from "@/components/nav/ThemeToggle";
 
-export const metadata = { title: "Accept invite · Nautilus" };
+export const metadata = { title: "Accept invite" };
 
 interface PageProps {
   params: Promise<{ token: string }>;
@@ -17,8 +17,20 @@ interface PageProps {
 export default async function InvitePage({ params }: PageProps) {
   const { token } = await params;
 
-  // Look up the invite first using the admin client — token is the auth
-  // factor, RLS would otherwise block since the user isn't a member yet.
+  // Gate auth FIRST — but keep token in URL so we land back here after login.
+  // The token lookup below runs with the service-role client, so it must sit
+  // behind the session check: an unauthenticated crawl of /invite/<guess>
+  // should never reach the database.
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) {
+    redirect(`/login?next=${encodeURIComponent(`/invite/${token}`)}`);
+  }
+
+  // Look up the invite using the admin client — token is the auth factor,
+  // RLS would otherwise block since the user isn't a member yet.
   const admin = createAdminClient();
   const { data: invite } = await admin
     .from("org_invites")
@@ -31,15 +43,6 @@ export default async function InvitePage({ params }: PageProps) {
   const expired =
     invite?.expires_at && new Date(invite.expires_at) < new Date();
   const accepted = Boolean(invite?.accepted_at);
-
-  // Gate auth — but keep token in URL so we land back here after login.
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) {
-    redirect(`/login?next=${encodeURIComponent(`/invite/${token}`)}`);
-  }
 
   // Resolve org reference (Supabase returns either object or array depending
   // on relationship inference).

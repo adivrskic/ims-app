@@ -45,8 +45,9 @@ export function LoginForm({ next, initialError }: Props) {
       <form action={formAction}>
         <input type="hidden" name="next" value={next} />
 
-        <ManifestRow number="01" label="Email address">
+        <ManifestRow number="01" label="Email address" inputId="login-email">
           <ManifestInput
+            id="login-email"
             type="email"
             name="email"
             autoComplete="email"
@@ -58,6 +59,7 @@ export function LoginForm({ next, initialError }: Props) {
         <ManifestRow
           number="02"
           label="Passcode"
+          inputId="login-password"
           rightSlot={
             <Link
               href="/forgot"
@@ -68,6 +70,7 @@ export function LoginForm({ next, initialError }: Props) {
           }
         >
           <ManifestPasswordField
+            id="login-password"
             name="password"
             autoComplete="current-password"
             required

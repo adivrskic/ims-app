@@ -6,7 +6,11 @@ import { KpiCard } from "@/components/ui/KpiCard";
 import { Badge } from "@/components/ui/Badge";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { SectionTitle } from "@/components/ui/SectionTitle";
-import { CornerLink, CornerButton } from "@/components/ui/CornerButton";
+import { CornerLink } from "@/components/ui/CornerButton";
+import { SubmitButton } from "@/components/ui/SubmitButton";
+import { LocalTime } from "@/components/ui/LocalTime";
+import { Th, Td } from "@/components/ui/Table";
+import { formatMoney, formatDate } from "@/lib/format";
 import { ProductDetailRealtime } from "@/components/realtime/PageRealtime";
 import { formatCurrency } from "@/lib/dashboard";
 import { getCurrentOrgContext } from "@/lib/data/user";
@@ -21,14 +25,8 @@ import { expiryStatus, expiryLabel } from "@/lib/lots";
 import type { ScanAction } from "@/types/db";
 import { PrintLabelButton } from "@/components/print/PrintLabelButton";
 import { productLabel } from "@/lib/print/zplTemplates";
-import {
-  Activity,
-  FileText,
-  Hash,
-  Layers,
-  Plus,
-  ChevronRight,
-} from "lucide-react";
+import { Activity, FileText, Hash, Layers, Plus } from "lucide-react";
+import type { ReactNode } from "react";
 
 const SCAN_LABEL: Record<ScanAction, string> = {
   register: "Registered",
@@ -59,6 +57,21 @@ const SCAN_TONE: Record<
   transfer: "warning", // cross-facility move → warning, mirrors relocate
 };
 
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
+  const { id } = await params;
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("products")
+    .select("name")
+    .eq("id", id)
+    .maybeSingle();
+  return { title: data?.name ?? "Product" };
+}
+
 export default async function ProductDetailPage({
   params,
 }: {
@@ -67,8 +80,10 @@ export default async function ProductDetailPage({
   const { id } = await params;
   const supabase = await createClient();
 
-  // Main product + locations + supplier (existing)
-  const { data: product, error } = await supabase
+  // Main product + locations + supplier, with the org context and facility
+  // scope (independent of the product) started at the same time.
+  const [{ data: product, error }, orgCtx, activeScope] = await Promise.all([
+    supabase
     .from("products")
     .select(
       `
@@ -92,54 +107,12 @@ export default async function ProductDetailPage({
     // differently on three screens. Embedded filter (no !inner), so a product
     // with zero active slots still renders.
     .eq("locations.is_active", true)
-    .maybeSingle();
+    .maybeSingle(),
+    getCurrentOrgContext(),
+    getActiveScope(),
+  ]);
 
   if (error || !product) notFound();
-
-  // Recent scans + lots + recent cycle counts in parallel
-  const [
-    { data: scans },
-    { data: lots },
-    { data: poLines },
-    { data: pickedLines },
-    { data: cycleCounts },
-  ] = await Promise.all([
-    supabase
-      .from("scan_history")
-      .select("id, action, scanned_at, quantity, notes")
-      .eq("product_id", id)
-      .order("scanned_at", { ascending: false })
-      .limit(20),
-    supabase
-      .from("lots")
-      .select(
-        `id, lot_number, received_at, expires_at, notes,
-         supplier:suppliers ( id, name )`
-      )
-      .eq("product_id", id)
-      .order("received_at", { ascending: false, nullsFirst: false })
-      .limit(20),
-    // Aggregate received quantity per lot via po_line_items
-    supabase
-      .from("po_line_items")
-      .select("lot_id, quantity_received")
-      .eq("product_id", id)
-      .not("lot_id", "is", null),
-    // Aggregate picked quantity per lot via order_items (lot consumption)
-    supabase
-      .from("order_items")
-      .select("lot_id, quantity_picked")
-      .eq("product_id", id)
-      .not("lot_id", "is", null),
-    supabase
-      .from("cycle_counts")
-      .select(
-        "id, expected_qty, counted_qty, variance, status, counted_at, notes"
-      )
-      .eq("product_id", id)
-      .order("counted_at", { ascending: false })
-      .limit(5),
-  ]);
 
   const category = Array.isArray(product.category)
     ? product.category[0]
@@ -153,13 +126,8 @@ export default async function ProductDetailPage({
     0
   );
 
-  // Depletion forecast (§2a). Velocity comes from the shared helper — the
-  // same 60-day pick+adjust window draftReorderPO uses — so on-hand and
-  // velocity are scoped identically (both org-wide here) and the math lines
-  // up with the reorder logic. daysToStockout returns null when there's no
-  // demand signal, which we render as a plain-language state rather than ∞.
-  const velocity = await productVelocity(supabase, id);
-  const daysLeft = daysToStockout({ onHand: totalStock, velocity });
+  const effectiveLeadTime =
+    product.lead_time_days ?? supplier?.default_lead_time_days ?? null;
 
   // Recommended slot (#8 / §6b). Slotting is per-facility, so we pick a target:
   // the active-scope facility if one is selected, else the facility where this
@@ -175,11 +143,6 @@ export default async function ProductDetailPage({
   const locsForSlot = (product.locations ?? []) as LocLite[];
   const oneOf = <T,>(v: T | T[] | null): T | null =>
     Array.isArray(v) ? v[0] ?? null : v;
-
-  const [orgCtx, activeScope] = await Promise.all([
-    getCurrentOrgContext(),
-    getActiveScope(),
-  ]);
 
   // Per-facility on-hand for this product + current slot labels.
   const facilityAgg = new Map<
@@ -217,50 +180,103 @@ export default async function ProductDetailPage({
     }
   }
 
+  // Everything below only needs the product row (and the org context), so it
+  // all runs in one round of parallel queries instead of a waterfall: recent
+  // scans, lots, lot ledgers, recent counts, demand velocity (the shared
+  // 60-day pick+adjust window draftReorderPO uses), the slotting suggestion,
+  // org-wide allocation and the statistical demand forecast.
+  const [
+    { data: scans },
+    { data: lots },
+    { data: poLines },
+    { data: pickedLines },
+    { data: cycleCounts },
+    velocity,
+    slotting,
+    allocation,
+    forecast,
+  ] = await Promise.all([
+    supabase
+      .from("scan_history")
+      .select("id, action, scanned_at, quantity, notes")
+      .eq("product_id", id)
+      .order("scanned_at", { ascending: false })
+      .limit(20),
+    supabase
+      .from("lots")
+      .select(
+        `id, lot_number, received_at, expires_at, notes,
+         supplier:suppliers ( id, name )`
+      )
+      .eq("product_id", id)
+      .order("received_at", { ascending: false, nullsFirst: false })
+      .limit(20),
+    // Aggregate received quantity per lot via po_line_items
+    supabase
+      .from("po_line_items")
+      .select("lot_id, quantity_received")
+      .eq("product_id", id)
+      .not("lot_id", "is", null),
+    // Aggregate picked quantity per lot via order_items (lot consumption)
+    supabase
+      .from("order_items")
+      .select("lot_id, quantity_picked")
+      .eq("product_id", id)
+      .not("lot_id", "is", null),
+    supabase
+      .from("cycle_counts")
+      .select(
+        "id, expected_qty, counted_qty, variance, status, counted_at, notes"
+      )
+      .eq("product_id", id)
+      .order("counted_at", { ascending: false })
+      .limit(5),
+    // Depletion forecast (§2a): on-hand and velocity are scoped identically
+    // (both org-wide here) so the math lines up with the reorder logic.
+    productVelocity(supabase, id),
+    orgCtx && targetFacilityId
+      ? getSlottingSuggestions(supabase, orgCtx.orgId, targetFacilityId, id, {
+          limit: 1,
+          quantity: Math.max(1, facilityAgg.get(targetFacilityId)?.qty ?? 1),
+        })
+      : null,
+    // Allocation / ATP (workspace-wide: on-hand aggregates all facilities, so
+    // we sum allocations across all open orders too).
+    orgCtx
+      ? getProductAllocationOrgWide(supabase, orgCtx.orgId, id)
+      : { allocated: 0, backordered: 0 },
+    // Statistical demand forecast (trend + seasonality + service-level safety
+    // stock) over the last 90 days, used to suggest reorder settings.
+    orgCtx
+      ? getProductForecast(supabase, orgCtx.orgId, id, {
+          leadTimeDays: effectiveLeadTime ?? 7,
+        })
+      : null,
+  ]);
+
+  // daysToStockout returns null when there's no demand signal, which we
+  // render as a plain-language state rather than ∞.
+  const daysLeft = daysToStockout({ onHand: totalStock, velocity });
+
   let recommendedSlot:
     | { label: string; reasons: string[]; alreadyThere: boolean; facility: string }
     | null = null;
-  if (orgCtx && targetFacilityId) {
-    const r = await getSlottingSuggestions(
-      supabase,
-      orgCtx.orgId,
-      targetFacilityId,
-      id,
-      { limit: 1, quantity: Math.max(1, facilityAgg.get(targetFacilityId)?.qty ?? 1) }
-    );
-    const top = r.suggestions[0];
-    if (top) {
-      const currentLabels = facilityAgg.get(targetFacilityId)?.labels ?? new Set();
-      recommendedSlot = {
-        label: top.label,
-        reasons: top.reasons,
-        alreadyThere: currentLabels.has(top.label),
-        facility: targetFacilityName,
-      };
-    }
+  const topSlot = slotting?.suggestions[0];
+  if (topSlot && targetFacilityId) {
+    const currentLabels = facilityAgg.get(targetFacilityId)?.labels ?? new Set();
+    recommendedSlot = {
+      label: topSlot.label,
+      reasons: topSlot.reasons,
+      alreadyThere: currentLabels.has(topSlot.label),
+      facility: targetFacilityName,
+    };
   }
 
-  // Allocation / ATP (workspace-wide: on-hand aggregates all facilities, so we
-  // sum allocations across all open orders too).
-  const allocation = orgCtx
-    ? await getProductAllocationOrgWide(supabase, orgCtx.orgId, id)
-    : { allocated: 0, backordered: 0 };
   const available = Math.max(0, totalStock - allocation.allocated);
 
   const unitCostNum =
     product.unit_cost == null ? null : parseFloat(String(product.unit_cost));
   const inventoryValue = unitCostNum != null ? unitCostNum * totalStock : null;
-
-  const effectiveLeadTime =
-    product.lead_time_days ?? supplier?.default_lead_time_days ?? null;
-
-  // Statistical demand forecast (trend + seasonality + service-level safety
-  // stock) over the last 90 days, used to suggest reorder settings.
-  const forecast = orgCtx
-    ? await getProductForecast(supabase, orgCtx.orgId, id, {
-        leadTimeDays: effectiveLeadTime ?? 7,
-      })
-    : null;
 
   // Build received-qty-per-lot map for the lots section
   const receivedByLot = new Map<string, number>();
@@ -448,7 +464,7 @@ export default async function ProductDetailPage({
         </h2>
 
         <article className="lg:col-span-2 hairline bg-[var(--surface)] p-24">
-          <p className="label-text--lg mb-16">Specification</p>
+          <h3 className="label-text--lg mb-16">Specification</h3>
           <dl className="grid grid-cols-2 gap-x-32 gap-y-16">
             <Detail label="Barcode" value={product.barcode} mono />
             <Detail label="Internal SKU" value={product.internal_sku} mono />
@@ -458,19 +474,19 @@ export default async function ProductDetailPage({
             <Detail
               label="Created"
               value={
-                product.created_at
-                  ? new Date(product.created_at).toLocaleString()
-                  : null
+                product.created_at ? (
+                  <LocalTime iso={product.created_at} />
+                ) : null
               }
               mono
             />
           </dl>
 
-          <p className="label-text--lg mt-32 mb-16">Replenishment &amp; cost</p>
+          <h3 className="label-text--lg mt-32 mb-16">Replenishment &amp; cost</h3>
           <dl className="grid grid-cols-2 gap-x-32 gap-y-16">
             <Detail
               label="Unit cost"
-              value={unitCostNum != null ? `$${unitCostNum.toFixed(2)}` : null}
+              value={unitCostNum != null ? formatMoney(unitCostNum) : null}
               mono
             />
             <Detail
@@ -514,7 +530,7 @@ export default async function ProductDetailPage({
 
           {forecast && !forecast.empty && (
             <>
-              <p className="label-text--lg mt-32 mb-16">Demand forecast</p>
+              <h3 className="label-text--lg mt-32 mb-16">Demand forecast</h3>
               <dl className="grid grid-cols-2 gap-x-32 gap-y-16">
                 <Detail
                   label="Avg demand / day"
@@ -579,9 +595,9 @@ export default async function ProductDetailPage({
                     name="safety_stock"
                     value={forecast.forecast.safetyStock}
                   />
-                  <CornerButton type="submit" variant="ghost" size="sm">
+                  <SubmitButton variant="ghost" size="sm">
                     Apply suggested settings
-                  </CornerButton>
+                  </SubmitButton>
                 </form>
               )}
             </>
@@ -589,7 +605,7 @@ export default async function ProductDetailPage({
 
           {product.notes && (
             <>
-              <p className="label-text--lg mt-32 mb-12">Notes</p>
+              <h3 className="label-text--lg mt-32 mb-12">Notes</h3>
               <p className="body-text--display whitespace-pre-wrap">
                 {product.notes}
               </p>
@@ -598,7 +614,7 @@ export default async function ProductDetailPage({
         </article>
 
         <article className="hairline bg-[var(--surface)] p-24">
-          <p className="label-text--lg mb-16">Locations</p>
+          <h3 className="label-text--lg mb-16">Locations</h3>
           {product.locations && product.locations.length > 0 ? (
             <ul className="flex flex-col gap-10">
               {product.locations.map(
@@ -683,6 +699,7 @@ export default async function ProductDetailPage({
       {/* P4: Lots received */}
       <section aria-labelledby="lots-heading">
         <SectionTitle
+          id="lots-heading"
           eyebrow="Provenance · FEFO"
           title="Lots received"
           action={
@@ -701,7 +718,11 @@ export default async function ProductDetailPage({
           />
         ) : (
           <div className="hairline bg-[var(--surface)] overflow-hidden">
-            <table className="w-full" style={{ borderCollapse: "collapse" }}>
+            <table
+              className="w-full"
+              style={{ borderCollapse: "collapse" }}
+              aria-label="Lots received for this product"
+            >
               <thead>
                 <tr className="hairline-b bg-[var(--surface-2)]">
                   <Th>Lot #</Th>
@@ -758,18 +779,11 @@ export default async function ProductDetailPage({
                         )}
                       </Td>
                       <Td>
-                        <span className="mono-sm text-text-secondary">
-                          {lot.received_at
-                            ? new Date(lot.received_at).toLocaleDateString(
-                                undefined,
-                                {
-                                  year: "numeric",
-                                  month: "short",
-                                  day: "numeric",
-                                }
-                              )
-                            : "—"}
-                        </span>
+                        <LocalTime
+                          iso={lot.received_at}
+                          format="date"
+                          className="mono-sm text-text-secondary"
+                        />
                       </Td>
                       <Td>
                         <span
@@ -784,15 +798,7 @@ export default async function ProductDetailPage({
                           }}
                           title={lot.expires_at ? expiryLabel(lot.expires_at) : undefined}
                         >
-                          {lot.expires_at
-                            ? new Date(
-                                lot.expires_at + "T00:00:00"
-                              ).toLocaleDateString(undefined, {
-                                year: "numeric",
-                                month: "short",
-                                day: "numeric",
-                              })
-                            : "—"}
+                          {formatDate(lot.expires_at)}
                         </span>
                       </Td>
                       <Td align="right">
@@ -812,6 +818,7 @@ export default async function ProductDetailPage({
       {/* P4: Cycle count history (summary) */}
       <section aria-labelledby="cycle-counts-heading">
         <SectionTitle
+          id="cycle-counts-heading"
           eyebrow="Accuracy"
           title="Recent cycle counts"
           action={
@@ -841,14 +848,10 @@ export default async function ProductDetailPage({
                 : "text-[var(--danger)]";
               return (
                 <li key={c.id} className="px-20 py-12 flex items-center gap-16">
-                  <span className="mono-sm text-text-dim tnum w-[140px] shrink-0">
-                    {new Date(c.counted_at).toLocaleString(undefined, {
-                      month: "short",
-                      day: "numeric",
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    })}
-                  </span>
+                  <LocalTime
+                    iso={c.counted_at}
+                    className="mono-sm text-text-dim tnum w-[140px] shrink-0"
+                  />
                   <div className="flex-1 min-w-0">
                     <p className="mono-body text-text-secondary">
                       Expected {c.expected_qty.toLocaleString()} · counted{" "}
@@ -882,7 +885,7 @@ export default async function ProductDetailPage({
       </section>
 
       <section aria-labelledby="scans-heading">
-        <SectionTitle eyebrow="History" title="Last 20 scans" />
+        <SectionTitle id="scans-heading" eyebrow="History" title="Last 20 scans" />
         {!scans || scans.length === 0 ? (
           <EmptyState
             title="No scans recorded"
@@ -905,14 +908,10 @@ export default async function ProductDetailPage({
                     key={scan.id}
                     className="px-20 py-16 flex items-center gap-16 row-interactive"
                   >
-                    <time
+                    <LocalTime
+                      iso={scan.scanned_at}
                       className="mono-sm text-text-dim tnum w-[120px] shrink-0"
-                      dateTime={scan.scanned_at ?? undefined}
-                    >
-                      {scan.scanned_at
-                        ? new Date(scan.scanned_at).toLocaleString()
-                        : "—"}
-                    </time>
+                    />
                     <span
                       className="w-px h-12 bg-[var(--border-subtle)] shrink-0"
                       aria-hidden
@@ -949,7 +948,7 @@ function Detail({
   mono,
 }: {
   label: string;
-  value: string | null | undefined;
+  value: ReactNode;
   mono?: boolean;
 }) {
   return (
@@ -966,39 +965,3 @@ function Detail({
   );
 }
 
-function Th({
-  children,
-  align = "left",
-}: {
-  children: React.ReactNode;
-  align?: "left" | "right";
-}) {
-  return (
-    <th
-      scope="col"
-      className={`px-16 py-10 label-text text-text-muted ${
-        align === "right" ? "text-right" : "text-left"
-      }`}
-    >
-      {children}
-    </th>
-  );
-}
-
-function Td({
-  children,
-  align = "left",
-}: {
-  children: React.ReactNode;
-  align?: "left" | "right";
-}) {
-  return (
-    <td
-      className={`px-16 py-12 ${
-        align === "right" ? "text-right" : "text-left"
-      }`}
-    >
-      {children}
-    </td>
-  );
-}
