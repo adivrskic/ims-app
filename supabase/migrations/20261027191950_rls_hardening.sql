@@ -16,9 +16,9 @@
 --     the service role; the policy lets the session client do it too).
 --   * orders_external_unique_idx was (source, external_id) without org_id, so
 --     two workspaces importing the same Shopify order id collided.
---   * Eight legacy public.* SECURITY DEFINER helpers still existed; every one
---     reads tables that moved to the `legacy` schema in 20260701122000, so
---     they error on call but stay callable by anon/authenticated.
+--   * Eight legacy public.* SECURITY DEFINER helpers still existed. They are
+--     dropped in 20261027192229_drop_legacy_public_helpers.sql: dead policies
+--     on legacy.* and public.profiles depended on them, so they ship apart.
 --
 -- Every statement is idempotent. service_role (the app's admin client), the
 -- postgres role (migrations, the SQL editor) and SECURITY DEFINER functions
@@ -400,25 +400,6 @@ drop index if exists app.orders_external_unique_idx;
 create unique index if not exists orders_external_unique_idx
   on app.orders (org_id, source, external_id)
   where external_id is not null;
-
--- ───────────────────────────────────────────────────────────────────────────
--- 8. Legacy public.* SECURITY DEFINER helpers. Each reads public.org_members /
---    org_invites / warehouse_access / profiles.role — tables that moved to the
---    `legacy` schema (or columns that never existed on app.profiles) — so they
---    have been broken since 20260701122000. No policy, trigger, desk or mobile
---    code calls them (verified against pg_policies / pg_trigger and both
---    repos). public.handle_new_user is deliberately left alone: the
---    on_auth_user_created trigger still runs it.
--- ───────────────────────────────────────────────────────────────────────────
-
-drop function if exists public.accept_invite(uuid);
-drop function if exists public.bootstrap_workspace(character varying, character varying);
-drop function if exists public.create_invite(uuid, character varying, org_role);
-drop function if exists public.get_user_org_ids(uuid);
-drop function if exists public.get_user_role();
-drop function if exists public.get_user_warehouse_ids(uuid);
-drop function if exists public.has_org_role(uuid, text[]);
-drop function if exists public.has_warehouse_access(uuid);
 
 -- ───────────────────────────────────────────────────────────────────────────
 -- 9. Slot lookup index: putaway / relocate / cycle-count resolve a slot by
